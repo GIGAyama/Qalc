@@ -1,0 +1,883 @@
+<script>
+// --- State Management ---
+let currentState = {
+  isInitialized: false,
+  isHost: false,
+  roomId: null,
+  playerName: null,
+  selectedAvatar: '🐶', 
+  problemSet: [],
+  currentQIndex: 0,
+  score: 0,
+  combo: 0,
+  maxCombo: 0,
+  startTime: null,
+  timeLimitSec: 0,
+  timerInterval: null,
+  syncInterval: null,
+  allowStudentRoom: true,
+  gameMode: 'MULTI',
+  isMuted: false,
+  canvas: null,
+  ctx: null,
+  isDrawing: false,
+  lastX: 0,
+  lastY: 0,
+  editingGroupName: null
+};
+
+const AVATARS = ['🐶', '🐱', '🐼', '🐻', '🦁', '🐮', '🐷', '🐸', '🐙', '🦄'];
+
+// --- Utility: Shuffle ---
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+// --- Audio Manager ---
+const audio = {
+  bgm: null, seCorrect: null, seWrong: null, seClick: null,
+  init: function() {
+    this.bgm = document.getElementById('bgm-game');
+    this.seCorrect = document.getElementById('se-correct');
+    this.seWrong = document.getElementById('se-wrong');
+    this.seClick = document.getElementById('se-click');
+    if(this.bgm) this.bgm.volume = 0.3;
+    if(this.seCorrect) this.seCorrect.volume = 0.6;
+    if(this.seWrong) this.seWrong.volume = 0.6;
+    if(this.seClick) this.seClick.volume = 0.5;
+  },
+  playBGM: function() {
+    if(currentState.isMuted || !this.bgm) return;
+    this.bgm.currentTime = 0;
+    this.bgm.play().catch(e => console.log('Auto-play blocked'));
+  },
+  stopBGM: function() { if(this.bgm) this.bgm.pause(); },
+  playSE: function(type) {
+    if(currentState.isMuted) return;
+    let target = null;
+    if(type === 'correct') target = this.seCorrect;
+    else if(type === 'wrong') target = this.seWrong;
+    else if(type === 'click') target = this.seClick;
+    if(target) { target.currentTime = 0; target.play().catch(e=>{}); }
+  },
+  toggleMute: function() {
+    currentState.isMuted = !currentState.isMuted;
+    if(currentState.isMuted) { this.stopBGM(); return true; }
+    else { 
+      if(document.getElementById('view-game') && !document.getElementById('view-game').classList.contains('d-none')) {
+         this.playBGM();
+      }
+      return false;
+    }
+  }
+};
+
+// --- Initialization ---
+window.onload = function() {
+  audio.init();
+  renderAvatarSelectors();
+  
+  google.script.run
+    .withSuccessHandler(onInitCheck)
+    .withFailureHandler(onInitError)
+    .getConfig();
+    
+  document.addEventListener('keydown', handleGlobalKeydown);
+  
+  window.addEventListener('resize', () => {
+      if(currentState.canvas) setTimeout(resizeCanvas, 100);
+  });
+};
+
+function renderAvatarSelectors() {
+  const containers = ['create-avatar-list', 'join-avatar-list'];
+  containers.forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.innerHTML = '';
+    AVATARS.forEach(emoji => {
+      const div = document.createElement('div');
+      div.className = 'avatar-option';
+      if(emoji === currentState.selectedAvatar) div.classList.add('selected');
+      div.innerHTML = emoji;
+      div.onclick = () => selectAvatar(emoji);
+      el.appendChild(div);
+    });
+  });
+}
+
+function selectAvatar(emoji) {
+  currentState.selectedAvatar = emoji;
+  audio.playSE('click');
+  document.querySelectorAll('.avatar-option').forEach(opt => {
+    opt.classList.remove('selected');
+    if(opt.innerHTML === emoji) opt.classList.add('selected');
+  });
+}
+
+function toggleMute() {
+  const isMuted = audio.toggleMute();
+  const icon = document.querySelector('#btn-mute i');
+  if(icon) icon.className = isMuted ? 'bi bi-volume-mute-fill text-secondary' : 'bi bi-volume-up-fill text-primary';
+}
+
+function onInitError(error) {
+  showView('view-init');
+  hideLoading();
+}
+
+function onInitCheck(config) {
+  currentState.isInitialized = true;
+  showView('view-home');
+  hideLoading();
+  
+  // URLパラメータでルームIDが指定されている場合
+  if(INITIAL_ROOM_ID && INITIAL_ROOM_ID !== "") {
+      showJoinRoom();
+      document.getElementById('join-room-id').value = INITIAL_ROOM_ID;
+      setTimeout(() => {
+          const nameInput = document.getElementById('join-player-name');
+          if(nameInput) nameInput.focus();
+          showToast('ルームIDが入力されました', 'info');
+      }, 500);
+  }
+}
+
+// --- Navigation ---
+function showView(viewId) {
+  audio.playSE('click');
+  document.getElementById('loading').classList.add('d-none');
+  const gameView = document.getElementById('view-game');
+  gameView.classList.add('d-none');
+  
+  const container = document.querySelector('#app > .container');
+  
+  if (viewId === 'view-game') {
+    if(container) container.classList.add('d-none');
+    gameView.classList.remove('d-none');
+    clearCanvas();
+    document.getElementById('canvas-panel').classList.remove('show');
+    document.getElementById('left-panel').classList.add('expanded');
+    return;
+  }
+
+  if (container) container.classList.remove('d-none');
+  const views = ['view-init', 'view-home', 'view-create', 'view-join', 'view-lobby', 'view-result', 'view-manager-list', 'view-manager-edit', 'view-import'];
+  views.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('d-none');
+  });
+
+  const target = document.getElementById(viewId);
+  if (target) {
+    target.classList.remove('d-none');
+    target.classList.remove('anim-bounce-in');
+    void target.offsetWidth; 
+    target.classList.add('anim-bounce-in');
+  }
+}
+
+function showLoading() {
+  document.getElementById('loading').classList.remove('d-none');
+  document.querySelector('#app > .container')?.classList.add('d-none');
+  document.getElementById('view-game').classList.add('d-none');
+}
+
+function hideLoading() {
+  document.getElementById('loading').classList.add('d-none');
+}
+
+function goHome() {
+  audio.stopBGM();
+  if (currentState.isHost && currentState.roomId && currentState.gameMode === 'MULTI') {
+    google.script.run.deleteRoom(currentState.roomId);
+  }
+  stopAllIntervals();
+  currentState.roomId = null;
+  currentState.score = 0;
+  currentState.combo = 0;
+  currentState.isHost = false; 
+  showView('view-home');
+}
+
+// --- Problem Manager ---
+function showProblemManager() {
+  showLoading();
+  google.script.run.withSuccessHandler(groups => {
+    hideLoading();
+    const list = document.getElementById('manager-group-list');
+    list.innerHTML = '';
+    groups.forEach(g => {
+      const item = document.createElement('a');
+      item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center manager-list-item';
+      item.innerHTML = `<span class="fw-bold">${g.name}</span> <span class="badge bg-light text-dark rounded-pill">${g.count}問</span>`;
+      item.onclick = () => editGroup(g.name);
+      list.appendChild(item);
+    });
+    showView('view-manager-list');
+  }).getProblemGroups();
+}
+
+function createNewGroup() {
+  currentState.editingGroupName = '';
+  document.getElementById('edit-group-name').value = '';
+  document.getElementById('edit-problem-list').innerHTML = '';
+  addEmptyProblemRow();
+  addEmptyProblemRow();
+  addEmptyProblemRow();
+  showView('view-manager-edit');
+}
+
+function editGroup(groupName) {
+  currentState.editingGroupName = groupName;
+  document.getElementById('edit-group-name').value = groupName;
+  showLoading();
+  google.script.run.withSuccessHandler(problems => {
+    hideLoading();
+    const list = document.getElementById('edit-problem-list');
+    list.innerHTML = '';
+    problems.forEach(p => addProblemRow(p.q, p.a));
+    if(problems.length === 0) addEmptyProblemRow();
+    showView('view-manager-edit');
+  }).getProblemsByGroup(groupName);
+}
+
+function addEmptyProblemRow() {
+  addProblemRow('', '');
+}
+
+function addProblemRow(q, a) {
+  const list = document.getElementById('edit-problem-list');
+  const div = document.createElement('div');
+  div.className = 'list-group-item d-flex align-items-center p-0 border-bottom';
+  div.innerHTML = `
+    <div class="flex-grow-1 border-end p-2"><input type="text" class="table-input" value="${q}" placeholder="問題"></div>
+    <div style="width: 100px;" class="border-end p-2"><input type="text" class="table-input" value="${a}" placeholder="答え"></div>
+    <div style="width: 40px;" class="text-center p-2"><i class="bi bi-x-circle text-danger" style="cursor:pointer;" onclick="this.parentElement.parentElement.remove()"></i></div>
+  `;
+  list.appendChild(div);
+}
+
+function saveCurrentGroup() {
+  const newName = document.getElementById('edit-group-name').value.trim();
+  if(!newName) { showToast('コース名を入力してください', 'warning'); return; }
+  
+  const list = document.getElementById('edit-problem-list');
+  const problems = [];
+  list.querySelectorAll('.list-group-item').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const q = inputs[0].value.trim();
+    const a = inputs[1].value.trim();
+    if(q && a) problems.push({q: q, a: a});
+  });
+  
+  if(problems.length === 0) { showToast('問題を1つ以上入力してください', 'warning'); return; }
+  
+  showLoading();
+  const oldName = currentState.editingGroupName;
+  
+  google.script.run.withSuccessHandler(() => {
+    hideLoading();
+    showToast('保存しました', 'success');
+    showProblemManager();
+  }).saveProblemSet(newName, problems);
+  
+  if(oldName && oldName !== newName) {
+    google.script.run.deleteProblemGroup(oldName); 
+  }
+}
+
+function deleteCurrentGroup() {
+  if(!currentState.editingGroupName) { showProblemManager(); return; }
+  
+  Swal.fire({
+    title: '本当に削除しますか？',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#d33',
+    confirmButtonText: '削除'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      showLoading();
+      google.script.run.withSuccessHandler(() => {
+        hideLoading();
+        showProblemManager();
+      }).deleteProblemGroup(currentState.editingGroupName);
+    }
+  });
+}
+
+// --- Import Logic ---
+function showImportView() {
+  document.getElementById('import-text').value = '';
+  showView('view-import');
+}
+
+function copyAiPrompt() {
+  const text = `小学生向けの算数の計算問題を作成してください。
+形式: CSV
+ヘッダー: なし
+フォーマット: 問題文, 答え
+例:
+1+1, 2
+3×5, 15
+12÷4, 3
+
+以下の条件で20問作成してください:
+[ここに条件を入力: 例 「3年生のあまりのある割り算」]`;
+  
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('プロンプトをコピーしました！', 'success');
+  }, () => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    showToast('プロンプトをコピーしました！', 'success');
+  });
+}
+
+function processImport() {
+  const rawText = document.getElementById('import-text').value.trim();
+  if(!rawText) { showToast('データが空です', 'warning'); return; }
+  
+  let problems = [];
+  try {
+    const json = JSON.parse(rawText);
+    if(Array.isArray(json)) {
+      json.forEach(p => {
+        if(p.q && p.a) problems.push({q: p.q, a: p.a});
+        else if(p.Question && p.Answer) problems.push({q: p.Question, a: p.Answer});
+      });
+    }
+  } catch(e) {
+    const lines = rawText.split('\n');
+    lines.forEach(line => {
+      let parts = line.split(',');
+      if(parts.length < 2) parts = line.split('\t');
+      if(parts.length >= 2) {
+        const q = parts[0].trim();
+        const a = parts[1].trim();
+        if(q !== '問題' && q !== 'Question' && q && a) {
+           problems.push({q: q, a: a});
+        }
+      }
+    });
+  }
+  
+  if(problems.length === 0) {
+    showToast('問題を読み込めませんでした', 'error');
+    return;
+  }
+  
+  currentState.editingGroupName = ''; 
+  document.getElementById('edit-group-name').value = 'AIインポート_' + new Date().toLocaleDateString();
+  const list = document.getElementById('edit-problem-list');
+  list.innerHTML = '';
+  problems.forEach(p => addProblemRow(p.q, p.a));
+  addEmptyProblemRow(); 
+  
+  showToast(`${problems.length}問 読み込みました`, 'success');
+  showView('view-manager-edit');
+}
+
+// --- Create Room ---
+function showCreateRoom() {
+  showLoading();
+  google.script.run.withSuccessHandler(groups => {
+    hideLoading();
+    const select = document.getElementById('problem-select');
+    select.innerHTML = '';
+    groups.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g.name; 
+      opt.innerText = g.name;
+      select.appendChild(opt);
+    });
+    showView('view-create');
+  }).getProblemGroups();
+}
+
+function toggleProblemInput() {} 
+
+function submitCreateRoom() {
+  const hostName = document.getElementById('host-name').value;
+  const timeLimit = document.getElementById('time-limit').value;
+  const groupName = document.getElementById('problem-select').value;
+  const isShuffle = document.getElementById('shuffle-toggle').checked;
+
+  if (!hostName) { showToast('名前を入力してください', 'warning'); return; }
+  if (!groupName) { showToast('コースを選んでください', 'warning'); return; }
+
+  const fullName = currentState.selectedAvatar + ' ' + hostName;
+
+  showLoading();
+  
+  google.script.run.withSuccessHandler(problems => {
+      if(!problems || problems.length === 0) {
+          showView('view-create');
+          showToast('問題データがありません', 'error');
+          return;
+      }
+      
+      if (isShuffle) {
+          problems = shuffleArray(problems);
+      }
+      
+      const jsonProb = JSON.stringify(problems);
+      
+      google.script.run.withSuccessHandler(res => {
+        hideLoading();
+        if(res.error) { showToast('エラーが発生しました', 'error'); return; }
+        
+        currentState.isHost = true;
+        currentState.roomId = res.roomId;
+        currentState.playerName = fullName;
+        currentState.problemSet = problems;
+        currentState.timeLimitSec = timeLimit * 60;
+        currentState.gameMode = 'MULTI';
+        
+        joinProcess(res.roomId, fullName);
+        
+      }).createRoom(fullName, jsonProb, timeLimit);
+      
+  }).getProblemsByGroup(groupName);
+}
+
+// --- Join Room ---
+function showJoinRoom() { showView('view-join'); }
+
+function submitJoinRoom() {
+  const roomId = document.getElementById('join-room-id').value;
+  const name = document.getElementById('join-player-name').value;
+  if (!roomId || !name) { showToast('全ての項目を入力してください', 'warning'); return; }
+  const fullName = currentState.selectedAvatar + ' ' + name;
+  
+  showLoading();
+  google.script.run.withSuccessHandler(res => {
+    hideLoading();
+    if (res.error) {
+      showView('view-join');
+      showToast('ルームが見つかりません', 'error'); 
+      return; 
+    }
+    currentState.isHost = false;
+    currentState.roomId = roomId;
+    currentState.playerName = fullName;
+    currentState.problemSet = JSON.parse(res.room.problemSet);
+    currentState.timeLimitSec = res.room.timeLimit * 60;
+    currentState.gameMode = 'MULTI';
+    enterLobby();
+  }).joinRoom(roomId, fullName);
+}
+
+function joinProcess(roomId, name) {
+  google.script.run.withSuccessHandler(res => {
+    if(res.error) return; 
+    enterLobby();
+  }).joinRoom(roomId, name);
+}
+
+function enterLobby() {
+  showView('view-lobby');
+  document.getElementById('lobby-room-id').innerText = currentState.roomId;
+  
+  const qrContainer = document.getElementById('qrcode');
+  qrContainer.innerHTML = '';
+  
+  if (currentState.isHost) {
+    document.getElementById('host-controls').classList.remove('d-none');
+    document.getElementById('guest-msg').classList.add('d-none');
+    
+    qrContainer.style.display = 'block';
+    if(APP_URL) {
+        const joinUrl = APP_URL + "?room=" + currentState.roomId;
+        new QRCode(qrContainer, {
+            text: joinUrl,
+            width: 128,
+            height: 128,
+            colorDark : "#292f36",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+    }
+  } else {
+    document.getElementById('host-controls').classList.add('d-none');
+    document.getElementById('guest-msg').classList.remove('d-none');
+    qrContainer.style.display = 'none';
+  }
+  
+  pollRoomStatus();
+  currentState.syncInterval = setInterval(pollRoomStatus, 5000);
+}
+
+function pollRoomStatus() {
+  google.script.run.withSuccessHandler(res => {
+    if(res.error) {
+      if (res.error === 'ROOM_NOT_FOUND' && currentState.roomId) {
+         stopAllIntervals();
+         Swal.fire({icon: 'info', title: '終了', text: 'ルームが解散されました', confirmButtonColor: '#FF6B6B'}).then(() => goHome());
+      }
+      return;
+    }
+    const list = document.getElementById('lobby-member-list');
+    list.innerHTML = '';
+    document.getElementById('lobby-count').innerText = res.participants.length;
+    res.participants.forEach(p => {
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+      li.innerHTML = `<span>${p.name}</span> <span class="badge bg-light text-dark rounded-pill border">${p.score}pt</span>`;
+      list.appendChild(li);
+    });
+    if (!currentState.isHost && res.room.status === 'ACTIVE') startGameLocal();
+  }).getRoomInfo(currentState.roomId, currentState.playerName);
+}
+
+function requestStartGame() { google.script.run.withSuccessHandler(() => startGameLocal()).startGame(currentState.roomId); }
+
+// --- Single Mode (With Time Setting) ---
+function startSingleMode() {
+  showLoading();
+  google.script.run.withSuccessHandler(groups => {
+    showView('view-home'); // 先にホームに戻す
+    
+    const groupOptions = groups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
+    
+    Swal.fire({
+      title: 'ひとりで遊ぶ',
+      html: `
+        <div class="mb-3 text-start">
+          <label class="form-label fw-bold">コース</label>
+          <select id="swal-course" class="form-select">${groupOptions}</select>
+        </div>
+        <div class="mb-3 text-start">
+          <label class="form-label fw-bold">時間: <span id="swal-time-val" class="text-primary fs-5">3</span> 分</label>
+          <input type="range" class="form-range" id="swal-time" min="1" max="10" step="1" value="3" oninput="document.getElementById('swal-time-val').innerText = this.value">
+        </div>
+        <div class="form-check form-switch text-start p-2 bg-light rounded">
+          <input class="form-check-input ms-0 me-2" type="checkbox" id="swal-shuffle" style="float:none;">
+          <label class="form-check-label" for="swal-shuffle">ランダムに出題</label>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'スタート！',
+      cancelButtonText: 'やめる',
+      confirmButtonColor: '#FF6B6B',
+      preConfirm: () => {
+        return {
+          group: document.getElementById('swal-course').value,
+          time: document.getElementById('swal-time').value,
+          shuffle: document.getElementById('swal-shuffle').checked
+        }
+      }
+    }).then((result) => {
+      if (result.isConfirmed && result.value) {
+        const selectedGroup = result.value.group;
+        const timeLimit = result.value.time;
+        const isShuffle = result.value.shuffle;
+        const name = currentState.selectedAvatar + " 自分";
+        
+        showLoading();
+        google.script.run.withSuccessHandler(problems => {
+            if(!problems || problems.length === 0) {
+                showView('view-home');
+                showToast('問題がありません', 'error');
+                return;
+            }
+            if(isShuffle) {
+                problems = shuffleArray(problems);
+            }
+            currentState.isHost = true;
+            currentState.roomId = "SINGLE";
+            currentState.playerName = name;
+            currentState.problemSet = problems;
+            currentState.timeLimitSec = timeLimit * 60; // 時間設定を反映
+            currentState.gameMode = 'SINGLE';
+            
+            hideLoading();
+            startGameLocal();
+            
+        }).getProblemsByGroup(selectedGroup);
+      }
+    });
+  }).getProblemGroups();
+}
+
+// --- Game Logic ---
+function startGameLocal() {
+  stopAllIntervals();
+  showView('view-game');
+  audio.playBGM();
+  fireConfetti(); 
+  currentState.score = 0; currentState.combo = 0; currentState.maxCombo = 0; currentState.currentQIndex = 0;
+  updateScoreDisplay();
+  nextQuestion();
+  let remain = currentState.timeLimitSec;
+  updateTimerDisplay(remain);
+  currentState.timerInterval = setInterval(() => {
+    remain--; updateTimerDisplay(remain);
+    if (remain <= 0) finishGame();
+  }, 1000);
+  if (currentState.gameMode === 'MULTI') currentState.syncInterval = setInterval(syncScore, 5000);
+}
+
+function updateTimerDisplay(sec) {
+  const m = Math.floor(sec / 60).toString().padStart(2, '0');
+  const s = (sec % 60).toString().padStart(2, '0');
+  document.getElementById('game-timer').innerText = `${m}:${s}`;
+}
+
+function nextQuestion() {
+  if (currentState.problemSet.length === 0) return;
+  if (currentState.currentQIndex >= currentState.problemSet.length) currentState.currentQIndex = 0;
+  const q = currentState.problemSet[currentState.currentQIndex];
+  const qText = document.getElementById('q-text');
+  qText.style.opacity = 0;
+  setTimeout(() => {
+    qText.innerText = q.q;
+    qText.style.opacity = 1;
+    qText.classList.add('anim-bounce-in');
+    setTimeout(()=>qText.classList.remove('anim-bounce-in'), 500);
+  }, 100);
+  document.getElementById('ans-display').innerText = ''; 
+  clearCanvas();
+}
+
+function inputChar(char) {
+  const disp = document.getElementById('ans-display');
+  if (disp.innerText.length < 15) disp.innerText += char;
+}
+function deleteNum() {
+  const disp = document.getElementById('ans-display');
+  const current = disp.innerText;
+  if (current.length > 0) disp.innerText = current.slice(0, -1);
+}
+function clearNum() { document.getElementById('ans-display').innerText = ''; }
+
+function submitAnswer() {
+  const userAns = document.getElementById('ans-display').innerText;
+  if (!userAns) return;
+  const q = currentState.problemSet[currentState.currentQIndex];
+  const card = document.getElementById('question-card');
+  
+  const strUser = String(userAns).trim();
+  const strAns = String(q.a).trim();
+
+  if (strUser === strAns) {
+    audio.playSE('correct');
+    currentState.score += 100 + (currentState.combo * 10);
+    currentState.combo++;
+    if(currentState.combo > currentState.maxCombo) currentState.maxCombo = currentState.combo;
+    card.classList.add('anim-pop');
+    setTimeout(()=>card.classList.remove('anim-pop'), 400);
+    currentState.currentQIndex++;
+    nextQuestion();
+  } else {
+    audio.playSE('wrong');
+    currentState.combo = 0;
+    card.classList.add('anim-shake');
+    if(navigator.vibrate) navigator.vibrate(200);
+    setTimeout(()=>card.classList.remove('anim-shake'), 400);
+    clearNum();
+  }
+  updateScoreDisplay();
+}
+
+function updateScoreDisplay() {
+  document.getElementById('my-score').innerText = currentState.score;
+  const comboBadge = document.getElementById('combo-badge');
+  const comboVal = document.getElementById('combo-val');
+  if(currentState.combo > 1) {
+    comboVal.innerText = currentState.combo;
+    comboBadge.classList.remove('d-none');
+    comboBadge.classList.remove('anim-bounce-in');
+    void comboBadge.offsetWidth; 
+    comboBadge.classList.add('anim-bounce-in');
+  } else { comboBadge.classList.add('d-none'); }
+}
+
+function syncScore() {
+  google.script.run.withSuccessHandler(res => {}).updateScore(currentState.roomId, currentState.playerName, currentState.score, currentState.maxCombo);
+}
+
+function finishGame() {
+  stopAllIntervals();
+  audio.stopBGM();
+  if (currentState.gameMode === 'MULTI') {
+    showLoading();
+    google.script.run.withSuccessHandler(res => {
+        google.script.run.withSuccessHandler(showResultScreen).getRoomInfo(currentState.roomId, currentState.playerName);
+    }).updateScore(currentState.roomId, currentState.playerName, currentState.score, currentState.maxCombo);
+  } else {
+    showResultScreen({ participants: [{name: currentState.playerName, score: currentState.score, combo: currentState.maxCombo}] });
+  }
+}
+
+function showResultScreen(data) {
+  hideLoading();
+  showView('view-result');
+  audio.playSE('correct');
+  const end = Date.now() + 3000;
+  (function frame() {
+    confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 } });
+    confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 } });
+    if (Date.now() < end) requestAnimationFrame(frame);
+  }());
+  document.getElementById('final-score').innerText = currentState.score;
+  document.getElementById('final-combo').innerText = currentState.maxCombo;
+  const list = document.getElementById('result-list');
+  list.innerHTML = '';
+  let rank = 1;
+  data.participants.forEach((p, index) => {
+    if (index > 0 && p.score < data.participants[index-1].score) rank = index + 1;
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex justify-content-between align-items-center py-3';
+    if(p.name === currentState.playerName) li.classList.add('bg-warning', 'bg-opacity-10');
+    let icon = '';
+    if(rank === 1) icon = '🥇'; else if(rank === 2) icon = '🥈'; else if(rank === 3) icon = '🥉'; else icon = `<span class="badge bg-secondary rounded-pill">${rank}</span>`;
+    li.innerHTML = `<span class="fs-5">${icon} ${p.name}</span> <span class="fw-bold fs-4">${p.score}</span>`;
+    list.appendChild(li);
+  });
+}
+
+// Utils
+function stopAllIntervals() {
+  if (currentState.timerInterval) clearInterval(currentState.timerInterval);
+  if (currentState.syncInterval) clearInterval(currentState.syncInterval);
+}
+function showToast(msg, icon) { Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 }).fire({ icon: icon, title: msg }); }
+function fireConfetti() { confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#FF6B6B', '#4ECDC4', '#FFE66D'] }); }
+
+// --- Handwriting Logic ---
+function initCanvas() {
+  const canvas = document.getElementById('handwriting-canvas');
+  if(!canvas) return;
+  currentState.canvas = canvas;
+  currentState.ctx = canvas.getContext('2d');
+  canvas.addEventListener('mousedown', startDrawing);
+  canvas.addEventListener('mousemove', draw);
+  canvas.addEventListener('mouseup', stopDrawing);
+  canvas.addEventListener('mouseout', stopDrawing);
+  canvas.addEventListener('touchstart', startDrawing, {passive: false});
+  canvas.addEventListener('touchmove', draw, {passive: false});
+  canvas.addEventListener('touchend', stopDrawing);
+  setTimeout(resizeCanvas, 150);
+}
+
+function resizeCanvas() {
+  if (!currentState.canvas) return;
+  const container = document.getElementById('drawing-container');
+  if (!container || container.clientWidth === 0) return;
+  const rect = container.getBoundingClientRect();
+  if (currentState.canvas.width !== rect.width || currentState.canvas.height !== rect.height) {
+      currentState.canvas.width = rect.width;
+      currentState.canvas.height = rect.height;
+      currentState.ctx.strokeStyle = '#292f36';
+      currentState.ctx.lineWidth = 3;
+      currentState.ctx.lineCap = 'round';
+      currentState.ctx.lineJoin = 'round';
+  }
+}
+
+function getPos(e) {
+  const rect = currentState.canvas.getBoundingClientRect();
+  let x, y;
+  if (e.touches && e.touches.length > 0) {
+    x = e.touches[0].clientX - rect.left;
+    y = e.touches[0].clientY - rect.top;
+  } else {
+    x = e.clientX - rect.left;
+    y = e.clientY - rect.top;
+  }
+  return {x, y};
+}
+
+function startDrawing(e) {
+  if(e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+  e.preventDefault();
+  currentState.isDrawing = true;
+  const pos = getPos(e);
+  currentState.lastX = pos.x;
+  currentState.lastY = pos.y;
+}
+
+function draw(e) {
+  if (!currentState.isDrawing) return;
+  e.preventDefault();
+  const pos = getPos(e);
+  const ctx = currentState.ctx;
+  ctx.beginPath();
+  ctx.moveTo(currentState.lastX, currentState.lastY);
+  ctx.lineTo(pos.x, pos.y);
+  ctx.stroke();
+  currentState.lastX = pos.x;
+  currentState.lastY = pos.y;
+}
+
+function stopDrawing() { currentState.isDrawing = false; }
+function clearCanvas() { if(currentState.canvas) currentState.ctx.clearRect(0, 0, currentState.canvas.width, currentState.canvas.height); }
+
+function toggleCanvas() {
+    audio.playSE('click');
+    const panel = document.getElementById('canvas-panel');
+    const leftPanel = document.getElementById('left-panel');
+    panel.classList.toggle('show');
+    if (panel.classList.contains('show')) {
+        leftPanel.classList.remove('expanded');
+        setTimeout(() => { if (!currentState.canvas) initCanvas(); else resizeCanvas(); }, 300);
+    } else {
+        leftPanel.classList.add('expanded');
+    }
+}
+
+// --- Keyboard Handling ---
+function handleGlobalKeydown(e) {
+  const gameView = document.getElementById('view-game');
+  if (gameView && gameView.classList.contains('d-none')) return;
+
+  const fullWidthMap = { '０':'0', '１':'1', '２':'2', '３':'3', '４':'4', '５':'5', '６':'6', '７':'7', '８':'8', '９':'9', '．':'.', '。':'.', '／':'/', 'ー':'-', '（':'(', '）':')' };
+  let key = e.key;
+  if (fullWidthMap[key]) key = fullWidthMap[key];
+
+  if ((key >= '0' && key <= '9') || ['.', '/', '-', '(', ')'].includes(key)) {
+    audio.playSE('click');
+    inputChar(key);
+    e.preventDefault();
+    return;
+  }
+  if (key === 'Enter') {
+    if (!e.isComposing) { submitAnswer(); e.preventDefault(); }
+    return;
+  }
+  if (key === 'Backspace') { deleteNum(); e.preventDefault(); return; }
+  if (key === 'Escape' || key === 'Delete' || key.toLowerCase() === 'c') { clearNum(); e.preventDefault(); return; }
+}
+
+// --- Setup Actions ---
+function doInitialize() {
+  showLoading();
+  google.script.run.withSuccessHandler(res => {
+    hideLoading();
+    fireConfetti(); 
+    Swal.fire({
+      icon: 'success',
+      title: '準備完了！',
+      text: 'さあ、Qalcを始めましょう',
+      confirmButtonColor: '#FF6B6B',
+      buttonsStyling: false,
+      customClass: { confirmButton: 'btn btn-pop btn-pop-primary' }
+    }).then(() => {
+      currentState.isInitialized = true;
+      currentState.allowStudentRoom = true;
+      showView('view-home');
+    });
+  }).initialSetup();
+}
+</script>
