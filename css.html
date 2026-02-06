@@ -1,64 +1,77 @@
 <style>
+  /* ==========================================================================
+     1. 全体の設定・色・フォント
+     ========================================================================== */
   :root {
-    /* Pop Color Palette */
-    --color-bg: #fffbf0;
-    --color-primary: #FF6B6B;
-    --color-secondary: #4ECDC4;
-    --color-accent: #FFE66D;
-    --color-dark: #292f36;
-    --font-main: "Zen Maru Gothic", sans-serif;
+    /* --- カラーパレット (ここを変えるとアプリ全体の色が変わります) --- */
+    --color-bg: #fffbf0;       /* 背景色（クリーム色） */
+    --color-primary: #FF6B6B;  /* メインカラー（赤・ピンク系） */
+    --color-secondary: #4ECDC4;/* サブカラー（水色系） */
+    --color-accent: #FFE66D;   /* アクセントカラー（黄色系） */
+    --color-dark: #292f36;     /* 文字色・濃い色（ダークグレー） */
+    
+    /* --- フォント設定 --- */
+    --font-main: "Zen Maru Gothic", sans-serif; /* 丸ゴシック体 */
   }
   
+  /* 画面全体の設定 */
   html, body {
-    height: 100%;
-    margin: 0;
+    height: 100%;      /* 高さを画面いっぱいにする */
+    margin: 0;         /* 余白をなくす */
     padding: 0;
-    overflow: hidden;
+    overflow: hidden;  /* 画面からはみ出した部分は隠す（スクロールさせない） */
   }
 
   body {
     font-family: var(--font-main);
     background-color: var(--color-bg);
+    /* 背景のドット柄の設定 */
     background-image: radial-gradient(#ddd 1px, transparent 1px);
     background-size: 20px 20px;
     color: var(--color-dark);
-    touch-action: none;
+    touch-action: none; /* スマホでの誤操作（ズームなど）を防ぐ */
   }
 
-  /* --- Layout & Responsiveness --- */
+  /* ==========================================================================
+     2. レイアウト & レスポンシブ設定 (画面サイズによる変化)
+     ========================================================================== */
+  
+  /* アプリ全体の枠組み */
   #app {
-    /* height: 100%; を削除し、Flexboxで制御 */
-    flex: 1;
+    flex: 1; /* 画面の残りの高さを埋める */
     display: flex;
-    flex-direction: column;
+    flex-direction: column; /* 上から下に並べる */
     padding: 0 !important;
     overflow: hidden;
     position: relative;
     width: 100%;
   }
 
+  /* ゲーム画面のレイアウト枠 */
   .game-wrapper {
     display: flex;
     flex-direction: column;
     height: 100%;
     width: 100%;
     box-sizing: border-box;
-    transition: all 0.3s ease;
+    transition: all 0.3s ease; /* レイアウト変更時にふわっと動かす */
   }
 
-  /* タブレット・PC (横幅768px以上) */
+  /* --- PC・タブレット向け設定 (横幅 768px 以上) --- */
   @media (min-width: 768px) {
     .game-wrapper {
-      flex-direction: row;
+      flex-direction: row; /* 横並びにする */
       padding: 10px;
-      gap: 15px;
-      justify-content: center;
+      gap: 15px; /* 要素の間隔 */
+      justify-content: center; /* 中央寄せ */
     }
+    
+    /* 左パネル（問題・テンキー） */
     .game-left-panel {
-      flex: 0 0 400px;
+      flex: 0 0 400px; /* 幅を400pxに固定 */
       max-width: 50%;
       height: 100%;
-      overflow-y: auto;
+      overflow-y: auto; /* 縦スクロール許可 */
       padding-right: 5px;
       scrollbar-width: thin; 
       transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
@@ -66,31 +79,35 @@
       flex-direction: column;
     }
     
+    /* メモ帳を開いていない時は左パネルを広げる */
     .game-left-panel.expanded {
       flex: 0 0 800px;
       max-width: 90%;
     }
     
+    /* 右パネル（手書きメモエリア） */
     .game-right-panel {
-      flex: 1;
+      flex: 1; /* 残りの幅を使う */
       height: 100%;
       min-width: 0;
-      display: none;
+      display: none; /* デフォルトでは非表示 */
       opacity: 0;
       transition: opacity 0.3s ease;
     }
+    /* メモボタンを押した時に表示するクラス */
     .game-right-panel.show {
       display: block;
       opacity: 1;
     }
   }
 
-  /* スマホ (縦画面) */
+  /* --- スマホ向け設定 (横幅 767px 以下) --- */
   @media (max-width: 767px) {
     .game-wrapper {
       padding: 10px;
-      overflow-y: auto;
+      overflow-y: auto; /* 全体をスクロール可能に */
     }
+    
     .game-left-panel {
       width: 100%;
       flex-shrink: 0;
@@ -98,21 +115,27 @@
       display: flex;
       flex-direction: column;
     }
+    
     .game-right-panel {
-      height: 400px;
+      height: 400px; /* スマホでは高さを固定 */
       width: 100%;
       display: none;
       margin-top: 10px;
     }
+    
     .game-right-panel.show {
       display: block;
     }
   }
 
-  /* --- UI Components --- */
+  /* ==========================================================================
+     3. UIコンポーネント (ヘッダー、フッター、カードなど)
+     ========================================================================== */
+  
+  /* ヘッダー（上のバー） */
   .header-pop {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.95); /* 半透明の白 */
+    backdrop-filter: blur(10px); /* すりガラス効果 */
     border-bottom: 3px solid var(--color-secondary);
     z-index: 100;
   }
@@ -122,7 +145,26 @@
     z-index: 100;
   }
 
-  /* --- Loading Animation --- */
+  /* ポップなカードデザイン（枠線太め・影付き） */
+  .card-pop {
+    border: 3px solid var(--color-dark);
+    border-radius: 20px; /* 角丸 */
+    box-shadow: 6px 6px 0 rgba(0,0,0,0.1); /* 右下に影 */
+    background: #fff;
+    transition: transform 0.2s;
+  }
+  
+  /* 入力欄のデザイン */
+  .input-display {
+    background-color: #fff;
+    border: 3px solid var(--color-dark);
+    border-radius: 15px;
+    box-shadow: inset 0 4px 8px rgba(0,0,0,0.05); /* 内側の影 */
+  }
+
+  /* ==========================================================================
+     4. ローディングアニメーション
+     ========================================================================== */
   .loading-container {
     background-color: var(--color-bg);
     position: fixed;
@@ -130,7 +172,7 @@
     left: 0;
     width: 100%;
     height: 100%;
-    z-index: 9999;
+    z-index: 9999; /* 最前面に表示 */
   }
 
   .loading-stage {
@@ -142,6 +184,7 @@
     align-items: center;
   }
 
+  /* アバターが跳ねるアニメーション */
   .loading-avatar {
     font-size: 4rem;
     animation: bounceChar 0.6s infinite alternate cubic-bezier(0.5, 0.05, 1, 0.5);
@@ -150,6 +193,7 @@
     top: -10px;
   }
 
+  /* 影のアニメーション */
   .loading-shadow {
     position: absolute;
     bottom: 20px;
@@ -160,6 +204,7 @@
     animation: shadowPulse 0.6s infinite alternate cubic-bezier(0.5, 0.05, 1, 0.5);
   }
 
+  /* 記号が回るアニメーション */
   .orbit {
     position: absolute;
     width: 100%;
@@ -180,11 +225,13 @@
     border-radius: 50%;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
   }
+  /* 4つの記号の位置と色 */
   .orbit-item:nth-child(1) { top: 0; left: 50%; transform: translate(-50%, -50%); color: var(--color-primary); }
   .orbit-item:nth-child(2) { bottom: 0; left: 50%; transform: translate(-50%, 50%); color: var(--color-accent); }
   .orbit-item:nth-child(3) { top: 50%; left: 0; transform: translate(-50%, -50%); color: var(--color-secondary); }
   .orbit-item:nth-child(4) { top: 50%; right: 0; transform: translate(50%, -50%); color: var(--color-dark); }
 
+  /* アニメーション定義 */
   @keyframes bounceChar { from { transform: translateY(0); } to { transform: translateY(-20px); } }
   @keyframes shadowPulse { from { transform: scale(1); opacity: 1; } to { transform: scale(0.6); opacity: 0.5; } }
   @keyframes rotateOrbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -197,10 +244,12 @@
   }
   @keyframes blinkText { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-  /* --- Avatar Selector --- */
+  /* ==========================================================================
+     5. アバター選択画面
+     ========================================================================== */
   .avatar-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(5, 1fr); /* 5列で表示 */
     gap: 10px;
     margin-bottom: 15px;
   }
@@ -211,12 +260,14 @@
     border-radius: 50%;
     cursor: pointer;
     transition: transform 0.1s;
-    aspect-ratio: 1 / 1;
+    aspect-ratio: 1 / 1; /* 正方形を保つ */
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .avatar-option:hover { transform: scale(1.1); background: #f8f9fa; }
+  
+  /* 選択されたアバター */
   .avatar-option.selected {
     background-color: var(--color-accent);
     border-color: var(--color-dark);
@@ -224,7 +275,11 @@
     box-shadow: 0 4px 0 rgba(0,0,0,0.1);
   }
 
-  /* --- Buttons & Keys --- */
+  /* ==========================================================================
+     6. ボタン & テンキー
+     ========================================================================== */
+  
+  /* 共通のポップなボタン */
   .btn-pop {
     border: none;
     border-radius: 20px;
@@ -234,30 +289,36 @@
     position: relative;
     top: 0;
     color: #fff;
-    box-shadow: 0 6px 0 rgba(0,0,0,0.2);
+    box-shadow: 0 6px 0 rgba(0,0,0,0.2); /* 立体的な影 */
   }
+  /* 押した時の動き */
   .btn-pop:active {
-    top: 6px;
-    box-shadow: 0 0 0 rgba(0,0,0,0.2);
+    top: 6px; /* 沈み込む */
+    box-shadow: 0 0 0 rgba(0,0,0,0.2); /* 影をなくす */
   }
 
+  /* ボタンの色バリエーション */
   .btn-pop-primary { background-color: var(--color-primary); color: #fff; }
   .btn-pop-info { background-color: var(--color-secondary); color: #fff; }
   .btn-pop-success { background-color: #96E6A1; color: #2c5e34; }
   .btn-pop-warning { background-color: var(--color-accent); color: #665c26; }
   .btn-pop-secondary { background-color: #95a5a6; color: #fff; }
 
+  /* テンキーエリアのレイアウト */
   #keypad-area {
     display: flex;
     flex-direction: column;
     gap: 6px;
     height: 100%;
   }
-  .row.symbol-row { flex: 0 0 45px; min-height: 40px; }
-  .row.num-row { flex: 1; min-height: 50px; }
+  .row.symbol-row { flex: 0 0 45px; min-height: 40px; } /* 記号キーの行 */
+  .row.num-row { flex: 1; min-height: 50px; } /* 数字キーの行 */
+  
+  /* 画面が広いときは数字キーを大きく */
   .game-left-panel.expanded .row.num-row { min-height: 80px; }
   .game-left-panel.expanded #q-text { font-size: 5rem; }
 
+  /* 数字キーのデザイン */
   .num-key {
     background-color: #fff;
     color: var(--color-primary);
@@ -271,6 +332,7 @@
   }
   .num-key:active { transform: translateY(4px); box-shadow: none; background-color: #ffe6e6; }
 
+  /* 記号キーのデザイン */
   .symbol-key {
     background-color: #e3f2fd;
     color: #1565c0;
@@ -289,21 +351,11 @@
   }
   .symbol-key:active { transform: translateY(2px); box-shadow: none; background-color: #bbdefb; }
 
-  .card-pop {
-    border: 3px solid var(--color-dark);
-    border-radius: 20px;
-    box-shadow: 6px 6px 0 rgba(0,0,0,0.1);
-    background: #fff;
-    transition: transform 0.2s;
-  }
+  /* ==========================================================================
+     7. 手書きメモエリア & アニメーション
+     ========================================================================== */
   
-  .input-display {
-    background-color: #fff;
-    border: 3px solid var(--color-dark);
-    border-radius: 15px;
-    box-shadow: inset 0 4px 8px rgba(0,0,0,0.05);
-  }
-
+  /* 手書きエリアの外枠 */
   .drawing-area {
     background-color: #fff;
     border: 3px solid var(--color-dark);
@@ -316,11 +368,13 @@
     width: 100%;
   }
   
+  /* 方眼紙のような背景 */
   .bg-grid {
     background-image: linear-gradient(#cfd8dc 1px, transparent 1px), linear-gradient(90deg, #cfd8dc 1px, transparent 1px);
     background-size: 20px 20px;
   }
 
+  /* メモエリア内のツールボタン（削除ボタンなど） */
   .canvas-tools {
     position: absolute;
     top: 10px;
@@ -345,6 +399,9 @@
   }
   .tool-btn:active { transform: scale(0.9); }
 
+  /* --- アニメーション効果 --- */
+  
+  /* 画面切り替え時の「ぽよん」と出るアニメーション */
   .anim-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
   @keyframes bounceIn {
     0% { transform: scale(0.3); opacity: 0; }
@@ -352,6 +409,7 @@
     100% { transform: scale(1); opacity: 1; }
   }
 
+  /* 正解した時のポップアニメーション */
   .anim-pop { animation: popSuccess 0.4s ease-out; }
   @keyframes popSuccess {
     0% { transform: scale(1); }
@@ -359,6 +417,7 @@
     100% { transform: scale(1); }
   }
 
+  /* 不正解の時の揺れるアニメーション */
   .anim-shake { animation: shakeError 0.4s ease-in-out; }
   @keyframes shakeError {
     0%, 100% { transform: translateX(0); }
@@ -366,6 +425,7 @@
     75% { transform: translateX(10px) rotate(5deg); }
   }
 
+  /* コンボ表示のテキストスタイル */
   .combo-text {
     font-family: 'Arial Black', sans-serif;
     color: var(--color-accent);
@@ -373,11 +433,40 @@
     transform: rotate(-5deg);
   }
 
+  /* --- 管理画面用 --- */
   .manager-list-item { cursor: pointer; transition: background 0.1s; }
   .manager-list-item:hover { background-color: #f8f9fa; }
   .table-input { border: none; background: transparent; width: 100%; }
   .table-input:focus { outline: 2px solid var(--color-secondary); background: #fff; }
 
+  /* ルビ（ふりがな）の位置調整 */
   ruby { ruby-position: over; }
   rt { font-size: 0.6em; color: #888; }
+
+  /* ==========================================================================
+     8. 数式の表示 (分数など)
+     ========================================================================== */
+  
+  /* 分数を縦に並べるスタイル */
+  .fraction {
+    display: inline-flex;       /* インライン要素の中でフレックスボックスを使う */
+    flex-direction: column;     /* 上下に並べる */
+    vertical-align: middle;     /* 周りの文字と高さを合わせる */
+    text-align: center;         /* 数字を中央揃え */
+    font-size: 0.75em;          /* 分数は少し小さめにしないと行が広がりすぎる */
+    margin: 0 0.2em;            /* 左右に少し隙間 */
+  }
+
+  /* 分子（上の数字） */
+  .numerator {
+    border-bottom: 3px solid currentColor; /* 下線（括線）を引く */
+    padding: 0 0.2em;           /* 横の余白 */
+    line-height: 1.1;           /* 行間を詰める */
+  }
+
+  /* 分母（下の数字） */
+  .denominator {
+    padding: 0 0.2em;
+    line-height: 1.1;
+  }
 </style>
