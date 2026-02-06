@@ -3,58 +3,61 @@
   <head>
     <base target="_top">
     <meta charset="utf-8">
+    <!-- スマホで見たときに文字が小さくならないようにする設定 -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     
-    <!-- PWA Settings -->
+    <!-- PWA設定（ホーム画面に追加したときにアプリっぽく見せる設定） -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#fffbf0">
-    <title>Qalc - ポップな計算スタジアム</title>
     
-    <!-- Icon -->
+    <title>Qalc！</title>
+    
+    <!-- アプリアイコンの設定 -->
     <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/96/calculator--v1.png">
     <link rel="icon" href="https://img.icons8.com/fluency/96/calculator--v1.png">
 
-    <!-- Bootstrap 5 -->
+    <!-- デザイン用ライブラリ (Bootstrap 5) -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
+    <!-- アイコン用ライブラリ (Bootstrap Icons) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
-    <!-- Google Fonts -->
+    <!-- フォント (Zen Maru Gothic) -->
     <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
-    <!-- QRCode.js -->
+    <!-- QRコード生成ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     
+    <!-- CSSファイルの読み込み -->
     <?!= include('css'); ?>
     
-    <!-- Server Data Injection -->
+    <!-- サーバー（Google Apps Script）からデータを受け取る場所 -->
     <script>
-      const APP_URL = "<?= appUrl ?>";
-      const INITIAL_ROOM_ID = "<?= initialRoomId ?>";
+      const APP_URL = "<?= appUrl ?>"; // アプリのURL
+      const INITIAL_ROOM_ID = "<?= initialRoomId ?>"; // 招待URLでアクセスした場合の部屋ID
     </script>
   </head>
+  
   <body class="d-flex flex-column h-100">
-    <!-- Audio Assets -->
-    <audio id="bgm-game" loop><source src="https://assets.mixkit.co/music/preview/mixkit-games-worldbeat-466.mp3" type="audio/mpeg"></audio>
-    <audio id="se-correct"><source src="https://assets.mixkit.co/sfx/preview/mixkit-arcade-game-jump-coin-216.mp3" type="audio/mpeg"></audio>
-    <audio id="se-wrong"><source src="https://assets.mixkit.co/sfx/preview/mixkit-electronic-retro-block-hit-2185.mp3" type="audio/mpeg"></audio>
-    <audio id="se-click"><source src="https://assets.mixkit.co/sfx/preview/mixkit-modern-technology-select-3124.mp3" type="audio/mpeg"></audio>
-
+    
+    <!-- ===============================================================
+       ヘッダー（画面上部のタイトル部分）
+    =============================================================== -->
     <header class="flex-shrink-0 sticky-top header-pop py-2 px-3 d-flex justify-content-between align-items-center shadow-sm">
+      <!-- タイトルロゴ（クリックするとホームに戻る） -->
       <div class="d-flex align-items-center" onclick="goHome()" style="cursor:pointer;">
         <div class="bg-white rounded-circle p-1 border border-2 border-dark me-2">
           <i class="bi bi-joystick text-primary fs-4"></i>
         </div>
         <h1 class="h4 mb-0 fw-bold" style="color: var(--color-dark);">Qalc<span class="text-primary">.</span></h1>
       </div>
-      <div>
-        <button class="btn btn-sm btn-light border border-2 rounded-circle me-2" onclick="toggleMute()" id="btn-mute">
-          <i class="bi bi-volume-up-fill text-primary"></i>
-        </button>
-      </div>
+      <!-- 音声機能削除に伴いミュートボタンは削除しました -->
     </header>
 
     <main class="flex-grow-1" id="app">
+      
+      <!-- ===========================================================
+         ローディング画面（読み込み中に表示）
+      =========================================================== -->
       <div id="loading" class="loading-container d-flex flex-column align-items-center justify-content-center">
         <div class="loading-stage mb-4">
           <div class="orbit">
@@ -67,11 +70,15 @@
           <div class="loading-shadow"></div>
         </div>
         <h3 class="loading-text text-primary fw-bold">NOW LOADING...</h3>
-        <p class="text-muted small fw-bold">計算スタジアムへようこそ！</p>
+        <p class="text-muted small fw-bold">Qalcへようこそ！</p>
       </div>
 
+      <!-- メインコンテンツコンテナ -->
       <div class="container h-100 d-flex flex-column justify-content-center">
-        <!-- 1. 初期化 -->
+        
+        <!-- =======================================================
+           1. 初期化画面 (初回起動時やエラー時)
+        ======================================================= -->
         <div id="view-init" class="d-none text-center anim-bounce-in mx-auto" style="max-width: 600px;">
           <div class="card-pop p-5 mb-4">
             <h1 class="display-1 mb-0">🚀</h1>
@@ -82,25 +89,30 @@
           </div>
         </div>
 
-        <!-- 2. ホーム -->
+        <!-- =======================================================
+           2. ホーム画面 (メニュー選択)
+        ======================================================= -->
         <div id="view-home" class="d-none anim-bounce-in mx-auto" style="max-width: 600px; width: 100%;">
           <div class="text-center mb-4">
-            <h2 class="fw-bold display-6"><ruby>計算<rt>けいさん</rt></ruby>スタジアム</h2>
+            <h2 class="fw-bold display-6"><ruby>Qalc<rt>カルク</rt></ruby></h2>
             <p class="text-muted fw-bold">さあ、バトルしよう！</p>
           </div>
           <div class="row g-3">
+            <!-- 参加ボタン -->
             <div class="col-6">
               <div class="card-pop h-100 p-3 text-center" onclick="showJoinRoom()" style="cursor:pointer; border-color: var(--color-secondary);">
                 <i class="bi bi-rocket-takeoff-fill display-4 text-info mb-2 d-block"></i>
                 <h3 class="h5 fw-bold mb-0"><ruby>参加<rt>さんか</rt></ruby>する</h3>
               </div>
             </div>
+            <!-- ひとりプレイボタン -->
             <div class="col-6">
               <div class="card-pop h-100 p-3 text-center" onclick="startSingleMode()" style="cursor:pointer; border-color: var(--color-accent);">
                 <i class="bi bi-controller display-4 text-warning mb-2 d-block"></i>
                 <h3 class="h5 fw-bold mb-0">ひとりで</h3>
               </div>
             </div>
+            <!-- ルーム作成ボタン -->
             <div class="col-12">
               <div class="card-pop p-4 text-center bg-white mt-2" onclick="showCreateRoom()" style="cursor:pointer; border-color: var(--color-primary);">
                 <i class="bi bi-stars fs-1 text-primary mb-2"></i>
@@ -108,6 +120,7 @@
                 <p class="small text-muted mb-0">ルームを<ruby>作<rt>つく</rt></ruby>って<ruby>招待<rt>しょうたい</rt></ruby></p>
               </div>
             </div>
+            <!-- 管理画面へのリンク -->
             <div class="col-12 text-center mt-2">
                <button class="btn btn-sm btn-link text-muted" onclick="showProblemManager()">
                  <i class="bi bi-pencil-square"></i> <ruby>問題<rt>もんだい</rt></ruby>の<ruby>管理<rt>かんり</rt></ruby> (コース<ruby>編集<rt>へんしゅう</rt></ruby>)
@@ -116,24 +129,30 @@
           </div>
         </div>
 
-        <!-- 3. ルーム作成 -->
+        <!-- =======================================================
+           3. ルーム作成画面 (先生/ホスト用)
+        ======================================================= -->
         <div id="view-create" class="d-none anim-bounce-in mx-auto" style="max-width: 600px; width: 100%;">
           <h3 class="text-center fw-bold mb-3"><i class="bi bi-magic"></i> ルーム<ruby>作成<rt>さくせい</rt></ruby></h3>
           <div class="card-pop p-4">
             <label class="form-label fw-bold small text-muted">アバターをえらんでね</label>
             <div class="avatar-grid" id="create-avatar-list"></div>
+            
             <div class="mb-3">
               <label class="form-label fw-bold">ホスト<ruby>名<rt>めい</rt></ruby></label>
               <input type="text" id="host-name" class="form-control form-control-lg border-2 rounded-3" placeholder="あなたのなまえ">
             </div>
+            
             <div class="mb-3">
               <label class="form-label fw-bold"><ruby>時間<rt>じかん</rt></ruby>: <span id="time-val" class="text-primary fs-4">3</span> <ruby>分<rt>ふん</rt></ruby></label>
               <input type="range" class="form-range" id="time-limit" min="1" max="10" step="1" value="3" oninput="document.getElementById('time-val').innerText = this.value">
             </div>
+            
             <div class="mb-3">
               <label class="form-label fw-bold"><ruby>問題<rt>もんだい</rt></ruby>コース</label>
               <select class="form-select form-select-lg border-2 rounded-3 mb-2" id="problem-select"></select>
             </div>
+            
             <div class="mb-4">
               <label class="form-label fw-bold"><ruby>出題順<rt>しゅつだいじゅん</rt></ruby></label>
               <div class="form-check form-switch p-2 bg-light rounded-3">
@@ -141,6 +160,7 @@
                 <label class="form-check-label fw-bold" for="shuffle-toggle"><ruby>問題<rt>もんだい</rt></ruby>をランダムにする</label>
               </div>
             </div>
+            
             <button class="btn btn-pop btn-pop-primary w-100 fs-5" onclick="submitCreateRoom()">
               ルームをつくる！
             </button>
@@ -148,20 +168,25 @@
           </div>
         </div>
 
-        <!-- 4. 参加 -->
+        <!-- =======================================================
+           4. 参加画面 (児童/生徒用)
+        ======================================================= -->
         <div id="view-join" class="d-none anim-bounce-in mx-auto" style="max-width: 600px; width: 100%;">
           <h3 class="text-center fw-bold mb-3">ルームに<ruby>入<rt>はい</rt></ruby>る</h3>
           <div class="card-pop p-4">
             <label class="form-label fw-bold small text-muted">アバターをえらんでね</label>
             <div class="avatar-grid" id="join-avatar-list"></div>
+            
             <div class="mb-3">
               <label class="form-label fw-bold"><ruby>合<rt>あ</rt></ruby>い<ruby>言葉<rt>ことば</rt></ruby></label>
               <input type="tel" id="join-room-id" class="form-control form-control-lg text-center fw-bold letter-spacing-2 border-2 rounded-3 fs-3" maxlength="4" placeholder="••••">
             </div>
+            
             <div class="mb-4">
               <label class="form-label fw-bold"><ruby>名前<rt>なまえ</rt></ruby></label>
               <input type="text" id="join-player-name" class="form-control form-control-lg border-2 rounded-3" placeholder="ニックネーム">
             </div>
+            
             <button class="btn btn-pop btn-pop-info w-100 fs-5" onclick="submitJoinRoom()">
               <ruby>入室<rt>にゅうしつ</rt></ruby>する！
             </button>
@@ -169,30 +194,41 @@
           </div>
         </div>
 
-        <!-- 5. 待機ロビー -->
+        <!-- =======================================================
+           5. 待機ロビー (参加者が集まる画面)
+        ======================================================= -->
         <div id="view-lobby" class="d-none anim-bounce-in text-center mx-auto" style="max-width: 600px; width: 100%;">
           <div class="bg-white p-3 rounded-4 border border-3 mb-4 shadow-sm" style="border-color: var(--color-accent);">
+            <!-- QRコード表示エリア -->
             <div class="d-flex justify-content-center align-items-center mb-3">
                <div id="qrcode" class="p-2 border rounded" style="display:none;"></div>
             </div>
             <small class="text-muted fw-bold">ROOM ID</small>
             <div id="lobby-room-id" class="display-3 fw-bold letter-spacing-2 text-dark">0000</div>
           </div>
+          
           <div class="card-pop p-0 mb-4 overflow-hidden">
             <div class="bg-light p-2 border-bottom fw-bold text-muted">
               <ruby>参加者<rt>さんかしゃ</rt></ruby> (<span id="lobby-count">0</span><ruby>人<rt>にん</rt></ruby>)
             </div>
+            <!-- 参加者リスト -->
             <ul id="lobby-member-list" class="list-group list-group-flush text-start scroll-box" style="max-height: 200px; overflow-y:auto;"></ul>
           </div>
+          
+          <!-- ホスト用スタートボタン -->
           <div id="host-controls" class="d-none">
             <button class="btn btn-pop btn-pop-primary w-100 fs-3 py-3 animate-pulse" onclick="requestStartGame()">START!</button>
           </div>
+          <!-- ゲスト用待機メッセージ -->
           <p id="guest-msg" class="text-muted mt-3 d-none fw-bold animate-pulse">ホストの<ruby>開始<rt>かいし</rt></ruby>を<ruby>待<rt>ま</rt></ruby>っています...</p>
         </div>
 
-        <!-- 7. 結果画面 -->
+        <!-- =======================================================
+           7. 結果画面 (ゲーム終了後)
+        ======================================================= -->
         <div id="view-result" class="d-none text-center anim-bounce-in mx-auto" style="max-width: 600px; width: 100%;">
           <h2 class="fw-bold mb-4 text-primary">🎉 FINISH! 🎉</h2>
+          
           <div class="card-pop p-4 mb-4 border-primary">
             <h4 class="text-muted fw-bold">SCORE</h4>
             <div class="display-1 fw-bold text-dark" id="final-score">0</div>
@@ -200,14 +236,18 @@
               Max Combo: <span id="final-combo">0</span>
             </div>
           </div>
+          
           <div class="card-pop p-0 overflow-hidden">
             <div class="bg-primary text-white p-2 fw-bold">🏆 ランキング</div>
             <ul class="list-group list-group-flush text-start" id="result-list"></ul>
           </div>
+          
           <button class="btn btn-pop btn-pop-info w-100 mt-4 fs-5" onclick="goHome()">ホームへ<ruby>戻<rt>もど</rt></ruby>る</button>
         </div>
 
-        <!-- 8. 問題管理リスト (スクロール改善版) -->
+        <!-- =======================================================
+           8. 問題管理リスト画面
+        ======================================================= -->
         <div id="view-manager-list" class="d-none anim-bounce-in mx-auto h-100 d-flex flex-column" style="max-width: 600px; width: 100%;">
           <div class="flex-shrink-0">
             <h3 class="text-center fw-bold mb-3 mt-2"><i class="bi bi-pencil-square"></i> <ruby>問題管理<rt>もんだいかんり</rt></ruby></h3>
@@ -230,7 +270,9 @@
           </div>
         </div>
 
-        <!-- 9. 問題編集画面 (スクロール改善版) -->
+        <!-- =======================================================
+           9. 問題編集画面
+        ======================================================= -->
         <div id="view-manager-edit" class="d-none anim-bounce-in mx-auto h-100 d-flex flex-column" style="max-width: 800px; width: 100%;">
           <div class="d-flex justify-content-between align-items-center mb-2 mt-2 flex-shrink-0">
              <h3 class="h5 fw-bold mb-0">コース<ruby>編集<rt>へんしゅう</rt></ruby></h3>
@@ -248,7 +290,7 @@
                 <div style="width: 100px;" class="px-2"><ruby>答<rt>こた</rt></ruby>え</div>
                 <div style="width: 40px;"></div>
              </div>
-             <!-- スクロールエリア -->
+             <!-- 問題リスト (スクロールエリア) -->
              <div id="edit-problem-list" class="list-group list-group-flush flex-grow-1 overflow-auto"></div>
              
              <button class="btn btn-light w-100 text-primary fw-bold py-2 border-top flex-shrink-0" onclick="addEmptyProblemRow()">
@@ -262,7 +304,9 @@
           </div>
         </div>
 
-        <!-- 10. AIインポート画面 (スクロール改善版) -->
+        <!-- =======================================================
+           10. AIインポート画面
+        ======================================================= -->
         <div id="view-import" class="d-none anim-bounce-in mx-auto h-100 d-flex flex-column" style="max-width: 600px; width: 100%;">
           <div class="flex-shrink-0">
             <h3 class="text-center fw-bold mb-3 mt-2"><i class="bi bi-robot"></i> AIインポート</h3>
@@ -291,11 +335,15 @@
 
       </div>
 
-      <!-- 6. ゲーム画面 -->
+      <!-- =======================================================
+         6. ゲームプレイ画面 (全画面表示)
+      ======================================================= -->
       <div id="view-game" class="d-none h-100 w-100">
-        <!-- 省略なし -->
         <div class="game-wrapper">
+          <!-- 左側: 問題とテンキー -->
           <div class="game-left-panel expanded" id="left-panel">
+            
+            <!-- スコアとタイマー -->
             <div class="d-flex justify-content-between align-items-center mb-2 px-1">
               <div class="badge bg-dark rounded-pill px-3 py-2 fs-6">
                 <i class="bi bi-clock-fill text-warning"></i> <span id="game-timer">00:00</span>
@@ -304,20 +352,28 @@
                 <i class="bi bi-star-fill text-warning"></i> <span id="my-score">0</span>
               </div>
             </div>
+            
+            <!-- 問題カード -->
             <div id="question-card" class="card-pop mb-2 text-center py-3 position-relative flex-grow-0" style="min-height: 120px; display:flex; flex-direction:column; justify-content:center;">
               <div id="combo-badge" class="position-absolute top-0 start-50 translate-middle badge rounded-pill bg-warning text-dark border border-2 border-dark d-none combo-text fs-6">
                 <span id="combo-val">0</span> COMBO!
               </div>
               <div class="display-4 fw-bold text-dark mb-0" id="q-text">?</div>
             </div>
+            
+            <!-- 自分の答え表示エリア -->
             <div class="d-flex gap-2 mb-2 flex-grow-0">
                <div class="input-display flex-grow-1 p-2 text-center fs-2 fw-bold text-primary d-flex align-items-center justify-content-center text-break" id="ans-display" style="min-height: 50px; letter-spacing: 2px;"></div>
+               <!-- 手書きメモ切り替えボタン -->
                <button class="btn btn-pop btn-pop-warning d-flex flex-column align-items-center justify-content-center" style="width: 70px;" onclick="toggleCanvas()">
                   <i class="bi bi-pencil-fill fs-5"></i>
                   <span style="font-size: 0.5em; font-weight: bold;">メモ</span>
                </button>
             </div>
+            
+            <!-- テンキーエリア -->
             <div id="keypad-area" class="flex-grow-1 pb-1">
+              <!-- 記号行 -->
               <div class="row g-1 px-1 mb-1 symbol-row">
                 <div class="col"><button class="btn w-100 symbol-key" onclick="inputChar('.')">.</button></div>
                 <div class="col"><button class="btn w-100 symbol-key" onclick="inputChar('/')">/</button></div>
@@ -325,6 +381,7 @@
                 <div class="col"><button class="btn w-100 symbol-key" onclick="inputChar('(')">(</button></div>
                 <div class="col"><button class="btn w-100 symbol-key" onclick="inputChar(')')">)</button></div>
               </div>
+              <!-- 数字キー行 -->
               <div class="row g-1 px-1 num-row">
                 <div class="col-4"><button class="btn w-100 num-key" onclick="inputChar('7')">7</button></div>
                 <div class="col-4"><button class="btn w-100 num-key" onclick="inputChar('8')">8</button></div>
@@ -341,6 +398,8 @@
               </div>
             </div>
           </div>
+          
+          <!-- 右側: 手書きメモエリア (PCでは常時表示、スマホでは切り替え) -->
           <div class="game-right-panel position-relative" id="canvas-panel">
             <div class="drawing-area w-100 h-100 bg-grid" id="drawing-container">
               <canvas id="handwriting-canvas"></canvas>
@@ -353,14 +412,17 @@
       </div>
     </main>
 
-    <!-- Footer (mt-auto で最下部固定) -->
+    <!-- フッター (最下部固定) -->
     <footer class="flex-shrink-0 text-center text-muted py-2 border-top bg-white mt-auto">
       <small>© 2026 Qalc <a href="https://note.com/cute_borage86" target="_blank" class="text-decoration-none text-muted">GIGA山</a></small>
     </footer>
 
+    <!-- JavaScriptライブラリの読み込み -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <!-- メインJavaScriptの読み込み -->
     <?!= include('js'); ?>
   </body>
 </html>
