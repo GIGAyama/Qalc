@@ -1,34 +1,49 @@
 <script>
-// --- State Management ---
+/**
+ * Qalc (カルク) - フロントエンド・ロジック
+ * * このファイルは、アプリの「頭脳」にあたる部分です。
+ * 画面の切り替え、点数計算、タイマー、手書き機能などを管理しています。
+ */
+
+/* ==========================================================================
+   1. ゲームの状態管理 (State Management)
+   ========================================================================== */
+// アプリ全体で共有する「メモ帳」のような変数です。
+// 点数、現在の問題、プレイヤー名などをここに記録します。
 let currentState = {
-  isInitialized: false,
-  isHost: false,
-  roomId: null,
-  playerName: null,
-  selectedAvatar: '🐶', 
-  problemSet: [],
-  currentQIndex: 0,
-  score: 0,
-  combo: 0,
-  maxCombo: 0,
-  startTime: null,
-  timeLimitSec: 0,
-  timerInterval: null,
-  syncInterval: null,
-  allowStudentRoom: true,
-  gameMode: 'MULTI',
-  isMuted: false,
+  isInitialized: false, // 初期化が終わったか
+  isHost: false,        // 自分が部屋を作ったホストか
+  roomId: null,         // 現在の部屋番号
+  playerName: null,     // プレイヤー名
+  selectedAvatar: '🐶', // 選んだアバター
+  problemSet: [],       // 現在の問題リスト
+  currentQIndex: 0,     // 今何問目か
+  score: 0,             // 現在のスコア
+  combo: 0,             // 現在のコンボ数
+  maxCombo: 0,          // 最大コンボ数（記録用）
+  startTime: null,      // ゲーム開始時間
+  timeLimitSec: 0,      // 制限時間（秒）
+  timerInterval: null,  // タイマーの定期実行ID
+  syncInterval: null,   // 同期通信の定期実行ID
+  gameMode: 'MULTI',    // 'MULTI'(対戦) か 'SINGLE'(ひとり)
+  
+  // 手書きキャンバス用
   canvas: null,
   ctx: null,
   isDrawing: false,
   lastX: 0,
   lastY: 0,
+  
+  // 編集中のコース名
   editingGroupName: null
 };
 
+// 選べるアバターのリスト
 const AVATARS = ['🐶', '🐱', '🐼', '🐻', '🦁', '🐮', '🐷', '🐸', '🐙', '🦄'];
 
-// --- Utility: Shuffle ---
+/* --- 便利な道具 (Utility) --- */
+
+// 配列をシャッフルする（ランダム出題用）
 function shuffleArray(array) {
   for (let i = array.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -37,64 +52,38 @@ function shuffleArray(array) {
   return array;
 }
 
-// --- Audio Manager ---
-const audio = {
-  bgm: null, seCorrect: null, seWrong: null, seClick: null,
-  init: function() {
-    this.bgm = document.getElementById('bgm-game');
-    this.seCorrect = document.getElementById('se-correct');
-    this.seWrong = document.getElementById('se-wrong');
-    this.seClick = document.getElementById('se-click');
-    if(this.bgm) this.bgm.volume = 0.3;
-    if(this.seCorrect) this.seCorrect.volume = 0.6;
-    if(this.seWrong) this.seWrong.volume = 0.6;
-    if(this.seClick) this.seClick.volume = 0.5;
-  },
-  playBGM: function() {
-    if(currentState.isMuted || !this.bgm) return;
-    this.bgm.currentTime = 0;
-    this.bgm.play().catch(e => console.log('Auto-play blocked'));
-  },
-  stopBGM: function() { if(this.bgm) this.bgm.pause(); },
-  playSE: function(type) {
-    if(currentState.isMuted) return;
-    let target = null;
-    if(type === 'correct') target = this.seCorrect;
-    else if(type === 'wrong') target = this.seWrong;
-    else if(type === 'click') target = this.seClick;
-    if(target) { target.currentTime = 0; target.play().catch(e=>{}); }
-  },
-  toggleMute: function() {
-    currentState.isMuted = !currentState.isMuted;
-    if(currentState.isMuted) { this.stopBGM(); return true; }
-    else { 
-      if(document.getElementById('view-game') && !document.getElementById('view-game').classList.contains('d-none')) {
-         this.playBGM();
-      }
-      return false;
-    }
-  }
-};
 
-// --- Initialization ---
+/* ==========================================================================
+   2. 起動時の処理 (Initialization)
+   ========================================================================== */
+
+// ページが読み込まれたら最初に実行される関数
 window.onload = function() {
-  audio.init();
+  // 音声機能削除に伴い、ミュートボタンがあれば非表示にする
+  const muteBtn = document.getElementById('btn-mute');
+  if(muteBtn) muteBtn.style.display = 'none';
+
+  // アバター選択肢を表示
   renderAvatarSelectors();
   
+  // サーバー（GAS）と通信できるかチェック
   google.script.run
-    .withSuccessHandler(onInitCheck)
-    .withFailureHandler(onInitError)
-    .getConfig();
+    .withSuccessHandler(onInitCheck)   // 成功したら onInitCheck へ
+    .withFailureHandler(onInitError)   // 失敗したら onInitError へ
+    .checkConnection();
     
+  // キーボード操作の監視を開始（テンキー入力対応）
   document.addEventListener('keydown', handleGlobalKeydown);
   
+  // 画面サイズが変わったら手書きエリアを調整
   window.addEventListener('resize', () => {
       if(currentState.canvas) setTimeout(resizeCanvas, 100);
   });
 };
 
+// アバターの選択ボタンを作る関数
 function renderAvatarSelectors() {
-  const containers = ['create-avatar-list', 'join-avatar-list'];
+  const containers = ['create-avatar-list', 'join-avatar-list']; // 表示する場所のID
   containers.forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
@@ -102,40 +91,39 @@ function renderAvatarSelectors() {
     AVATARS.forEach(emoji => {
       const div = document.createElement('div');
       div.className = 'avatar-option';
+      // 現在選択中なら色を変えるクラスをつける
       if(emoji === currentState.selectedAvatar) div.classList.add('selected');
       div.innerHTML = emoji;
-      div.onclick = () => selectAvatar(emoji);
+      div.onclick = () => selectAvatar(emoji); // クリックされたら選択処理へ
       el.appendChild(div);
     });
   });
 }
 
+// アバターを選んだ時の処理
 function selectAvatar(emoji) {
   currentState.selectedAvatar = emoji;
-  audio.playSE('click');
+  // すべての選択肢から 'selected' クラスを外し、選んだものだけに付ける
   document.querySelectorAll('.avatar-option').forEach(opt => {
     opt.classList.remove('selected');
     if(opt.innerHTML === emoji) opt.classList.add('selected');
   });
 }
 
-function toggleMute() {
-  const isMuted = audio.toggleMute();
-  const icon = document.querySelector('#btn-mute i');
-  if(icon) icon.className = isMuted ? 'bi bi-volume-mute-fill text-secondary' : 'bi bi-volume-up-fill text-primary';
-}
-
+// 通信チェック失敗時
 function onInitError(error) {
+  // 初期化ボタン画面を表示
   showView('view-init');
   hideLoading();
 }
 
-function onInitCheck(config) {
+// 通信チェック成功時
+function onInitCheck(res) {
   currentState.isInitialized = true;
-  showView('view-home');
+  showView('view-home'); // ホーム画面へ
   hideLoading();
   
-  // URLパラメータでルームIDが指定されている場合
+  // URLに部屋番号が含まれていたら（招待リンク）、自動入力して参加画面へ
   if(INITIAL_ROOM_ID && INITIAL_ROOM_ID !== "") {
       showJoinRoom();
       document.getElementById('join-room-id').value = INITIAL_ROOM_ID;
@@ -147,109 +135,150 @@ function onInitCheck(config) {
   }
 }
 
-// --- Navigation ---
+
+/* ==========================================================================
+   3. 画面切り替え・表示制御 (Navigation)
+   ========================================================================== */
+
+/**
+ * 指定したIDの画面を表示し、他を隠す関数
+ * @param {string} viewId - 表示したい画面のID (例: 'view-home')
+ */
 function showView(viewId) {
-  audio.playSE('click');
-  document.getElementById('loading').classList.add('d-none');
+  document.getElementById('loading').classList.add('d-none'); // ローディングを消す
   const gameView = document.getElementById('view-game');
   gameView.classList.add('d-none');
   
   const container = document.querySelector('#app > .container');
   
+  // ゲーム画面だけ特殊扱い（全画面表示のためコンテナを隠す）
   if (viewId === 'view-game') {
     if(container) container.classList.add('d-none');
     gameView.classList.remove('d-none');
-    clearCanvas();
-    document.getElementById('canvas-panel').classList.remove('show');
-    document.getElementById('left-panel').classList.add('expanded');
+    clearCanvas(); // 手書きメモをクリア
+    document.getElementById('canvas-panel').classList.remove('show'); // メモを閉じる
+    document.getElementById('left-panel').classList.add('expanded'); // 問題エリアを広げる
     return;
   }
 
+  // 通常画面の処理
   if (container) container.classList.remove('d-none');
+  
+  // すべての画面IDリスト
   const views = ['view-init', 'view-home', 'view-create', 'view-join', 'view-lobby', 'view-result', 'view-manager-list', 'view-manager-edit', 'view-import'];
+  
+  // 一旦すべて隠す
   views.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('d-none');
   });
 
+  // 指定された画面だけ表示する
   const target = document.getElementById(viewId);
   if (target) {
     target.classList.remove('d-none');
+    // アニメーションをリセットして再再生（ぽよんと表示させる）
     target.classList.remove('anim-bounce-in');
     void target.offsetWidth; 
     target.classList.add('anim-bounce-in');
   }
 }
 
+// ローディング画面を出す
 function showLoading() {
   document.getElementById('loading').classList.remove('d-none');
   document.querySelector('#app > .container')?.classList.add('d-none');
   document.getElementById('view-game').classList.add('d-none');
 }
 
+// ローディング画面を消す
 function hideLoading() {
   document.getElementById('loading').classList.add('d-none');
 }
 
+// ホームに戻る処理（リセット処理含む）
 function goHome() {
-  audio.stopBGM();
+  // ホストなら部屋を削除するリクエストを送る
   if (currentState.isHost && currentState.roomId && currentState.gameMode === 'MULTI') {
     google.script.run.deleteRoom(currentState.roomId);
   }
-  stopAllIntervals();
+  
+  stopAllIntervals(); // タイマーなどを停止
+  
+  // 状態をリセット
   currentState.roomId = null;
   currentState.score = 0;
   currentState.combo = 0;
   currentState.isHost = false; 
+  
   showView('view-home');
 }
 
-// --- Problem Manager ---
+
+/* ==========================================================================
+   4. 問題管理機能 (Problem Manager)
+   ========================================================================== */
+
+// 問題グループ一覧を表示
 function showProblemManager() {
   showLoading();
   google.script.run.withSuccessHandler(groups => {
     hideLoading();
     const list = document.getElementById('manager-group-list');
     list.innerHTML = '';
+    
+    // リストを作成
     groups.forEach(g => {
       const item = document.createElement('a');
       item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center manager-list-item';
       item.innerHTML = `<span class="fw-bold">${g.name}</span> <span class="badge bg-light text-dark rounded-pill">${g.count}問</span>`;
-      item.onclick = () => editGroup(g.name);
+      item.onclick = () => editGroup(g.name); // クリックで編集へ
       list.appendChild(item);
     });
     showView('view-manager-list');
   }).getProblemGroups();
 }
 
+// 新しいコースを作成する画面へ
 function createNewGroup() {
-  currentState.editingGroupName = '';
+  currentState.editingGroupName = ''; // 新規なので空
   document.getElementById('edit-group-name').value = '';
   document.getElementById('edit-problem-list').innerHTML = '';
+  // 最初から3行くらい空欄を用意しておく
   addEmptyProblemRow();
   addEmptyProblemRow();
   addEmptyProblemRow();
   showView('view-manager-edit');
 }
 
+// 既存のコースを編集する画面へ
 function editGroup(groupName) {
   currentState.editingGroupName = groupName;
   document.getElementById('edit-group-name').value = groupName;
   showLoading();
-  google.script.run.withSuccessHandler(problems => {
-    hideLoading();
-    const list = document.getElementById('edit-problem-list');
-    list.innerHTML = '';
-    problems.forEach(p => addProblemRow(p.q, p.a));
-    if(problems.length === 0) addEmptyProblemRow();
-    showView('view-manager-edit');
-  }).getProblemsByGroup(groupName);
+  google.script.run
+    .withSuccessHandler(problems => {
+      hideLoading();
+      const list = document.getElementById('edit-problem-list');
+      list.innerHTML = '';
+      // 既存の問題を表示
+      problems.forEach(p => addProblemRow(p.q, p.a));
+      if(problems.length === 0) addEmptyProblemRow();
+      showView('view-manager-edit');
+    })
+    .withFailureHandler(error => {
+      hideLoading();
+      showToast('問題データの取得に失敗しました', 'error');
+    })
+    .getProblemsByGroup(groupName);
 }
 
+// 空の入力欄を追加
 function addEmptyProblemRow() {
   addProblemRow('', '');
 }
 
+// 問題の入力行を追加する（HTML作成）
 function addProblemRow(q, a) {
   const list = document.getElementById('edit-problem-list');
   const div = document.createElement('div');
@@ -262,12 +291,15 @@ function addProblemRow(q, a) {
   list.appendChild(div);
 }
 
+// 編集内容を保存
 function saveCurrentGroup() {
   const newName = document.getElementById('edit-group-name').value.trim();
   if(!newName) { showToast('コース名を入力してください', 'warning'); return; }
   
   const list = document.getElementById('edit-problem-list');
   const problems = [];
+  
+  // 入力欄からデータを集める
   list.querySelectorAll('.list-group-item').forEach(row => {
     const inputs = row.querySelectorAll('input');
     const q = inputs[0].value.trim();
@@ -280,20 +312,24 @@ function saveCurrentGroup() {
   showLoading();
   const oldName = currentState.editingGroupName;
   
+  // サーバーに保存
   google.script.run.withSuccessHandler(() => {
     hideLoading();
     showToast('保存しました', 'success');
     showProblemManager();
   }).saveProblemSet(newName, problems);
   
+  // 名前が変わっていたら、古い名前のコースは削除する
   if(oldName && oldName !== newName) {
     google.script.run.deleteProblemGroup(oldName); 
   }
 }
 
+// コースを削除
 function deleteCurrentGroup() {
   if(!currentState.editingGroupName) { showProblemManager(); return; }
   
+  // 確認ダイアログを表示
   Swal.fire({
     title: '本当に削除しますか？',
     icon: 'warning',
@@ -311,28 +347,58 @@ function deleteCurrentGroup() {
   });
 }
 
-// --- Import Logic ---
+
+/* ==========================================================================
+   5. AIインポート機能 (Import Logic)
+   ========================================================================== */
+
 function showImportView() {
   document.getElementById('import-text').value = '';
   showView('view-import');
 }
 
+// プロンプト（AIへの指示）をクリップボードにコピー
 function copyAiPrompt() {
-  const text = `小学生向けの算数の計算問題を作成してください。
-形式: CSV
-ヘッダー: なし
-フォーマット: 問題文, 答え
-例:
-1+1, 2
-3×5, 15
-12÷4, 3
+  const text = 
 
-以下の条件で20問作成してください:
-[ここに条件を入力: 例 「3年生のあまりのある割り算」]`;
+  `あなたは日本の小学校教育に精通したベテラン教師アシスタントです。
+  これより、ユーザーが指定する「学年・単元」に基づいて、算数の計算ドリル用問題を作成するタスクを開始します。
+
+  以下の**制約事項**と**出力ルール**を記憶し、ユーザーからの入力を待機してください。
+
+  # 制約事項
+  1. **学習指導要領への準拠**:
+    - ユーザーから入力された学年・単元のレベルを厳守すること。
+    - その学年で習っていない数字の範囲や計算手法は使用しないこと。
+
+  2. **数量と網羅性の自動判定**:
+    - **有限の組み合わせ（九九など）の場合**: 「九九」や「繰り上がりのない1桁の足し算」など、組み合わせの総数が限定的で、全て学習すべき性質のものは、ランダムではなく**全ての組み合わせ（最大数）**を出力すること。
+    - **無限・多数の組み合わせの場合**: 上記以外（一般的な足し算、引き算、割り算など）は、ランダムに**100問**作成すること。
+
+  3. **数学的整合性**:
+    - 答えが負の数になる問題は作成しない。
+    - 割り算の場合、学年に応じて「あまりを出す」か「小数で割り切る」かを適切に判断すること（指定がない場合、3-4年生はあまり、5-6年生は小数を優先）。
+    - 答えが循環小数になるなど、割り切れない小数の問題は避けること。
+
+  # 出力ルール
+  1. **形式**: CSV形式（問題,答え）
+  2. **多重回答の表記**:
+    - 分数の計算などで、約分前の分数と約分後の分数など、**正解が複数考えられる場合は「|」の記号で区切って併記すること**。
+    - 例: 1/4+1/4, 2/4|1/2
+  3. **ヘッダー**: なし
+  4. **装飾**:
+    - No.（通し番号）は不要。
+    - 挨拶や解説は**一切不要**。
+    - **コードブロック内**にCSVデータのみを出力すること。
+
+  # 初期動作
+  このプロンプトを受け取ったら、まだ問題は生成せず、以下のメッセージのみを返してユーザーの入力を待ってください。
+  「設定を完了しました。作成したい問題の【学年】と【単元・条件】を入力してください。（例：6年生 分数の足し算）」`;
   
   navigator.clipboard.writeText(text).then(() => {
     showToast('プロンプトをコピーしました！', 'success');
   }, () => {
+    // 予備のコピー方法
     const ta = document.createElement("textarea");
     ta.value = text;
     document.body.appendChild(ta);
@@ -343,12 +409,14 @@ function copyAiPrompt() {
   });
 }
 
+// 貼り付けられたテキストを解析して問題にする
 function processImport() {
   const rawText = document.getElementById('import-text').value.trim();
   if(!rawText) { showToast('データが空です', 'warning'); return; }
   
   let problems = [];
   try {
+    // JSON形式か試す
     const json = JSON.parse(rawText);
     if(Array.isArray(json)) {
       json.forEach(p => {
@@ -357,10 +425,11 @@ function processImport() {
       });
     }
   } catch(e) {
+    // CSV形式として解析 (カンマ区切り)
     const lines = rawText.split('\n');
     lines.forEach(line => {
       let parts = line.split(',');
-      if(parts.length < 2) parts = line.split('\t');
+      if(parts.length < 2) parts = line.split('\t'); // タブ区切りもケア
       if(parts.length >= 2) {
         const q = parts[0].trim();
         const a = parts[1].trim();
@@ -376,6 +445,7 @@ function processImport() {
     return;
   }
   
+  // 編集画面へデータを渡す
   currentState.editingGroupName = ''; 
   document.getElementById('edit-group-name').value = 'AIインポート_' + new Date().toLocaleDateString();
   const list = document.getElementById('edit-problem-list');
@@ -387,9 +457,15 @@ function processImport() {
   showView('view-manager-edit');
 }
 
-// --- Create Room ---
+
+/* ==========================================================================
+   6. ルーム作成・参加・ロビー (Multiplayer Setup)
+   ========================================================================== */
+
+// ルーム作成画面へ
 function showCreateRoom() {
   showLoading();
+  // コース一覧を取得してプルダウンに入れる
   google.script.run.withSuccessHandler(groups => {
     hideLoading();
     const select = document.getElementById('problem-select');
@@ -404,8 +480,10 @@ function showCreateRoom() {
   }).getProblemGroups();
 }
 
+// 予備関数（現在は使用していません）
 function toggleProblemInput() {} 
 
+// ルーム作成実行
 function submitCreateRoom() {
   const hostName = document.getElementById('host-name').value;
   const timeLimit = document.getElementById('time-limit').value;
@@ -419,23 +497,28 @@ function submitCreateRoom() {
 
   showLoading();
   
-  google.script.run.withSuccessHandler(problems => {
+  // 1. 問題データを取得
+  google.script.run
+    .withSuccessHandler(problems => {
       if(!problems || problems.length === 0) {
           showView('view-create');
           showToast('問題データがありません', 'error');
           return;
       }
       
+      // 2. 必要ならシャッフル
       if (isShuffle) {
           problems = shuffleArray(problems);
       }
       
-      const jsonProb = JSON.stringify(problems);
+      const jsonProb = JSON.stringify(problems); // データを文字にして保存
       
+      // 3. サーバーに部屋作成を依頼
       google.script.run.withSuccessHandler(res => {
         hideLoading();
         if(res.error) { showToast('エラーが発生しました', 'error'); return; }
         
+        // 状態を更新
         currentState.isHost = true;
         currentState.roomId = res.roomId;
         currentState.playerName = fullName;
@@ -443,16 +526,23 @@ function submitCreateRoom() {
         currentState.timeLimitSec = timeLimit * 60;
         currentState.gameMode = 'MULTI';
         
+        // 4. 自分もその部屋に参加する
         joinProcess(res.roomId, fullName);
         
       }).createRoom(fullName, jsonProb, timeLimit);
       
-  }).getProblemsByGroup(groupName);
+    })
+    .withFailureHandler(error => {
+      hideLoading();
+      showToast('問題データの取得に失敗しました', 'error');
+    })
+    .getProblemsByGroup(groupName);
 }
 
-// --- Join Room ---
+// 参加画面へ
 function showJoinRoom() { showView('view-join'); }
 
+// 参加実行
 function submitJoinRoom() {
   const roomId = document.getElementById('join-room-id').value;
   const name = document.getElementById('join-player-name').value;
@@ -460,6 +550,7 @@ function submitJoinRoom() {
   const fullName = currentState.selectedAvatar + ' ' + name;
   
   showLoading();
+  // サーバーに参加リクエスト
   google.script.run.withSuccessHandler(res => {
     hideLoading();
     if (res.error) {
@@ -477,6 +568,7 @@ function submitJoinRoom() {
   }).joinRoom(roomId, fullName);
 }
 
+// ホスト用参加処理
 function joinProcess(roomId, name) {
   google.script.run.withSuccessHandler(res => {
     if(res.error) return; 
@@ -484,10 +576,12 @@ function joinProcess(roomId, name) {
   }).joinRoom(roomId, name);
 }
 
+// ロビー（待機室）に入る
 function enterLobby() {
   showView('view-lobby');
   document.getElementById('lobby-room-id').innerText = currentState.roomId;
   
+  // QRコード生成
   const qrContainer = document.getElementById('qrcode');
   qrContainer.innerHTML = '';
   
@@ -513,19 +607,23 @@ function enterLobby() {
     qrContainer.style.display = 'none';
   }
   
+  // 5秒ごとに部屋の状態を確認する（ポーリング）
   pollRoomStatus();
   currentState.syncInterval = setInterval(pollRoomStatus, 5000);
 }
 
+// 部屋の状態確認（メンバーが増えたか、ゲームが始まったか）
 function pollRoomStatus() {
   google.script.run.withSuccessHandler(res => {
     if(res.error) {
+      // 部屋が消えていたら終了
       if (res.error === 'ROOM_NOT_FOUND' && currentState.roomId) {
          stopAllIntervals();
          Swal.fire({icon: 'info', title: '終了', text: 'ルームが解散されました', confirmButtonColor: '#FF6B6B'}).then(() => goHome());
       }
       return;
     }
+    // 参加者リストの更新
     const list = document.getElementById('lobby-member-list');
     list.innerHTML = '';
     document.getElementById('lobby-count').innerText = res.participants.length;
@@ -535,20 +633,31 @@ function pollRoomStatus() {
       li.innerHTML = `<span>${p.name}</span> <span class="badge bg-light text-dark rounded-pill border">${p.score}pt</span>`;
       list.appendChild(li);
     });
+    // ホストが開始ボタンを押していたら（statusがACTIVEなら）ゲーム開始
     if (!currentState.isHost && res.room.status === 'ACTIVE') startGameLocal();
   }).getRoomInfo(currentState.roomId, currentState.playerName);
 }
 
-function requestStartGame() { google.script.run.withSuccessHandler(() => startGameLocal()).startGame(currentState.roomId); }
+// ホストが開始ボタンを押した時
+function requestStartGame() { 
+    google.script.run.withSuccessHandler(() => startGameLocal()).startGame(currentState.roomId); 
+}
 
-// --- Single Mode (With Time Setting) ---
+
+/* ==========================================================================
+   7. ひとりプレイ機能 (Single Mode)
+   ========================================================================== */
+
 function startSingleMode() {
   showLoading();
+  // コース一覧を取得
   google.script.run.withSuccessHandler(groups => {
-    showView('view-home'); // 先にホームに戻す
+    showView('view-home'); // ダイアログを出す前に画面を整える
     
+    // プルダウン作成
     const groupOptions = groups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
     
+    // 設定ダイアログを表示
     Swal.fire({
       title: 'ひとりで遊ぶ',
       html: `
@@ -585,71 +694,117 @@ function startSingleMode() {
         const name = currentState.selectedAvatar + " 自分";
         
         showLoading();
-        google.script.run.withSuccessHandler(problems => {
-            if(!problems || problems.length === 0) {
-                showView('view-home');
-                showToast('問題がありません', 'error');
-                return;
-            }
-            if(isShuffle) {
-                problems = shuffleArray(problems);
-            }
-            currentState.isHost = true;
-            currentState.roomId = "SINGLE";
-            currentState.playerName = name;
-            currentState.problemSet = problems;
-            currentState.timeLimitSec = timeLimit * 60; // 時間設定を反映
-            currentState.gameMode = 'SINGLE';
-            
-            hideLoading();
-            startGameLocal();
-            
-        }).getProblemsByGroup(selectedGroup);
+        google.script.run
+          .withSuccessHandler(problems => {
+              if(!problems || problems.length === 0) {
+                  showView('view-home');
+                  showToast('問題がありません', 'error');
+                  return;
+              }
+              if(isShuffle) {
+                  problems = shuffleArray(problems);
+              }
+              // ひとりモードの設定完了
+              currentState.isHost = true;
+              currentState.roomId = "SINGLE";
+              currentState.playerName = name;
+              currentState.problemSet = problems;
+              currentState.timeLimitSec = timeLimit * 60; 
+              currentState.gameMode = 'SINGLE';
+              
+              hideLoading();
+              startGameLocal();
+              
+          })
+          .withFailureHandler(error => {
+              hideLoading();
+              showToast('問題データの取得に失敗しました', 'error');
+          })
+          .getProblemsByGroup(selectedGroup);
       }
     });
   }).getProblemGroups();
 }
 
-// --- Game Logic ---
+
+/* ==========================================================================
+   8. ゲームプレイロジック (Game Logic)
+   ========================================================================== */
+
+// ゲーム開始処理（画面切り替え・タイマー開始）
 function startGameLocal() {
   stopAllIntervals();
   showView('view-game');
-  audio.playBGM();
-  fireConfetti(); 
-  currentState.score = 0; currentState.combo = 0; currentState.maxCombo = 0; currentState.currentQIndex = 0;
+  
+  fireConfetti(); // 紙吹雪演出
+  
+  // スコアリセット
+  currentState.score = 0; 
+  currentState.combo = 0; 
+  currentState.maxCombo = 0; 
+  currentState.currentQIndex = 0;
+  
   updateScoreDisplay();
-  nextQuestion();
+  nextQuestion(); // 1問目表示
+  
+  // タイマー開始
   let remain = currentState.timeLimitSec;
   updateTimerDisplay(remain);
   currentState.timerInterval = setInterval(() => {
-    remain--; updateTimerDisplay(remain);
-    if (remain <= 0) finishGame();
+    remain--; 
+    updateTimerDisplay(remain);
+    if (remain <= 0) finishGame(); // 時間切れ
   }, 1000);
+  
+  // マルチプレイなら定期的にスコアを送信 (プレイ中は送信のみ)
   if (currentState.gameMode === 'MULTI') currentState.syncInterval = setInterval(syncScore, 5000);
 }
 
+// タイマー表示の更新 (03:00 形式)
 function updateTimerDisplay(sec) {
   const m = Math.floor(sec / 60).toString().padStart(2, '0');
   const s = (sec % 60).toString().padStart(2, '0');
   document.getElementById('game-timer').innerText = `${m}:${s}`;
 }
 
+// 次の問題を表示
 function nextQuestion() {
   if (currentState.problemSet.length === 0) return;
+  
+  // 最後までいったら最初に戻る（ループ）
   if (currentState.currentQIndex >= currentState.problemSet.length) currentState.currentQIndex = 0;
+  
   const q = currentState.problemSet[currentState.currentQIndex];
   const qText = document.getElementById('q-text');
+  
+  // アニメーション付きで表示
   qText.style.opacity = 0;
   setTimeout(() => {
-    qText.innerText = q.q;
+    // ★ここを変更: innerText ではなく innerHTML にし、変換関数を通す
+    qText.innerHTML = formatMathText(q.q);
+    
     qText.style.opacity = 1;
     qText.classList.add('anim-bounce-in');
     setTimeout(()=>qText.classList.remove('anim-bounce-in'), 500);
   }, 100);
-  document.getElementById('ans-display').innerText = ''; 
-  clearCanvas();
+  
+  document.getElementById('ans-display').innerText = ''; // 答え欄を空に
+  clearCanvas(); // メモも消す
 }
 
+/**
+ * テキスト内の「数字/数字」を、縦並びの分数HTMLに変換する関数
+ * 例: "1/2 + 1/3" → "<span class='fraction'>...</span> + ..."
+ */
+function formatMathText(text) {
+  if (!text) return "";
+  // 正規表現で "数字/数字" を探して置換
+  return text.replace(/(\d+)\/(\d+)/g, function(match, num, den) {
+    return `<span class="fraction"><span class="numerator">${num}</span><span class="denominator">${den}</span></span>`;
+  });
+}
+
+/* --- テンキー入力処理 --- */
 function inputChar(char) {
   const disp = document.getElementById('ans-display');
   if (disp.innerText.length < 15) disp.innerText += char;
@@ -661,39 +816,56 @@ function deleteNum() {
 }
 function clearNum() { document.getElementById('ans-display').innerText = ''; }
 
+// 答え合わせ
 function submitAnswer() {
   const userAns = document.getElementById('ans-display').innerText;
-  if (!userAns) return;
+  if (!userAns) return; // 空なら何もしない
+  
   const q = currentState.problemSet[currentState.currentQIndex];
   const card = document.getElementById('question-card');
   
   const strUser = String(userAns).trim();
-  const strAns = String(q.a).trim();
+  // 変更前: const strAns = String(q.a).trim();
+  
+  // ★変更後: 答えデータを「|」で区切って配列にする
+  // 例: "1/2|2/4" → ["1/2", "2/4"]
+  const strAnsRaw = String(q.a);
+  const possibleAnswers = strAnsRaw.split('|').map(s => s.trim());
 
-  if (strUser === strAns) {
-    audio.playSE('correct');
-    currentState.score += 100 + (currentState.combo * 10);
+  // 正解！ (ユーザーの入力が正解リストに含まれているか確認)
+  if (possibleAnswers.includes(strUser)) {
+    currentState.score += 100 + (currentState.combo * 10); // コンボボーナス
     currentState.combo++;
     if(currentState.combo > currentState.maxCombo) currentState.maxCombo = currentState.combo;
+    
+    // 正解アニメーション（カードがポンと跳ねる）
     card.classList.add('anim-pop');
     setTimeout(()=>card.classList.remove('anim-pop'), 400);
+    
     currentState.currentQIndex++;
-    nextQuestion();
-  } else {
-    audio.playSE('wrong');
-    currentState.combo = 0;
+    nextQuestion(); // 次へ
+  } 
+  // 不正解...
+  else {
+    currentState.combo = 0; // コンボリセット
+    
+    // 不正解アニメーション（カードが揺れる）
     card.classList.add('anim-shake');
-    if(navigator.vibrate) navigator.vibrate(200);
+    if(navigator.vibrate) navigator.vibrate(200); // スマホならバイブ
     setTimeout(()=>card.classList.remove('anim-shake'), 400);
-    clearNum();
+    
+    clearNum(); // 入力を消して再挑戦
   }
   updateScoreDisplay();
 }
 
+// スコア表示の更新
 function updateScoreDisplay() {
   document.getElementById('my-score').innerText = currentState.score;
   const comboBadge = document.getElementById('combo-badge');
   const comboVal = document.getElementById('combo-val');
+  
+  // 2コンボ以上ならバッジを表示
   if(currentState.combo > 1) {
     comboVal.innerText = currentState.combo;
     comboBadge.classList.remove('d-none');
@@ -703,89 +875,151 @@ function updateScoreDisplay() {
   } else { comboBadge.classList.add('d-none'); }
 }
 
+// スコアをサーバーに送る
 function syncScore() {
   google.script.run.withSuccessHandler(res => {}).updateScore(currentState.roomId, currentState.playerName, currentState.score, currentState.maxCombo);
 }
 
+// ゲーム終了処理 (修正済)
 function finishGame() {
+  // タイマーとプレイ中のスコア送信を止める
   stopAllIntervals();
-  audio.stopBGM();
+  
   if (currentState.gameMode === 'MULTI') {
     showLoading();
-    google.script.run.withSuccessHandler(res => {
-        google.script.run.withSuccessHandler(showResultScreen).getRoomInfo(currentState.roomId, currentState.playerName);
+    // 1. 最後のスコアを送信
+    google.script.run.withSuccessHandler(() => {
+        
+        // 2. スコア送信完了後、リザルト情報を取得して画面表示
+        fetchAndShowResult();
+        
+        // 3. 【追加】リザルト画面でも定期的に最新情報を取得し続ける (5秒ごと)
+        // これにより、遅れて終わった人のスコアもホスト画面に反映される
+        currentState.syncInterval = setInterval(fetchAndShowResult, 5000);
+        
     }).updateScore(currentState.roomId, currentState.playerName, currentState.score, currentState.maxCombo);
   } else {
+    // ひとりの場合はすぐに結果表示（更新不要）
     showResultScreen({ participants: [{name: currentState.playerName, score: currentState.score, combo: currentState.maxCombo}] });
   }
 }
 
+// リザルト情報を取得して表示する関数（新規追加）
+function fetchAndShowResult() {
+    google.script.run.withSuccessHandler((data) => {
+        if (!data.error) {
+            showResultScreen(data);
+        }
+    }).getRoomInfo(currentState.roomId, currentState.playerName);
+}
+
+// 結果画面表示 (修正済: 初回のみ演出)
 function showResultScreen(data) {
   hideLoading();
-  showView('view-result');
-  audio.playSE('correct');
-  const end = Date.now() + 3000;
-  (function frame() {
-    confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 } });
-    confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 } });
-    if (Date.now() < end) requestAnimationFrame(frame);
-  }());
+  
+  const resultView = document.getElementById('view-result');
+  // まだリザルト画面でない場合（＝初回呼び出し）のみ、画面切り替えと演出を行う
+  if (resultView.classList.contains('d-none')) {
+      showView('view-result');
+      // audio.playSE('correct'); // 音声削除済みのためコメントアウト
+      
+      // 紙吹雪でお祝い
+      const end = Date.now() + 3000;
+      (function frame() {
+        confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 } });
+        confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 } });
+        if (Date.now() < end) requestAnimationFrame(frame);
+      }());
+  }
+  
   document.getElementById('final-score').innerText = currentState.score;
   document.getElementById('final-combo').innerText = currentState.maxCombo;
+  
+  // ランキングリスト更新（ここは毎回行う）
   const list = document.getElementById('result-list');
   list.innerHTML = '';
   let rank = 1;
   data.participants.forEach((p, index) => {
     if (index > 0 && p.score < data.participants[index-1].score) rank = index + 1;
+    
     const li = document.createElement('li');
     li.className = 'list-group-item d-flex justify-content-between align-items-center py-3';
+    // 自分を強調表示
     if(p.name === currentState.playerName) li.classList.add('bg-warning', 'bg-opacity-10');
+    
     let icon = '';
     if(rank === 1) icon = '🥇'; else if(rank === 2) icon = '🥈'; else if(rank === 3) icon = '🥉'; else icon = `<span class="badge bg-secondary rounded-pill">${rank}</span>`;
+    
     li.innerHTML = `<span class="fs-5">${icon} ${p.name}</span> <span class="fw-bold fs-4">${p.score}</span>`;
     list.appendChild(li);
   });
 }
 
-// Utils
+
+/* ==========================================================================
+   9. ユーティリティ (Utils)
+   ========================================================================== */
+
 function stopAllIntervals() {
   if (currentState.timerInterval) clearInterval(currentState.timerInterval);
   if (currentState.syncInterval) clearInterval(currentState.syncInterval);
 }
-function showToast(msg, icon) { Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 }).fire({ icon: icon, title: msg }); }
-function fireConfetti() { confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#FF6B6B', '#4ECDC4', '#FFE66D'] }); }
 
-// --- Handwriting Logic ---
+// トースト通知（右上の小さいメッセージ）
+function showToast(msg, icon) { 
+    Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 }).fire({ icon: icon, title: msg }); 
+}
+
+// 紙吹雪エフェクト
+function fireConfetti() { 
+    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#FF6B6B', '#4ECDC4', '#FFE66D'] }); 
+}
+
+
+/* ==========================================================================
+   10. 手書きメモ機能 (Handwriting Logic)
+   ========================================================================== */
+
+// キャンバスの初期化
 function initCanvas() {
   const canvas = document.getElementById('handwriting-canvas');
   if(!canvas) return;
   currentState.canvas = canvas;
   currentState.ctx = canvas.getContext('2d');
+  
+  // マウスイベント
   canvas.addEventListener('mousedown', startDrawing);
   canvas.addEventListener('mousemove', draw);
   canvas.addEventListener('mouseup', stopDrawing);
   canvas.addEventListener('mouseout', stopDrawing);
+  // タッチイベント（スマホ用）
   canvas.addEventListener('touchstart', startDrawing, {passive: false});
   canvas.addEventListener('touchmove', draw, {passive: false});
   canvas.addEventListener('touchend', stopDrawing);
+  
   setTimeout(resizeCanvas, 150);
 }
 
+// キャンバスサイズを枠に合わせる
 function resizeCanvas() {
   if (!currentState.canvas) return;
   const container = document.getElementById('drawing-container');
   if (!container || container.clientWidth === 0) return;
+  
   const rect = container.getBoundingClientRect();
   if (currentState.canvas.width !== rect.width || currentState.canvas.height !== rect.height) {
       currentState.canvas.width = rect.width;
       currentState.canvas.height = rect.height;
-      currentState.ctx.strokeStyle = '#292f36';
-      currentState.ctx.lineWidth = 3;
-      currentState.ctx.lineCap = 'round';
+      
+      // ペンの設定
+      currentState.ctx.strokeStyle = '#292f36'; // 黒
+      currentState.ctx.lineWidth = 3;           // 太さ
+      currentState.ctx.lineCap = 'round';       // 丸いペン先
       currentState.ctx.lineJoin = 'round';
   }
 }
 
+// 座標の取得（マウスとタッチの差を吸収）
 function getPos(e) {
   const rect = currentState.canvas.getBoundingClientRect();
   let x, y;
@@ -800,8 +1034,8 @@ function getPos(e) {
 }
 
 function startDrawing(e) {
-  if(e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-  e.preventDefault();
+  if(e.target.tagName === 'BUTTON' || e.target.closest('button')) return; // ボタン操作は無視
+  e.preventDefault(); // スクロール防止
   currentState.isDrawing = true;
   const pos = getPos(e);
   currentState.lastX = pos.x;
@@ -813,10 +1047,12 @@ function draw(e) {
   e.preventDefault();
   const pos = getPos(e);
   const ctx = currentState.ctx;
+  
   ctx.beginPath();
   ctx.moveTo(currentState.lastX, currentState.lastY);
   ctx.lineTo(pos.x, pos.y);
-  ctx.stroke();
+  ctx.stroke(); // 線を描く
+  
   currentState.lastX = pos.x;
   currentState.lastY = pos.y;
 }
@@ -824,11 +1060,13 @@ function draw(e) {
 function stopDrawing() { currentState.isDrawing = false; }
 function clearCanvas() { if(currentState.canvas) currentState.ctx.clearRect(0, 0, currentState.canvas.width, currentState.canvas.height); }
 
+// メモ帳の開閉（スマホ用）
 function toggleCanvas() {
-    audio.playSE('click');
     const panel = document.getElementById('canvas-panel');
     const leftPanel = document.getElementById('left-panel');
     panel.classList.toggle('show');
+    
+    // 表示されたらキャンバスを初期化
     if (panel.classList.contains('show')) {
         leftPanel.classList.remove('expanded');
         setTimeout(() => { if (!currentState.canvas) initCanvas(); else resizeCanvas(); }, 300);
@@ -837,32 +1075,46 @@ function toggleCanvas() {
     }
 }
 
-// --- Keyboard Handling ---
+
+/* ==========================================================================
+   11. キーボード操作 (Keyboard Handling)
+   ========================================================================== */
+
 function handleGlobalKeydown(e) {
+  // ゲーム中以外は無視
   const gameView = document.getElementById('view-game');
   if (gameView && gameView.classList.contains('d-none')) return;
 
+  // 全角数字を半角に変換するマップ
   const fullWidthMap = { '０':'0', '１':'1', '２':'2', '３':'3', '４':'4', '５':'5', '６':'6', '７':'7', '８':'8', '９':'9', '．':'.', '。':'.', '／':'/', 'ー':'-', '（':'(', '）':')' };
   let key = e.key;
   if (fullWidthMap[key]) key = fullWidthMap[key];
 
+  // 数字・記号入力
   if ((key >= '0' && key <= '9') || ['.', '/', '-', '(', ')'].includes(key)) {
-    audio.playSE('click');
     inputChar(key);
     e.preventDefault();
     return;
   }
+  // Enterで決定
   if (key === 'Enter') {
     if (!e.isComposing) { submitAnswer(); e.preventDefault(); }
     return;
   }
+  // Backspaceで1文字消す
   if (key === 'Backspace') { deleteNum(); e.preventDefault(); return; }
+  // Escape, Delete, c で全消去
   if (key === 'Escape' || key === 'Delete' || key.toLowerCase() === 'c') { clearNum(); e.preventDefault(); return; }
 }
 
-// --- Setup Actions ---
+
+/* ==========================================================================
+   12. 起動時のアクション
+   ========================================================================== */
+
 function doInitialize() {
   showLoading();
+  // サーバー側の初期設定を実行
   google.script.run.withSuccessHandler(res => {
     hideLoading();
     fireConfetti(); 
@@ -875,7 +1127,6 @@ function doInitialize() {
       customClass: { confirmButton: 'btn btn-pop btn-pop-primary' }
     }).then(() => {
       currentState.isInitialized = true;
-      currentState.allowStudentRoom = true;
       showView('view-home');
     });
   }).initialSetup();
