@@ -2126,21 +2126,22 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         </div>
       )}
 
-      <div className={`flex-grow flex flex-col ${memoPosition === 'right' ? 'md:flex-row' : 'md:flex-row-reverse'} overflow-y-auto md:overflow-hidden relative w-full h-full`}>
-        {/* ランキング表示 */}
-        {isMultiplayer && top5.length > 0 && (
-          <div className="flex justify-center gap-2 p-2 overflow-x-auto no-scrollbar shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm">
-            {top5.map((p, idx) => (
-              <div key={p.id} className="bg-[var(--bg)] border-2 border-[var(--text)] rounded-lg px-2 py-1 flex flex-col items-center min-w-[70px]">
-                <div className="flex items-center gap-1">
-                  <span className={`text-[10px] font-black px-1.5 rounded-sm ${idx === 0 ? 'bg-yellow-400 text-white' : idx === 1 ? 'bg-gray-400 text-white' : idx === 2 ? 'bg-orange-400 text-white' : 'text-[var(--text)] opacity-50'}`}>{idx + 1}</span>
-                  <span className="text-[10px] font-bold truncate max-w-[50px]">{p.name}</span>
-                </div>
-                <span className="text-xs text-[var(--primary)] font-black">{p.score}</span>
+      {/* ランキング表示（メインレイアウトの外に配置） */}
+      {isMultiplayer && top5.length > 0 && (
+        <div className="flex justify-center gap-2 p-2 overflow-x-auto no-scrollbar shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm">
+          {top5.map((p, idx) => (
+            <div key={p.id} className="bg-[var(--bg)] border-2 border-[var(--text)] rounded-lg px-2 py-1 flex flex-col items-center min-w-[70px]">
+              <div className="flex items-center gap-1">
+                <span className={`text-[10px] font-black px-1.5 rounded-sm ${idx === 0 ? 'bg-yellow-400 text-white' : idx === 1 ? 'bg-gray-400 text-white' : idx === 2 ? 'bg-orange-400 text-white' : 'text-[var(--text)] opacity-50'}`}>{idx + 1}</span>
+                <span className="text-[10px] font-bold truncate max-w-[50px]">{p.name}</span>
               </div>
-            ))}
-          </div>
-        )}
+              <span className="text-xs text-[var(--primary)] font-black">{p.score}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className={`flex-grow flex flex-col ${memoPosition === 'right' ? 'md:flex-row' : 'md:flex-row-reverse'} overflow-y-auto md:overflow-hidden relative w-full h-full`}>
 
         <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : 'w-full max-w-4xl mx-auto h-full'} md:h-full p-4`}>
 
