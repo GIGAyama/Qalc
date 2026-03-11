@@ -2100,6 +2100,16 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     }
   }, [ans, qIndex, combo, correctCount, state.problemSet, state.gameMode, finishGame]);
 
+  // 正解の瞬間に自動で次の問題へ進む
+  useEffect(() => {
+    if (!ans) return;
+    const q = state.problemSet[qIndex];
+    if (!q) return;
+    const normalizedAns = normalizeStr(ans);
+    const isCorrect = q.a.some(correctStr => normalizeStr(correctStr) === normalizedAns);
+    if (isCorrect) submitAns();
+  }, [ans]);
+
   useEffect(() => {
     const handleKey = (e) => {
       const key = e.key;
