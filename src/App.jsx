@@ -1331,7 +1331,11 @@ const StorageAPI = {
   saveProblemSet: (name, problems) => { const data = StorageAPI.getRawData(); data[name] = problems; return StorageAPI.safeSet('qalc_problems', data); },
   deleteProblemGroup: (name) => { const data = StorageAPI.getRawData(); delete data[name]; return StorageAPI.safeSet('qalc_problems', data); },
   encodeCourse: (name, problems) => btoa(encodeURIComponent(JSON.stringify({ n: name, p: problems.map(p => `${p.q},${p.a}`).join(';') }))),
-  decodeCourse: (code) => { try { const data = JSON.parse(decodeURIComponent(atob(code))); return { name: data.n, problems: data.p.split(';').map(str => { const [q, a] = str.split(','); return { q, a }; }) }; } catch (e) { return null; } }
+  decodeCourse: (code) => { try { const data = JSON.parse(decodeURIComponent(atob(code))); return { name: data.n, problems: data.p.split(';').map(str => { const [q, a] = str.split(','); return { q, a }; }) }; } catch (e) { return null; } },
+
+  getResume: () => StorageAPI.safeGet('qalc_resume', null),
+  saveResume: (data) => StorageAPI.safeSet('qalc_resume', data),
+  clearResume: () => { try { window.localStorage.removeItem('qalc_resume'); } catch (e) { /* ignore */ } }
 };
 
 // ==========================================
@@ -1514,7 +1518,7 @@ const useExternalScripts = () => {
 // ==========================================
 
 // --- ホーム画面 ---
-const HomeView = ({ setView, stats, setStats, setConfigMode, initHost }) => {
+const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeData, onResume, onDiscardResume }) => {
   const { level, title, badge, color, progress, nextLevelExp } = getLevelInfo(stats.totalExp);
   const chartData = Array.from({ length: 7 }).map((_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (6 - i));
@@ -1557,6 +1561,27 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost }) => {
         </div>
         <div className="text-right w-full text-[10px] font-bold text-[var(--text)] opacity-60 mt-1">NEXT: {Math.floor(nextLevelExp - stats.totalExp)} pt</div>
       </div>
+
+      {resumeData && (
+        <div className="w-full bg-[var(--accent)] border-[4px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-4 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <div className="font-black text-[var(--text)] flex items-center gap-2 ruby-text">
+              <Clock size={20} /> <R c="前" r="ぜん" /><R c="回" r="かい" />のとちゅう
+            </div>
+            <button onClick={onDiscardResume} className="text-[var(--text)] opacity-60 hover:opacity-100 text-xs font-bold border-2 border-[var(--text)] rounded-lg px-2 py-1 bg-[var(--panel)] ruby-text"><R c="消" r="け" />す</button>
+          </div>
+          <div className="text-sm font-bold text-[var(--text)] opacity-80 leading-tight">
+            <span className="bg-[var(--panel)] border-2 border-[var(--text)] rounded px-2 py-0.5 mr-1">
+              {resumeData.gameMode === 'SCORE_ATTACK' ? 'スコア' : resumeData.gameMode === 'TIME_ATTACK' ? 'タイム' : 'サドンデス'}
+            </span>
+            <span className="truncate">{resumeData.courseName}</span>
+            <span className="ml-1 opacity-70 ruby-text">／ {resumeData.correctCount || 0}<R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></span>
+          </div>
+          <MotionButton className="bg-[var(--primary)] text-[var(--panel)] w-full py-3 text-lg border-[3px] border-[var(--text)] ruby-text" onClick={onResume}>
+            <Rocket size={20} /> つづきから<R c="始" r="はじ" />める
+          </MotionButton>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-2 w-full">
         <MotionButton className="bg-[var(--panel)] text-[var(--text)] border-[3px] border-[var(--text)] p-3 flex-col gap-1 h-auto" onClick={() => { setConfigMode('SCORE_ATTACK'); setView('singleConfig'); }}>
@@ -2002,16 +2027,24 @@ const SingleConfigView = ({ setView, setState, configMode }) => {
 };
 
 // --- ゲーム画面 ---
-const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState }) => {
-  const [score, setScore] = useState(0); const [combo, setCombo] = useState(0); const [maxCombo, setMaxCombo] = useState(0); const [qIndex, setQIndex] = useState(0); const [ans, setAns] = useState('');
-  const [correctCount, setCorrectCount] = useState(0);
-  const [startTime] = useState(Date.now()); const [currentTime, setCurrentTime] = useState(Date.now());
+const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData }) => {
+  const isMultiplayer = peerState && peerState.role;
+  const resumeSnapshot = (!isMultiplayer && state.resumeSnapshot) ? state.resumeSnapshot : null;
+
+  const [score, setScore] = useState(resumeSnapshot?.score || 0);
+  const [combo, setCombo] = useState(resumeSnapshot?.combo || 0);
+  const [maxCombo, setMaxCombo] = useState(resumeSnapshot?.maxCombo || 0);
+  const [qIndex, setQIndex] = useState(resumeSnapshot?.qIndex || 0);
+  const [ans, setAns] = useState('');
+  const [correctCount, setCorrectCount] = useState(resumeSnapshot?.correctCount || 0);
+  const [startTime] = useState(() => Date.now() - (resumeSnapshot?.elapsedMs || 0));
+  const [currentTime, setCurrentTime] = useState(Date.now());
   const elapsedMs = currentTime - startTime; const elapsedSec = Math.floor(elapsedMs / 1000); const remainSec = Math.max(0, state.timeLimitSec - elapsedSec);
   const [showMemo, setShowMemo] = useState(false); const [memoPosition, setMemoPosition] = useState('right');
   const canvasRef = useRef(null); const [fever, setFever] = useState(false); const [cardAnim, setCardAnim] = useState({});
-  const mistakesRef = useRef([]);
-
-  const isMultiplayer = peerState && peerState.role;
+  const mistakesRef = useRef(resumeSnapshot?.mistakes ? [...resumeSnapshot.mistakes] : []);
+  const isResumedSessionRef = useRef(!!resumeSnapshot);
+  const [quitDialog, setQuitDialog] = useState(false);
   const participantsList = isMultiplayer ? Object.entries(peerState.participants || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => b.score - a.score) : [];
   const top5 = participantsList.slice(0, 5);
 
@@ -2044,27 +2077,36 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const maxComboRef = useRef(maxCombo); useEffect(() => { maxComboRef.current = maxCombo; }, [maxCombo]);
   const correctCountRef = useRef(correctCount); useEffect(() => { correctCountRef.current = correctCount; }, [correctCount]);
 
-  const finishGame = useCallback(() => {
+  const finishGame = useCallback((quitEarly = false) => {
     if (mistakesRef.current.length > 0) StorageAPI.addMistakes(mistakesRef.current);
     if (state.courseName === 'にがて克服ボックス') StorageAPI.removeMistakes(state.problemSet.filter(p => !mistakesRef.current.some(m => m.q === p.q)));
 
     let newStats = { ...stats };
     newStats.maxComboRecord = Math.max(newStats.maxComboRecord || 0, maxComboRef.current);
     const exactElapsedSec = Number(((Date.now() - startTime) / 1000).toFixed(1));
+    const isTimeAttackCleared = state.gameMode === 'TIME_ATTACK' && !quitEarly && correctCountRef.current >= state.problemSet.length;
 
-    if (state.gameMode === 'TIME_ATTACK' && correctCountRef.current >= state.problemSet.length) {
+    if (isTimeAttackCleared) {
       const rec = newStats.timeAttackRecord || 9999; if (exactElapsedSec < rec || rec === 0) newStats.timeAttackRecord = exactElapsedSec;
     }
     if (state.gameMode === 'SUDDEN_DEATH') { newStats.suddenDeathRecord = Math.max(newStats.suddenDeathRecord || 0, correctCountRef.current); }
 
     let baseExp = scoreRef.current;
-    if (state.gameMode === 'TIME_ATTACK') baseExp = 1000 + Math.max(0, Math.floor(120 - exactElapsedSec) * 10);
+    if (state.gameMode === 'TIME_ATTACK') {
+      baseExp = isTimeAttackCleared ? 1000 + Math.max(0, Math.floor(120 - exactElapsedSec) * 10) : correctCountRef.current * 50;
+    }
     if (state.gameMode === 'SUDDEN_DEATH') baseExp = correctCountRef.current * 50;
 
     newStats = StorageAPI.updateDailyAndMissions(newStats, baseExp, maxComboRef.current, 1, state.gameMode, correctCountRef.current);
     StorageAPI.saveStats(newStats); setStats(newStats);
 
-    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp: baseExp, previousExp: stats.totalExp, mistakes: mistakesRef.current }));
+    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp: baseExp, previousExp: stats.totalExp, mistakes: mistakesRef.current, resumeSnapshot: null }));
+
+    if (isResumedSessionRef.current) {
+      StorageAPI.clearResume();
+      if (setResumeData) setResumeData(null);
+      isResumedSessionRef.current = false;
+    }
 
     // 終了通知
     if (peerState && peerState.role === 'client' && peerState.conn) {
@@ -2075,7 +2117,29 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     }
 
     setView('result');
-  }, [stats, state.gameMode, state.courseName, state.problemSet, startTime, setStats, setState, setView, peerState]);
+  }, [stats, state.gameMode, state.courseName, state.problemSet, startTime, setStats, setState, setView, peerState, setResumeData]);
+
+  const pauseAndExit = useCallback(() => {
+    const snapshot = {
+      problemSet: state.problemSet,
+      timeLimitSec: state.timeLimitSec,
+      courseName: state.courseName,
+      gameMode: state.gameMode,
+      qIndex,
+      score: scoreRef.current,
+      combo,
+      maxCombo: maxComboRef.current,
+      correctCount: correctCountRef.current,
+      elapsedMs: Date.now() - startTime,
+      mistakes: mistakesRef.current,
+      savedAt: Date.now()
+    };
+    StorageAPI.saveResume(snapshot);
+    if (setResumeData) setResumeData(snapshot);
+    showToast('success', 'とちゅうから保存しました');
+    setState(prev => ({ ...prev, resumeSnapshot: null }));
+    setView('home');
+  }, [state.problemSet, state.timeLimitSec, state.courseName, state.gameMode, qIndex, combo, startTime, setState, setView, setResumeData]);
 
   const submitAns = useCallback(() => {
     if (!ans) return; const q = state.problemSet[qIndex];
@@ -2159,7 +2223,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
         <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : 'w-full max-w-4xl mx-auto h-full'} md:h-full p-4`}>
 
-          <div className="flex justify-between items-center mb-2 shrink-0">
+          <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
+            <button onClick={() => { audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-2 py-1 font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center gap-1"><XCircle size={16} /> やめる</button>
             <div className={`font-black text-2xl flex items-center gap-2 ${(state.gameMode === 'SCORE_ATTACK' && remainSec <= 10) ? 'text-red-500 animate-pulse' : 'text-[var(--text)]'}`}><Clock size={24} /> {m}:{s}</div>
             <div className="font-black text-2xl text-[var(--primary)] flex items-center gap-2 drop-shadow-sm">
               {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : <>{score} <span className="text-sm text-[var(--text)] opacity-50">pt</span></>}
@@ -2204,6 +2269,34 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {quitDialog && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-sm flex flex-col items-center text-center">
+              <XCircle size={48} className="text-[var(--primary)] mb-3" />
+              <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text"><R c="途" r="と" /><R c="中" r="ちゅう" />で やめますか？</h3>
+              <p className="text-sm text-[var(--text)] opacity-70 mb-5 ruby-text">
+                ここまでの<R c="正" r="せい" /><R c="解" r="かい" />: <span className="font-black text-[var(--primary)]">{correctCount}<R c="問" r="もん" /></span>
+                {state.gameMode === 'SCORE_ATTACK' && <> ／ スコア: <span className="font-black text-[var(--primary)]">{score}pt</span></>}
+              </p>
+              <div className="flex flex-col w-full gap-2">
+                <MotionButton className="bg-[var(--primary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 w-full ruby-text" onClick={() => { setQuitDialog(false); finishGame(true); }}>
+                  <Award size={18} /> ポイントもらって<R c="終" r="お" />わる
+                </MotionButton>
+                {!isMultiplayer && (
+                  <MotionButton className="bg-[var(--secondary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 w-full ruby-text" onClick={() => { setQuitDialog(false); pauseAndExit(); }}>
+                    <Clock size={18} /> <R c="中" r="ちゅう" /><R c="断" r="だん" />して<R c="保" r="ほ" /><R c="存" r="ぞん" />
+                  </MotionButton>
+                )}
+                <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 w-full" onClick={() => { audioCtrl.playSE('click'); setQuitDialog(false); }}>
+                  つづける
+                </MotionButton>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
@@ -2537,6 +2630,29 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(audioCtrl.muted);
   const [state, setState] = useState({ problemSet: [], timeLimitSec: 0, courseName: '', finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0, gameMode: 'SCORE_ATTACK', mistakes: [] });
   const [stats, setStats] = useState(StorageAPI.getStats());
+  const [resumeData, setResumeData] = useState(() => StorageAPI.getResume());
+
+  const resumeGame = () => {
+    const data = StorageAPI.getResume();
+    if (!data) return;
+    setState({
+      timeLimitSec: data.timeLimitSec || 0,
+      problemSet: data.problemSet || [],
+      courseName: data.courseName || '',
+      gameMode: data.gameMode || 'SCORE_ATTACK',
+      resumeSnapshot: data,
+      mistakes: [],
+      finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0
+    });
+    setView('game');
+  };
+
+  const discardResume = () => {
+    audioCtrl.playSE('click');
+    StorageAPI.clearResume();
+    setResumeData(null);
+    showToast('success', '中断データを消しました');
+  };
 
   const scriptsLoaded = useExternalScripts();
 
@@ -2714,7 +2830,7 @@ export default function App() {
 
       <main className="flex-grow relative overflow-hidden">
         <AnimatePresence mode="wait">
-          {view === 'home' && <PageWrapper key="home"><HomeView setView={setView} stats={stats} setStats={setStats} setConfigMode={setConfigMode} initHost={initHost} /></PageWrapper>}
+          {view === 'home' && <PageWrapper key="home"><HomeView setView={setView} stats={stats} setStats={setStats} setConfigMode={setConfigMode} initHost={initHost} resumeData={resumeData} onResume={resumeGame} onDiscardResume={discardResume} /></PageWrapper>}
           {view === 'singleConfig' && <PageWrapper key="single"><SingleConfigView setView={setView} setState={setState} configMode={configMode} /></PageWrapper>}
 
           {/* 追加ビュー */}
@@ -2722,7 +2838,7 @@ export default function App() {
           {view === 'clientJoin' && <PageWrapper key="clientJoin"><ClientJoinView initClient={initClient} urlHostId={urlHostId} setView={setView} /></PageWrapper>}
           {view === 'clientWait' && <PageWrapper key="clientWait"><ClientWaitView peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
 
-          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} /></PageWrapper>}
+          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} /></PageWrapper>}
           {view === 'result' && <PageWrapper key="result"><ResultView state={state} setView={setView} peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
           {view === 'manager' && <PageWrapper key="manager"><ManagerView setView={setView} /></PageWrapper>}
           {view === 'import' && <PageWrapper key="import"><ImportView setView={setView} /></PageWrapper>}
