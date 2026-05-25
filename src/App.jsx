@@ -1438,22 +1438,25 @@ const MathText = React.memo(({ text }) => {
 const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
   const canvasRef = useRef(null); const isDrawing = useRef(false); const lastPos = useRef({ x: 0, y: 0 }); const rectRef = useRef({ left: 0, top: 0 });
 
-  // desynchronized: 通常の合成パイプラインを介さず低遅延で描画する（手書きの入力遅延を大幅に削減）
-  const getCtx = (cvs) => cvs.getContext('2d', { desynchronized: true });
+  // desynchronized + alpha:false: 透明合成(アルファブレンド)を排除し、通常の合成パイプラインを
+  // 介さない低遅延描画パスを最大限有効化する（低スペック機での描画/入力遅延を大幅に削減）
+  const getCtx = (cvs) => cvs.getContext('2d', { desynchronized: true, alpha: false });
+  const resolveVar = (cvs, name, fallback) => getComputedStyle(cvs).getPropertyValue(name).trim() || fallback;
+  const fillPaper = (cvs, ctx) => { ctx.fillStyle = resolveVar(cvs, '--panel', '#ffffff'); ctx.fillRect(0, 0, cvs.width, cvs.height); };
 
   useImperativeHandle(ref, () => ({
-    clear: () => { const cvs = canvasRef.current; if (cvs) getCtx(cvs).clearRect(0, 0, cvs.width, cvs.height); }
+    clear: () => { const cvs = canvasRef.current; if (cvs) fillPaper(cvs, getCtx(cvs)); }
   }));
 
   useEffect(() => {
     const cvs = canvasRef.current;
     if (!cvs) return;
     const ctx = getCtx(cvs);
+    fillPaper(cvs, ctx); // 不透明キャンバスの初期表示が黒くならないよう紙色で塗る
 
     // Canvas 2D はCSS変数を解釈できないため --text を実際の色に解決して適用する
     const applyStyle = () => {
-      const color = getComputedStyle(cvs).getPropertyValue('--text').trim();
-      ctx.strokeStyle = color || '#333333'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = resolveVar(cvs, '--text', '#333333'); ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     };
 
     const resize = () => {
@@ -1466,7 +1469,7 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
           const tempCanvas = document.createElement('canvas'); tempCanvas.width = currentCvs.width || newW; tempCanvas.height = currentCvs.height || newH;
           if (currentCvs.width > 0 && currentCvs.height > 0) tempCanvas.getContext('2d').drawImage(currentCvs, 0, 0);
           currentCvs.width = newW; currentCvs.height = newH;
-          applyStyle(); ctx.drawImage(tempCanvas, 0, 0);
+          fillPaper(currentCvs, ctx); applyStyle(); ctx.drawImage(tempCanvas, 0, 0);
         }
       });
     };
@@ -1498,12 +1501,11 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
   }, []);
 
   return (
-    <div className="w-full h-full relative rounded-3xl border-[4px] border-[var(--text)] shadow-inner bg-[var(--panel)]">
-      {/* 下地ドットはGPUレイヤーに昇格させず親レイヤーに一度だけ描く（合成レイヤー数を減らす） */}
-      <div className="absolute inset-0 opacity-10 rounded-[20px]" style={{ backgroundImage: 'radial-gradient(var(--text) 1.5px, transparent 1.5px)', backgroundSize: '20px 20px' }}></div>
-      {/* desynchronized の低遅延パスを有効化するため、canvas には角丸/クリップ/transform を付けない（素の矩形にする） */}
-      <canvas ref={canvasRef} className="w-full h-full relative z-10 touch-none" />
-      <motion.button whileTap={{ scale: 0.8 }} className="absolute top-4 right-4 w-12 h-12 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 shadow-md z-20" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></motion.button>
+    // 軽さ最優先: ドット背景・内側影・太い角丸枠などの塗りコストを排除。canvas は不透明な素の矩形で、
+    // 低スペック機(ソフトウェア合成含む)でも描画コストが最小になるようにする。
+    <div className="w-full h-full relative border-2 border-[var(--text)] bg-[var(--panel)]">
+      <canvas ref={canvasRef} className="w-full h-full block touch-none" />
+      <button className="absolute top-3 right-3 w-11 h-11 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 z-20 active:scale-90 transition-transform" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></button>
     </div>
   );
 }));
