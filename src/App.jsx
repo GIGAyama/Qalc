@@ -1436,7 +1436,7 @@ const MathText = React.memo(({ text }) => {
 
 // 手書きキャンバス
 const HandWritingCanvas = forwardRef((props, ref) => {
-  const canvasRef = useRef(null); const isDrawing = useRef(false); const lastPos = useRef({ x: 0, y: 0 });
+  const canvasRef = useRef(null); const isDrawing = useRef(false); const lastPos = useRef({ x: 0, y: 0 }); const rectRef = useRef({ left: 0, top: 0 });
 
   useImperativeHandle(ref, () => ({
     clear: () => { const cvs = canvasRef.current; if (cvs) cvs.getContext('2d').clearRect(0, 0, cvs.width, cvs.height); }
@@ -1447,46 +1447,57 @@ const HandWritingCanvas = forwardRef((props, ref) => {
     if (!cvs) return;
     const ctx = cvs.getContext('2d');
 
+    // Canvas 2D はCSS変数を解釈できないため --text を実際の色に解決して適用する
+    const applyStyle = () => {
+      const color = getComputedStyle(cvs).getPropertyValue('--text').trim();
+      ctx.strokeStyle = color || '#333333'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    };
+
     const resize = () => {
       window.requestAnimationFrame(() => {
         if (!canvasRef.current || !canvasRef.current.parentElement) return;
         const currentCvs = canvasRef.current;
         const rect = currentCvs.parentElement.getBoundingClientRect(); const newW = Math.round(rect.width); const newH = Math.round(rect.height);
+        if (newW === 0 || newH === 0) return;
         if (Math.abs(currentCvs.width - newW) > 1 || Math.abs(currentCvs.height - newH) > 1) {
           const tempCanvas = document.createElement('canvas'); tempCanvas.width = currentCvs.width || newW; tempCanvas.height = currentCvs.height || newH;
           if (currentCvs.width > 0 && currentCvs.height > 0) tempCanvas.getContext('2d').drawImage(currentCvs, 0, 0);
           currentCvs.width = newW; currentCvs.height = newH;
-          ctx.strokeStyle = 'var(--text)'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.drawImage(tempCanvas, 0, 0);
+          applyStyle(); ctx.drawImage(tempCanvas, 0, 0);
         }
       });
     };
     const observer = new ResizeObserver(resize); observer.observe(cvs.parentElement);
 
-    const getPos = (e) => {
-      const rect = cvs.getBoundingClientRect();
-      return { x: (e.clientX || 0) - rect.left, y: (e.clientY || 0) - rect.top };
+    const startDraw = (e) => {
+      e.preventDefault();
+      const rect = cvs.getBoundingClientRect(); rectRef.current = { left: rect.left, top: rect.top };
+      applyStyle(); isDrawing.current = true;
+      lastPos.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      if (e.pointerId != null) { try { cvs.setPointerCapture(e.pointerId); } catch {} }
     };
-    const startDraw = (e) => { e.preventDefault(); isDrawing.current = true; lastPos.current = getPos(e); };
     const draw = (e) => {
       if (!isDrawing.current) return; e.preventDefault();
-      const pos = getPos(e);
-      ctx.beginPath(); ctx.moveTo(lastPos.current.x, lastPos.current.y); ctx.lineTo(pos.x, pos.y); ctx.stroke();
-      lastPos.current = pos;
+      const { left, top } = rectRef.current;
+      const points = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      ctx.beginPath(); ctx.moveTo(lastPos.current.x, lastPos.current.y);
+      for (const ev of points) { const x = ev.clientX - left; const y = ev.clientY - top; ctx.lineTo(x, y); lastPos.current = { x, y }; }
+      ctx.stroke();
     };
     const stopDraw = () => { isDrawing.current = false; };
 
-    cvs.addEventListener('pointerdown', startDraw); cvs.addEventListener('pointermove', draw); cvs.addEventListener('pointerup', stopDraw); cvs.addEventListener('pointerout', stopDraw); cvs.addEventListener('pointercancel', stopDraw);
+    cvs.addEventListener('pointerdown', startDraw); cvs.addEventListener('pointermove', draw); cvs.addEventListener('pointerup', stopDraw); cvs.addEventListener('pointercancel', stopDraw);
 
     return () => {
       observer.disconnect();
-      cvs.removeEventListener('pointerdown', startDraw); cvs.removeEventListener('pointermove', draw); cvs.removeEventListener('pointerup', stopDraw); cvs.removeEventListener('pointerout', stopDraw); cvs.removeEventListener('pointercancel', stopDraw);
+      cvs.removeEventListener('pointerdown', startDraw); cvs.removeEventListener('pointermove', draw); cvs.removeEventListener('pointerup', stopDraw); cvs.removeEventListener('pointercancel', stopDraw);
     };
   }, []);
 
   return (
     <div className="w-full h-full relative rounded-3xl overflow-hidden border-[4px] border-[var(--text)] shadow-inner bg-[var(--panel)]">
-      <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(var(--text) 1.5px, transparent 1.5px)', backgroundSize: '20px 20px' }}></div>
-      <canvas ref={canvasRef} className="w-full h-full relative z-10 touch-none" />
+      <div className="absolute inset-0 opacity-10 [transform:translateZ(0)] [will-change:transform]" style={{ backgroundImage: 'radial-gradient(var(--text) 1.5px, transparent 1.5px)', backgroundSize: '20px 20px' }}></div>
+      <canvas ref={canvasRef} className="w-full h-full relative z-10 touch-none [transform:translateZ(0)] [will-change:transform]" />
       <motion.button whileTap={{ scale: 0.8 }} className="absolute top-4 right-4 w-12 h-12 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 shadow-md z-20" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></motion.button>
     </div>
   );
