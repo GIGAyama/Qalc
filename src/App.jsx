@@ -1464,9 +1464,7 @@ const HandWritingCanvas = forwardRef((props, ref) => {
 
     const getPos = (e) => {
       const rect = cvs.getBoundingClientRect();
-      const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : (e.clientX || 0);
-      const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : (e.clientY || 0);
-      return { x: clientX - rect.left, y: clientY - rect.top };
+      return { x: (e.clientX || 0) - rect.left, y: (e.clientY || 0) - rect.top };
     };
     const startDraw = (e) => { e.preventDefault(); isDrawing.current = true; lastPos.current = getPos(e); };
     const draw = (e) => {
@@ -1477,13 +1475,11 @@ const HandWritingCanvas = forwardRef((props, ref) => {
     };
     const stopDraw = () => { isDrawing.current = false; };
 
-    cvs.addEventListener('touchstart', startDraw, { passive: false }); cvs.addEventListener('touchmove', draw, { passive: false }); cvs.addEventListener('touchend', stopDraw); cvs.addEventListener('touchcancel', stopDraw);
-    cvs.addEventListener('pointerdown', startDraw); cvs.addEventListener('pointermove', draw); cvs.addEventListener('pointerup', stopDraw); cvs.addEventListener('pointerout', stopDraw);
+    cvs.addEventListener('pointerdown', startDraw); cvs.addEventListener('pointermove', draw); cvs.addEventListener('pointerup', stopDraw); cvs.addEventListener('pointerout', stopDraw); cvs.addEventListener('pointercancel', stopDraw);
 
     return () => {
       observer.disconnect();
-      cvs.removeEventListener('touchstart', startDraw); cvs.removeEventListener('touchmove', draw); cvs.removeEventListener('touchend', stopDraw); cvs.removeEventListener('touchcancel', stopDraw);
-      cvs.removeEventListener('pointerdown', startDraw); cvs.removeEventListener('pointermove', draw); cvs.removeEventListener('pointerup', stopDraw); cvs.removeEventListener('pointerout', stopDraw);
+      cvs.removeEventListener('pointerdown', startDraw); cvs.removeEventListener('pointermove', draw); cvs.removeEventListener('pointerup', stopDraw); cvs.removeEventListener('pointerout', stopDraw); cvs.removeEventListener('pointercancel', stopDraw);
     };
   }, []);
 
@@ -2051,10 +2047,15 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   useEffect(() => { setFever(combo >= 5); }, [combo]);
 
   useEffect(() => {
-    let animationFrameId;
-    const updateTime = () => { setCurrentTime(Date.now()); animationFrameId = requestAnimationFrame(updateTime); };
+    let animationFrameId; let lastSec = -1;
+    const updateTime = () => {
+      const now = Date.now();
+      const sec = Math.floor((now - startTime) / 1000);
+      if (sec !== lastSec) { lastSec = sec; setCurrentTime(now); }
+      animationFrameId = requestAnimationFrame(updateTime);
+    };
     updateTime(); return () => cancelAnimationFrame(animationFrameId);
-  }, []);
+  }, [startTime]);
 
   // スコアの定期送信
   useEffect(() => {
