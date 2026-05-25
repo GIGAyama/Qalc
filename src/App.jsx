@@ -1438,14 +1438,17 @@ const MathText = React.memo(({ text }) => {
 const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
   const canvasRef = useRef(null); const isDrawing = useRef(false); const lastPos = useRef({ x: 0, y: 0 }); const rectRef = useRef({ left: 0, top: 0 });
 
+  // desynchronized: 通常の合成パイプラインを介さず低遅延で描画する（手書きの入力遅延を大幅に削減）
+  const getCtx = (cvs) => cvs.getContext('2d', { desynchronized: true });
+
   useImperativeHandle(ref, () => ({
-    clear: () => { const cvs = canvasRef.current; if (cvs) cvs.getContext('2d').clearRect(0, 0, cvs.width, cvs.height); }
+    clear: () => { const cvs = canvasRef.current; if (cvs) getCtx(cvs).clearRect(0, 0, cvs.width, cvs.height); }
   }));
 
   useEffect(() => {
     const cvs = canvasRef.current;
     if (!cvs) return;
-    const ctx = cvs.getContext('2d');
+    const ctx = getCtx(cvs);
 
     // Canvas 2D はCSS変数を解釈できないため --text を実際の色に解決して適用する
     const applyStyle = () => {
@@ -1495,9 +1498,11 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
   }, []);
 
   return (
-    <div className="w-full h-full relative rounded-3xl overflow-hidden border-[4px] border-[var(--text)] shadow-inner bg-[var(--panel)]">
-      <div className="absolute inset-0 opacity-10 [transform:translateZ(0)] [will-change:transform]" style={{ backgroundImage: 'radial-gradient(var(--text) 1.5px, transparent 1.5px)', backgroundSize: '20px 20px' }}></div>
-      <canvas ref={canvasRef} className="w-full h-full relative z-10 touch-none [transform:translateZ(0)] [will-change:transform]" />
+    <div className="w-full h-full relative rounded-3xl border-[4px] border-[var(--text)] shadow-inner bg-[var(--panel)]">
+      {/* 下地ドットはGPUレイヤーに昇格させず親レイヤーに一度だけ描く（合成レイヤー数を減らす） */}
+      <div className="absolute inset-0 opacity-10 rounded-[20px]" style={{ backgroundImage: 'radial-gradient(var(--text) 1.5px, transparent 1.5px)', backgroundSize: '20px 20px' }}></div>
+      {/* キャンバスのみ独自レイヤーに昇格させ、ストロークが下地を再描画しないようにする */}
+      <canvas ref={canvasRef} className="w-full h-full relative z-10 touch-none rounded-[20px] [transform:translateZ(0)]" />
       <motion.button whileTap={{ scale: 0.8 }} className="absolute top-4 right-4 w-12 h-12 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 shadow-md z-20" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></motion.button>
     </div>
   );
@@ -2096,8 +2101,8 @@ const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correc
   useEffect(() => { if (isScoreAttack && remainSec <= 0) onTimeUpRef.current?.(); }, [isScoreAttack, remainSec]);
   const progress = isScoreAttack ? (remainSec / timeLimitSec) * 100 : (correctCount / total) * 100;
   return (
-    <div className="h-2 w-full bg-[var(--text)] opacity-20 shrink-0 relative">
-      <motion.div className="h-full absolute top-0 left-0 bg-[var(--primary)] opacity-100 z-10" animate={{ width: `${progress}%`, backgroundColor: (isScoreAttack && remainSec <= 10) ? '#ef4444' : 'var(--primary)' }} transition={{ ease: 'linear', duration: 0.2 }} />
+    <div className="h-2 w-full bg-[var(--text)] opacity-20 shrink-0 relative overflow-hidden">
+      <motion.div className="h-full w-full absolute top-0 left-0 origin-left bg-[var(--primary)] z-10" animate={{ scaleX: Math.max(0, Math.min(1, progress / 100)), backgroundColor: (isScoreAttack && remainSec <= 10) ? '#ef4444' : 'var(--primary)' }} transition={{ ease: 'linear', duration: 0.2 }} />
     </div>
   );
 });
@@ -2267,8 +2272,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
   return (
     <div className="absolute inset-0 w-full h-[100dvh] flex flex-col z-10 overflow-hidden bg-[var(--bg)]">
-      {/* フィーバー演出: backgroundColor のアニメーション(毎フレーム全画面リペイント)はやめ、opacity のみで合成する軽量オーバーレイにする */}
-      {fever && (
+      {/* フィーバー演出: 毎フレーム合成が走る全画面アニメーションは、手書きパッドを開いている間は無効化して描画性能を優先する */}
+      {fever && !showMemo && (
         <motion.div
           className="absolute inset-0 bg-[var(--panel)] pointer-events-none z-0"
           initial={{ opacity: 0 }}
