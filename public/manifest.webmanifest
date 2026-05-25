@@ -1,0 +1,35 @@
+{
+  "name": "Qalc | カルク ～目指せ、計算マスター～",
+  "short_name": "Qalc",
+  "description": "小学生向け計算ゲーム学習アプリ。みんなで楽しく算数を学ぼう！",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "/Qalc/",
+  "scope": "/Qalc/",
+  "id": "/Qalc/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fffbf0",
+  "theme_color": "#FF6B6B",
+  "categories": ["education", "games"],
+  "icons": [
+    {
+      "src": "/Qalc/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/Qalc/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/Qalc/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
