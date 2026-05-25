@@ -1501,8 +1501,8 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
     <div className="w-full h-full relative rounded-3xl border-[4px] border-[var(--text)] shadow-inner bg-[var(--panel)]">
       {/* 下地ドットはGPUレイヤーに昇格させず親レイヤーに一度だけ描く（合成レイヤー数を減らす） */}
       <div className="absolute inset-0 opacity-10 rounded-[20px]" style={{ backgroundImage: 'radial-gradient(var(--text) 1.5px, transparent 1.5px)', backgroundSize: '20px 20px' }}></div>
-      {/* キャンバスのみ独自レイヤーに昇格させ、ストロークが下地を再描画しないようにする */}
-      <canvas ref={canvasRef} className="w-full h-full relative z-10 touch-none rounded-[20px] [transform:translateZ(0)]" />
+      {/* desynchronized の低遅延パスを有効化するため、canvas には角丸/クリップ/transform を付けない（素の矩形にする） */}
+      <canvas ref={canvasRef} className="w-full h-full relative z-10 touch-none" />
       <motion.button whileTap={{ scale: 0.8 }} className="absolute top-4 right-4 w-12 h-12 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 shadow-md z-20" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></motion.button>
     </div>
   );
