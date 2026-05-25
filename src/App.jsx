@@ -1434,8 +1434,8 @@ const MathText = React.memo(({ text }) => {
   );
 });
 
-// 手書きキャンバス
-const HandWritingCanvas = forwardRef((props, ref) => {
+// 手書きキャンバス（描画はネイティブイベントで完結するため React.memo で親の再レンダーから完全に隔離する）
+const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
   const canvasRef = useRef(null); const isDrawing = useRef(false); const lastPos = useRef({ x: 0, y: 0 }); const rectRef = useRef({ left: 0, top: 0 });
 
   useImperativeHandle(ref, () => ({
@@ -1501,7 +1501,22 @@ const HandWritingCanvas = forwardRef((props, ref) => {
       <motion.button whileTap={{ scale: 0.8 }} className="absolute top-4 right-4 w-12 h-12 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 shadow-md z-20" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></motion.button>
     </div>
   );
-});
+}));
+
+// 数字キーパッド（answer/score/timer の更新で再レンダーしないよう memo 化し、安定したコールバックのみ受け取る）
+const Keypad = React.memo(({ onAppend, onClear, onSubmit }) => (
+  <div className="flex-grow flex flex-col gap-2 z-30 min-h-[30vh]">
+    <div className="flex h-14 gap-2 shrink-0">
+      {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }}>{c}</motion.button>)}
+    </div>
+    <div className="grid grid-cols-3 gap-2 flex-grow">
+      {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }}>C</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend('0'); }}>0</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--panel)] border-[3px] border-[var(--text)] font-black text-3xl rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }}>OK</motion.button>
+    </div>
+  </div>
+));
 
 // CDNスクリプト動的読み込みフック（PeerJS, QRCode）
 const useExternalScripts = () => {
@@ -2033,6 +2048,60 @@ const SingleConfigView = ({ setView, setState, configMode }) => {
   );
 };
 
+// 毎秒の時刻更新を内部に閉じ込め、GameView 本体を再レンダーさせないための時計表示コンポーネント
+const TimerClock = React.memo(({ gameMode, startTime, timeLimitSec }) => {
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  useEffect(() => {
+    let id; let last = -1;
+    const tick = () => {
+      const now = Date.now();
+      const sec = Math.floor((now - startTime) / 1000);
+      if (sec !== last) { last = sec; setCurrentTime(now); }
+      id = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => cancelAnimationFrame(id);
+  }, [startTime]);
+  const elapsedSec = Math.floor((currentTime - startTime) / 1000);
+  const remainSec = Math.max(0, timeLimitSec - elapsedSec);
+  const displaySec = gameMode === 'SCORE_ATTACK' ? remainSec : elapsedSec;
+  const m = Math.floor(displaySec / 60).toString().padStart(2, '0');
+  const s = (displaySec % 60).toString().padStart(2, '0');
+  const danger = gameMode === 'SCORE_ATTACK' && remainSec <= 10;
+  return (
+    <div className={`font-black text-2xl flex items-center gap-2 ${danger ? 'text-red-500 animate-pulse' : 'text-[var(--text)]'}`}><Clock size={24} /> {m}:{s}</div>
+  );
+});
+
+// 上部の進捗バー。SCORE_ATTACK のみ毎秒tickし、時間切れで onTimeUp を呼ぶ（GameView 本体は tick で再レンダーしない）
+const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correctCount, total, onTimeUp }) => {
+  const isScoreAttack = gameMode === 'SCORE_ATTACK';
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const onTimeUpRef = useRef(onTimeUp);
+  useEffect(() => { onTimeUpRef.current = onTimeUp; }, [onTimeUp]);
+  useEffect(() => {
+    if (!isScoreAttack) return;
+    let id; let last = -1;
+    const tick = () => {
+      const now = Date.now();
+      const sec = Math.floor((now - startTime) / 1000);
+      if (sec !== last) { last = sec; setCurrentTime(now); }
+      id = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => cancelAnimationFrame(id);
+  }, [isScoreAttack, startTime]);
+  const elapsedSec = Math.floor((currentTime - startTime) / 1000);
+  const remainSec = Math.max(0, timeLimitSec - elapsedSec);
+  useEffect(() => { if (isScoreAttack && remainSec <= 0) onTimeUpRef.current?.(); }, [isScoreAttack, remainSec]);
+  const progress = isScoreAttack ? (remainSec / timeLimitSec) * 100 : (correctCount / total) * 100;
+  return (
+    <div className="h-2 w-full bg-[var(--text)] opacity-20 shrink-0 relative">
+      <motion.div className="h-full absolute top-0 left-0 bg-[var(--primary)] opacity-100 z-10" animate={{ width: `${progress}%`, backgroundColor: (isScoreAttack && remainSec <= 10) ? '#ef4444' : 'var(--primary)' }} transition={{ ease: 'linear', duration: 0.2 }} />
+    </div>
+  );
+});
+
 // --- ゲーム画面 ---
 const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData }) => {
   const isMultiplayer = peerState && peerState.role;
@@ -2045,8 +2114,6 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const [ans, setAns] = useState('');
   const [correctCount, setCorrectCount] = useState(resumeSnapshot?.correctCount || 0);
   const [startTime] = useState(() => Date.now() - (resumeSnapshot?.elapsedMs || 0));
-  const [currentTime, setCurrentTime] = useState(Date.now());
-  const elapsedMs = currentTime - startTime; const elapsedSec = Math.floor(elapsedMs / 1000); const remainSec = Math.max(0, state.timeLimitSec - elapsedSec);
   const [showMemo, setShowMemo] = useState(false); const [memoPosition, setMemoPosition] = useState('right');
   const canvasRef = useRef(null); const [fever, setFever] = useState(false); const [cardAnim, setCardAnim] = useState({});
   const mistakesRef = useRef(resumeSnapshot?.mistakes ? [...resumeSnapshot.mistakes] : []);
@@ -2056,17 +2123,6 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const top5 = participantsList.slice(0, 5);
 
   useEffect(() => { setFever(combo >= 5); }, [combo]);
-
-  useEffect(() => {
-    let animationFrameId; let lastSec = -1;
-    const updateTime = () => {
-      const now = Date.now();
-      const sec = Math.floor((now - startTime) / 1000);
-      if (sec !== lastSec) { lastSec = sec; setCurrentTime(now); }
-      animationFrameId = requestAnimationFrame(updateTime);
-    };
-    updateTime(); return () => cancelAnimationFrame(animationFrameId);
-  }, [startTime]);
 
   // スコアの定期送信
   useEffect(() => {
@@ -2082,8 +2138,6 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       });
     }
   }, [score, combo, peerState?.role, setPeerState]);
-
-  useEffect(() => { if (state.gameMode === 'SCORE_ATTACK' && remainSec <= 0) finishGame(); }, [remainSec, state.gameMode]);
 
   const scoreRef = useRef(score); useEffect(() => { scoreRef.current = score; }, [score]);
   const maxComboRef = useRef(maxCombo); useEffect(() => { maxComboRef.current = maxCombo; }, [maxCombo]);
@@ -2197,10 +2251,13 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     window.addEventListener('keydown', handleKey); return () => window.removeEventListener('keydown', handleKey);
   }, [submitAns]);
 
+  // キーパッドへ渡す安定コールバック（submitAns は ref 経由で最新を参照し、Keypad の memo を維持する）
+  const submitAnsRef = useRef(submitAns); useEffect(() => { submitAnsRef.current = submitAns; }, [submitAns]);
+  const handleAppend = useCallback((c) => { audioCtrl.playSE('click'); setAns(a => (a.length < 15 ? a + c : a)); }, []);
+  const handleClear = useCallback(() => { audioCtrl.playSE('click'); setAns(''); }, []);
+  const handleSubmit = useCallback(() => { submitAnsRef.current(); }, []);
+
   const q = state.problemSet[qIndex] || { q: '?', a: ['?'] };
-  const displaySec = state.gameMode === 'SCORE_ATTACK' ? remainSec : elapsedSec;
-  const m = Math.floor(displaySec / 60).toString().padStart(2, '0'); const s = (displaySec % 60).toString().padStart(2, '0');
-  const progress = state.gameMode === 'SCORE_ATTACK' ? (remainSec / state.timeLimitSec) * 100 : (correctCount / state.problemSet.length) * 100;
 
   const textLen = q.q.length;
   let fontSizeClass = "text-[5rem] md:text-8xl";
@@ -2209,11 +2266,18 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   else if (textLen >= 8) { fontSizeClass = "text-4xl md:text-6xl"; }
 
   return (
-    <motion.div animate={fever ? { backgroundColor: ["var(--bg)", "var(--panel)", "var(--bg)"] } : {}} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} className="absolute inset-0 w-full h-[100dvh] flex flex-col z-10 overflow-hidden bg-[var(--bg)]">
+    <div className="absolute inset-0 w-full h-[100dvh] flex flex-col z-10 overflow-hidden bg-[var(--bg)]">
+      {/* フィーバー演出: backgroundColor のアニメーション(毎フレーム全画面リペイント)はやめ、opacity のみで合成する軽量オーバーレイにする */}
+      {fever && (
+        <motion.div
+          className="absolute inset-0 bg-[var(--panel)] pointer-events-none z-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 0.55, 0] }}
+          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+        />
+      )}
       {state.gameMode !== 'SUDDEN_DEATH' && (
-        <div className="h-2 w-full bg-[var(--text)] opacity-20 shrink-0 relative">
-          <motion.div className="h-full absolute top-0 left-0 bg-[var(--primary)] opacity-100 z-10" animate={{ width: `${progress}%`, backgroundColor: (state.gameMode === 'SCORE_ATTACK' && remainSec <= 10) ? '#ef4444' : 'var(--primary)' }} transition={{ ease: 'linear', duration: 0.2 }} />
-        </div>
+        <TimerProgressBar gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} correctCount={correctCount} total={state.problemSet.length} onTimeUp={finishGame} />
       )}
 
       {/* ランキング表示（メインレイアウトの外に配置） */}
@@ -2237,7 +2301,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
           <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
             <button onClick={() => { audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-2 py-1 font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center gap-1"><XCircle size={16} /> やめる</button>
-            <div className={`font-black text-2xl flex items-center gap-2 ${(state.gameMode === 'SCORE_ATTACK' && remainSec <= 10) ? 'text-red-500 animate-pulse' : 'text-[var(--text)]'}`}><Clock size={24} /> {m}:{s}</div>
+            <TimerClock gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} />
             <div className="font-black text-2xl text-[var(--primary)] flex items-center gap-2 drop-shadow-sm">
               {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : <>{score} <span className="text-sm text-[var(--text)] opacity-50">pt</span></>}
             </div>
@@ -2262,17 +2326,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             <motion.button whileTap={{ scale: 0.8 }} className={`absolute ${memoPosition === 'right' && showMemo ? 'right-4' : (showMemo ? 'left-4' : 'right-4')} w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--panel)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-50'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
           </motion.div>
 
-          <div className="flex-grow flex flex-col gap-2 z-30 min-h-[30vh]">
-            <div className="flex h-14 gap-2 shrink-0">
-              {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setAns(a => a.length < 15 ? a + c : a); }}>{c}</motion.button>)}
-            </div>
-            <div className="grid grid-cols-3 gap-2 flex-grow">
-              {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setAns(a => a.length < 15 ? a + n : a); }}>{n}</motion.button>)}
-              <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setAns(''); }}>C</motion.button>
-              <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setAns(a => a.length < 15 ? a + '0' : a); }}>0</motion.button>
-              <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--panel)] border-[3px] border-[var(--text)] font-black text-3xl rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); submitAns(); }}>OK</motion.button>
-            </div>
-          </div>
+          <Keypad onAppend={handleAppend} onClear={handleClear} onSubmit={handleSubmit} />
         </div>
 
         <div className={`w-full md:flex-grow relative transition-all duration-300 h-[500px] md:h-full flex-shrink-0 md:flex-shrink p-4 md:p-6 flex flex-col gap-2 ${showMemo ? 'opacity-100 flex' : 'hidden opacity-0'}`}>
@@ -2309,7 +2363,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 };
 
