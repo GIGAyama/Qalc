@@ -476,7 +476,7 @@ const generateDynamicProblems = () => {
     } else if (type === 1) {
       let a = Math.floor(Math.random() * 9) + 2;
       let b = Math.floor(Math.random() * (a - 1)) + 1;
-      bigCalc2.push(`${a * 1000}-${b * 1000}|${(a - b) * 100}`);
+      bigCalc2.push(`${a * 100}-${b * 100}|${(a - b) * 100}`);
     } else if (type === 2) {
       let a = Math.floor(Math.random() * 9) + 1;
       let b = Math.floor(Math.random() * (10 - a)) + 1;
@@ -1244,6 +1244,18 @@ const normalizeStr = (str) => {
   return String(str).replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/\s+/g, '');
 };
 
+// DEFAULT_PROBLEMS のパース結果は不変なので一度だけ計算して使い回す
+let parsedDefaultProblemsCache = null;
+const getParsedDefaultProblems = () => {
+  if (!parsedDefaultProblemsCache) {
+    parsedDefaultProblemsCache = {};
+    for (const [key, list] of Object.entries(DEFAULT_PROBLEMS)) {
+      parsedDefaultProblemsCache[key] = list.map(str => { const parts = str.split('|'); return { q: parts[0], a: parts.slice(1).join('|') }; });
+    }
+  }
+  return parsedDefaultProblemsCache;
+};
+
 const StorageAPI = {
   safeGet: (key, fallback = null) => { try { const v = window.localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; } },
   safeSet: (key, val) => { try { window.localStorage.setItem(key, JSON.stringify(val)); return true; } catch (e) { console.warn("Quota exceeded"); return false; } },
@@ -1317,16 +1329,16 @@ const StorageAPI = {
 
   getRawData: () => {
     let data = StorageAPI.safeGet('qalc_problems', {});
-    const parsedDefaults = {};
-    for (const [key, list] of Object.entries(DEFAULT_PROBLEMS)) {
-      parsedDefaults[key] = list.map(str => { const parts = str.split('|'); return { q: parts[0], a: parts.slice(1).join('|') }; });
-    }
+    const parsedDefaults = getParsedDefaultProblems();
     let isUpdated = false;
     for (const key of Object.keys(parsedDefaults)) { if (!data[key]) { data[key] = parsedDefaults[key]; isUpdated = true; } }
     if (isUpdated || Object.keys(data).length === 0) StorageAPI.safeSet('qalc_problems', data);
     return Object.keys(data).length > 0 ? data : parsedDefaults;
   },
-  getProblemGroups: () => Object.keys(StorageAPI.getRawData()).map(key => ({ name: key, count: StorageAPI.getRawData()[key].length })),
+  getProblemGroups: () => {
+    const data = StorageAPI.getRawData();
+    return Object.keys(data).map(key => ({ name: key, count: data[key].length }));
+  },
   getProblemsByGroup: (name) => StorageAPI.getRawData()[name] || [],
   saveProblemSet: (name, problems) => { const data = StorageAPI.getRawData(); data[name] = problems; return StorageAPI.safeSet('qalc_problems', data); },
   deleteProblemGroup: (name) => { const data = StorageAPI.getRawData(); delete data[name]; return StorageAPI.safeSet('qalc_problems', data); },
@@ -1459,19 +1471,30 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
       ctx.strokeStyle = resolveVar(cvs, '--text', '#333333'); ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     };
 
+    // バッファ上限: 万一レイアウトが暴走してもバッファの巨大化（メガピクセル級の再確保・コピー）で
+    // 端末が固まらないようにする保険。通常の画面サイズではこの上限に届かない。
+    const MAX_DIM = 4096;
+    const doResize = () => {
+      if (!canvasRef.current || !canvasRef.current.parentElement) return;
+      const currentCvs = canvasRef.current;
+      const parent = currentCvs.parentElement;
+      // clientWidth/Height はボーダーを除いた整数値。canvas は absolute 配置でフロー外のため、
+      // ここでバッファを変えてもレイアウトに影響せず ResizeObserver が再発火しない
+      const newW = Math.min(parent.clientWidth, MAX_DIM); const newH = Math.min(parent.clientHeight, MAX_DIM);
+      if (newW === 0 || newH === 0) return;
+      if (Math.abs(currentCvs.width - newW) > 1 || Math.abs(currentCvs.height - newH) > 1) {
+        const tempCanvas = document.createElement('canvas'); tempCanvas.width = currentCvs.width || newW; tempCanvas.height = currentCvs.height || newH;
+        if (currentCvs.width > 0 && currentCvs.height > 0) tempCanvas.getContext('2d').drawImage(currentCvs, 0, 0);
+        currentCvs.width = newW; currentCvs.height = newH;
+        fillPaper(currentCvs, ctx); applyStyle(); ctx.drawImage(tempCanvas, 0, 0);
+      }
+    };
+    // 開閉時の300msトランジション中は毎フレーム ResizeObserver が発火するため、
+    // サイズが落ち着いてから1回だけバッファを再確保する（低スペック機での連続再確保を防ぐ）
+    let resizeTimer = null;
     const resize = () => {
-      window.requestAnimationFrame(() => {
-        if (!canvasRef.current || !canvasRef.current.parentElement) return;
-        const currentCvs = canvasRef.current;
-        const rect = currentCvs.parentElement.getBoundingClientRect(); const newW = Math.round(rect.width); const newH = Math.round(rect.height);
-        if (newW === 0 || newH === 0) return;
-        if (Math.abs(currentCvs.width - newW) > 1 || Math.abs(currentCvs.height - newH) > 1) {
-          const tempCanvas = document.createElement('canvas'); tempCanvas.width = currentCvs.width || newW; tempCanvas.height = currentCvs.height || newH;
-          if (currentCvs.width > 0 && currentCvs.height > 0) tempCanvas.getContext('2d').drawImage(currentCvs, 0, 0);
-          currentCvs.width = newW; currentCvs.height = newH;
-          fillPaper(currentCvs, ctx); applyStyle(); ctx.drawImage(tempCanvas, 0, 0);
-        }
-      });
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { resizeTimer = null; window.requestAnimationFrame(doResize); }, 120);
     };
     const observer = new ResizeObserver(resize); observer.observe(cvs.parentElement);
 
@@ -1496,6 +1519,7 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
 
     return () => {
       observer.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
       cvs.removeEventListener('pointerdown', startDraw); cvs.removeEventListener('pointermove', draw); cvs.removeEventListener('pointerup', stopDraw); cvs.removeEventListener('pointercancel', stopDraw);
     };
   }, []);
@@ -1503,8 +1527,11 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
   return (
     // 軽さ最優先: ドット背景・内側影・太い角丸枠などの塗りコストを排除。canvas は不透明な素の矩形で、
     // 低スペック機(ソフトウェア合成含む)でも描画コストが最小になるようにする。
-    <div className="w-full h-full relative border-2 border-[var(--text)] bg-[var(--panel)]">
-      <canvas ref={canvasRef} className="w-full h-full block touch-none" />
+    // canvas は必ず absolute でフロー外に置く: 通常フローに置くとバッファサイズ(=固有サイズ)が
+    // flex の min-content 計算に入り、「バッファ拡大→親が成長→ResizeObserver→さらに拡大」の
+    // 無限ループでバッファが数万pxまで膨張し、操作不能なほど重くなる。
+    <div className="w-full h-full relative overflow-hidden border-2 border-[var(--text)] bg-[var(--panel)]">
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full touch-none" />
       <button className="absolute top-3 right-3 w-11 h-11 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 z-20 active:scale-90 transition-transform" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></button>
     </div>
   );
@@ -1525,18 +1552,19 @@ const Keypad = React.memo(({ onAppend, onClear, onSubmit }) => (
   </div>
 ));
 
-// CDNスクリプト動的読み込みフック（PeerJS, QRCode）
+// CDNスクリプト動的読み込みフック（PeerJS, QRCode, canvas-confetti）
 const useExternalScripts = () => {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     const loadScript = (src) => new Promise((resolve) => {
       if (document.querySelector(`script[src="${src}"]`)) return resolve();
       const script = document.createElement('script');
-      script.src = src; script.onload = resolve; document.head.appendChild(script);
+      script.src = src; script.onload = resolve; script.onerror = resolve; document.head.appendChild(script);
     });
     Promise.all([
       loadScript('https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js'),
-      loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js')
+      loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'),
+      loadScript('https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js')
     ]).then(() => setLoaded(true));
   }, []);
   return loaded;
@@ -1897,8 +1925,9 @@ const ShopView = ({ setView, stats, setStats }) => {
       if (category === 'themes') {
         newStats.theme = item.id;
       } else {
+        // equipped は LayeredAvatar(React.memo) の props になるため、必ず新しいオブジェクトに差し替える
         const propName = category.slice(0, -1);
-        if (newStats.equipped[propName] === item.id) newStats.equipped[propName] = null; else newStats.equipped[propName] = item.id;
+        newStats.equipped = { ...newStats.equipped, [propName]: newStats.equipped[propName] === item.id ? null : item.id };
       }
       StorageAPI.saveStats(newStats); setStats(newStats);
     }
@@ -1909,10 +1938,10 @@ const ShopView = ({ setView, stats, setStats }) => {
     const { item, category } = confirmItem;
     let newStats = { ...stats };
     newStats.coins -= item.price;
-    newStats.inventory[category].push(item.id);
+    newStats.inventory = { ...newStats.inventory, [category]: [...newStats.inventory[category], item.id] };
 
     if (category === 'themes') { newStats.theme = item.id; }
-    else { const propName = category.slice(0, -1); newStats.equipped[propName] = item.id; }
+    else { const propName = category.slice(0, -1); newStats.equipped = { ...newStats.equipped, [propName]: item.id }; }
 
     audioCtrl.playSE('coin'); showToast('success', '購入しました！');
     StorageAPI.saveStats(newStats); setStats(newStats); setConfirmItem(null);
@@ -2249,6 +2278,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
   useEffect(() => {
     const handleKey = (e) => {
+      if (quitDialog) return; // ダイアログ表示中は背後のゲームに入力を流さない
       const key = e.key;
       if ((key >= '0' && key <= '9') || ['.', '/', '-', '(', ')'].includes(key)) { audioCtrl.playSE('click'); setAns(a => (a.length < 15 ? a + key : a)); }
       else if (key === 'Backspace') { audioCtrl.playSE('click'); setAns(a => a.slice(0, -1)); }
@@ -2256,7 +2286,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       else if (key === 'Escape' || key === 'Delete' || key.toLowerCase() === 'c') { audioCtrl.playSE('click'); setAns(''); }
     };
     window.addEventListener('keydown', handleKey); return () => window.removeEventListener('keydown', handleKey);
-  }, [submitAns]);
+  }, [submitAns, quitDialog]);
 
   // キーパッドへ渡す安定コールバック（submitAns は ref 経由で最新を参照し、Keypad の memo を維持する）
   const submitAnsRef = useRef(submitAns); useEffect(() => { submitAnsRef.current = submitAns; }, [submitAns]);
@@ -2336,8 +2366,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           <Keypad onAppend={handleAppend} onClear={handleClear} onSubmit={handleSubmit} />
         </div>
 
-        <div className={`w-full md:flex-grow relative transition-all duration-300 h-[500px] md:h-full flex-shrink-0 md:flex-shrink p-4 md:p-6 flex flex-col gap-2 ${showMemo ? 'opacity-100 flex' : 'hidden opacity-0'}`}>
-          <div className="flex-grow relative">
+        {/* min-h-0/min-w-0: canvas の固有サイズが flex の min-content 経由でレイアウトを押し広げないようにする */}
+        <div className={`w-full md:flex-grow relative transition-all duration-300 h-[500px] md:h-full flex-shrink-0 md:flex-shrink min-h-0 min-w-0 p-4 md:p-6 flex flex-col gap-2 ${showMemo ? 'opacity-100 flex' : 'hidden opacity-0'}`}>
+          <div className="flex-grow relative min-h-0 min-w-0">
             <HandWritingCanvas ref={canvasRef} />
           </div>
         </div>
@@ -2533,7 +2564,7 @@ const ManagerView = ({ setView }) => {
 
   const openEdit = (name) => {
     setEditTarget(name); setEditName(name);
-    if (name) { const res = StorageAPI.getProblemsByGroup(name); setProbs(res.length ? res.map(p => ({ q: p.q, a: String(p.a) })) : [{ q: '', a: '' }]); } else { setProbs(Array(3).fill({ q: '', a: '' })); }
+    if (name) { const res = StorageAPI.getProblemsByGroup(name); setProbs(res.length ? res.map(p => ({ q: p.q, a: String(p.a) })) : [{ q: '', a: '' }]); } else { setProbs(Array.from({ length: 3 }, () => ({ q: '', a: '' }))); }
   };
   const save = () => {
     if (!editName.trim()) return showToast('warning', '名前を入力してください');
@@ -2593,8 +2624,8 @@ const ManagerView = ({ setView }) => {
             <AnimatePresence>
               {probs.map((p, i) => (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} key={i} className="flex border-b-2 border-dashed border-[var(--bg)] overflow-hidden">
-                  <input type="text" className="flex-grow p-3 outline-none font-bold bg-transparent text-[var(--text)]" placeholder="問題" value={p.q} onChange={e => { const n = [...probs]; n[i].q = e.target.value; setProbs(n); }} />
-                  <input type="text" className="w-24 p-3 outline-none border-l-2 border-dashed border-[var(--bg)] text-center font-bold text-[var(--primary)] bg-transparent" placeholder="答え" value={p.a} onChange={e => { const n = [...probs]; n[i].a = e.target.value; setProbs(n); }} />
+                  <input type="text" className="flex-grow p-3 outline-none font-bold bg-transparent text-[var(--text)]" placeholder="問題" value={p.q} onChange={e => { const n = [...probs]; n[i] = { ...n[i], q: e.target.value }; setProbs(n); }} />
+                  <input type="text" className="w-24 p-3 outline-none border-l-2 border-dashed border-[var(--bg)] text-center font-bold text-[var(--primary)] bg-transparent" placeholder="答え" value={p.a} onChange={e => { const n = [...probs]; n[i] = { ...n[i], a: e.target.value }; setProbs(n); }} />
                   <button className="w-12 border-l-2 border-dashed border-[var(--bg)] text-[var(--text)] opacity-30 hover:opacity-100 flex items-center justify-center transition-opacity" onClick={() => { audioCtrl.playSE('click'); setProbs(probs.filter((_, idx) => idx !== i)) }}><XCircle size={20} /></button>
                 </motion.div>
               ))}
@@ -2702,7 +2733,7 @@ export default function App() {
   const [configMode, setConfigMode] = useState('SCORE_ATTACK');
   const [isMuted, setIsMuted] = useState(audioCtrl.muted);
   const [state, setState] = useState({ problemSet: [], timeLimitSec: 0, courseName: '', finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0, gameMode: 'SCORE_ATTACK', mistakes: [] });
-  const [stats, setStats] = useState(StorageAPI.getStats());
+  const [stats, setStats] = useState(() => StorageAPI.getStats());
   const [resumeData, setResumeData] = useState(() => StorageAPI.getResume());
 
   const resumeGame = () => {
