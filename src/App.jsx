@@ -1471,19 +1471,30 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
       ctx.strokeStyle = resolveVar(cvs, '--text', '#333333'); ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     };
 
+    // バッファ上限: 万一レイアウトが暴走してもバッファの巨大化（メガピクセル級の再確保・コピー）で
+    // 端末が固まらないようにする保険。通常の画面サイズではこの上限に届かない。
+    const MAX_DIM = 4096;
+    const doResize = () => {
+      if (!canvasRef.current || !canvasRef.current.parentElement) return;
+      const currentCvs = canvasRef.current;
+      const parent = currentCvs.parentElement;
+      // clientWidth/Height はボーダーを除いた整数値。canvas は absolute 配置でフロー外のため、
+      // ここでバッファを変えてもレイアウトに影響せず ResizeObserver が再発火しない
+      const newW = Math.min(parent.clientWidth, MAX_DIM); const newH = Math.min(parent.clientHeight, MAX_DIM);
+      if (newW === 0 || newH === 0) return;
+      if (Math.abs(currentCvs.width - newW) > 1 || Math.abs(currentCvs.height - newH) > 1) {
+        const tempCanvas = document.createElement('canvas'); tempCanvas.width = currentCvs.width || newW; tempCanvas.height = currentCvs.height || newH;
+        if (currentCvs.width > 0 && currentCvs.height > 0) tempCanvas.getContext('2d').drawImage(currentCvs, 0, 0);
+        currentCvs.width = newW; currentCvs.height = newH;
+        fillPaper(currentCvs, ctx); applyStyle(); ctx.drawImage(tempCanvas, 0, 0);
+      }
+    };
+    // 開閉時の300msトランジション中は毎フレーム ResizeObserver が発火するため、
+    // サイズが落ち着いてから1回だけバッファを再確保する（低スペック機での連続再確保を防ぐ）
+    let resizeTimer = null;
     const resize = () => {
-      window.requestAnimationFrame(() => {
-        if (!canvasRef.current || !canvasRef.current.parentElement) return;
-        const currentCvs = canvasRef.current;
-        const rect = currentCvs.parentElement.getBoundingClientRect(); const newW = Math.round(rect.width); const newH = Math.round(rect.height);
-        if (newW === 0 || newH === 0) return;
-        if (Math.abs(currentCvs.width - newW) > 1 || Math.abs(currentCvs.height - newH) > 1) {
-          const tempCanvas = document.createElement('canvas'); tempCanvas.width = currentCvs.width || newW; tempCanvas.height = currentCvs.height || newH;
-          if (currentCvs.width > 0 && currentCvs.height > 0) tempCanvas.getContext('2d').drawImage(currentCvs, 0, 0);
-          currentCvs.width = newW; currentCvs.height = newH;
-          fillPaper(currentCvs, ctx); applyStyle(); ctx.drawImage(tempCanvas, 0, 0);
-        }
-      });
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { resizeTimer = null; window.requestAnimationFrame(doResize); }, 120);
     };
     const observer = new ResizeObserver(resize); observer.observe(cvs.parentElement);
 
@@ -1508,6 +1519,7 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
 
     return () => {
       observer.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
       cvs.removeEventListener('pointerdown', startDraw); cvs.removeEventListener('pointermove', draw); cvs.removeEventListener('pointerup', stopDraw); cvs.removeEventListener('pointercancel', stopDraw);
     };
   }, []);
@@ -1515,8 +1527,11 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
   return (
     // 軽さ最優先: ドット背景・内側影・太い角丸枠などの塗りコストを排除。canvas は不透明な素の矩形で、
     // 低スペック機(ソフトウェア合成含む)でも描画コストが最小になるようにする。
-    <div className="w-full h-full relative border-2 border-[var(--text)] bg-[var(--panel)]">
-      <canvas ref={canvasRef} className="w-full h-full block touch-none" />
+    // canvas は必ず absolute でフロー外に置く: 通常フローに置くとバッファサイズ(=固有サイズ)が
+    // flex の min-content 計算に入り、「バッファ拡大→親が成長→ResizeObserver→さらに拡大」の
+    // 無限ループでバッファが数万pxまで膨張し、操作不能なほど重くなる。
+    <div className="w-full h-full relative overflow-hidden border-2 border-[var(--text)] bg-[var(--panel)]">
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full touch-none" />
       <button className="absolute top-3 right-3 w-11 h-11 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 z-20 active:scale-90 transition-transform" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></button>
     </div>
   );
@@ -2351,8 +2366,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           <Keypad onAppend={handleAppend} onClear={handleClear} onSubmit={handleSubmit} />
         </div>
 
-        <div className={`w-full md:flex-grow relative transition-all duration-300 h-[500px] md:h-full flex-shrink-0 md:flex-shrink p-4 md:p-6 flex flex-col gap-2 ${showMemo ? 'opacity-100 flex' : 'hidden opacity-0'}`}>
-          <div className="flex-grow relative">
+        {/* min-h-0/min-w-0: canvas の固有サイズが flex の min-content 経由でレイアウトを押し広げないようにする */}
+        <div className={`w-full md:flex-grow relative transition-all duration-300 h-[500px] md:h-full flex-shrink-0 md:flex-shrink min-h-0 min-w-0 p-4 md:p-6 flex flex-col gap-2 ${showMemo ? 'opacity-100 flex' : 'hidden opacity-0'}`}>
+          <div className="flex-grow relative min-h-0 min-w-0">
             <HandWritingCanvas ref={canvasRef} />
           </div>
         </div>
