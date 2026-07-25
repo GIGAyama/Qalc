@@ -209,7 +209,8 @@ export const TOOL_META = {
 export const getAvailableTools = (courseName = '', qText = '') => {
   const p = parseArith(qText);
   const tools = [];
-  const isLowGrade = /^[12]年/.test(courseName);
+  // 複数ドリル選択時は「、」区切りで連結されるので、どれか1つでも低学年ドリルなら低学年向けどうぐを出す
+  const isLowGrade = /(^|、)[12]年/.test(courseName);
 
   // 図で見る系は問題文そのものを図にするので、使えるときは先頭（初期タブ）にする
   if (parseClock(qText)) tools.push('tokei');
