@@ -1,9 +1,14 @@
-const CACHE = 'qalc-cache-v1';
+const CACHE = 'qalc-cache-v2';
 const SHELL = [
   '/Qalc/',
   '/Qalc/index.html',
   '/Qalc/manifest.webmanifest',
   '/Qalc/favicon.png',
+  '/Qalc/icon-192.png',
+  '/Qalc/icon-512.png',
+  '/Qalc/icon-maskable-192.png',
+  '/Qalc/icon-maskable-512.png',
+  '/Qalc/apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (event) => {
