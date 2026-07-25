@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Calculator, Trash2, PenTool, Home, Rocket, ChevronRight,
+  Calculator, Trash2, PenTool, Home, Rocket,
   Flame, Clock, Award, Settings, Plus, XCircle, Bot, Volume2,
   VolumeX, ArrowLeftRight, Share2, BarChart3, Trophy, User,
   Gamepad2, Swords, Timer, Download, HeartCrack, Coins,
@@ -1817,7 +1817,7 @@ const MULTI_MODES = [
   { id: 'TERRITORY', label: 'じんとり' },
 ];
 const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, configMode, setConfigMode, initRaid, initTerritory }) => {
-  const [groups, setGroups] = useState([]); const [selectedGroup, setSelectedGroup] = useState('');
+  const [groups, setGroups] = useState([]); const [selectedGroups, setSelectedGroups] = useState([]);
   const [time, setTime] = useState(3);
   const [selectedGrade, setSelectedGrade] = useState('すべて');
   const grades = ['すべて', '1年', '2年', '3年', '4年', '5年', '6年', 'その他'];
@@ -1829,7 +1829,6 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
   });
 
   useEffect(() => { setGroups(StorageAPI.getProblemGroups()); }, []);
-  useEffect(() => { if (filteredGroups.length > 0 && !filteredGroups.find(g => g.name === selectedGroup)) setSelectedGroup(filteredGroups[0].name); }, [selectedGrade, groups]);
 
   // QRコード描画
   useEffect(() => {
@@ -1859,15 +1858,16 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
   };
 
   const startGame = () => {
-    let probs = StorageAPI.getProblemsByGroup(selectedGroup);
-    if (!probs || probs.length === 0) return showToast('error', '問題がありません');
+    if (selectedGroups.length === 0) return showToast('warning', 'ドリルを選んでください');
+    let probs = collectProblems(selectedGroups);
+    if (probs.length === 0) return showToast('error', '問題がありません');
     probs = [...probs].sort(() => Math.random() - 0.5);
     if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
 
     const gameConfig = {
       timeLimitSec: (configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') ? time * 60 : 0,
       problemSet: probs.map(p => ({ q: p.q, a: String(p.a).split('|') })),
-      courseName: selectedGroup,
+      courseName: joinCourseNames(selectedGroups),
       gameMode: configMode
     };
 
@@ -1973,12 +1973,8 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
             {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-2 transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--bg)] border-transparent text-[var(--text)] hover:border-gray-400'}`}>{grade}</button>)}
           </div>
 
-          <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-70 ruby-text">コースを<R c="選" r="せん" /><R c="択" r="たく" /></label>
-          <div className="relative mb-2">
-            <select className="w-full appearance-none border-[3px] rounded-xl p-3 font-bold outline-none bg-[var(--bg)] text-[var(--text)] border-[var(--text)] focus:border-[var(--secondary)]" value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)}>
-              {filteredGroups.length > 0 ? filteredGroups.map(g => <option key={g.name} value={g.name}>{g.name} ({g.count}問)</option>) : <option value="">該当するコースがありません</option>}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-[var(--text)]"><ChevronRight size={20} className="rotate-90" /></div>
+          <div className="mb-2">
+            <CourseMultiSelect filteredGroups={filteredGroups} allGroups={groups} selected={selectedGroups} setSelected={setSelectedGroups} />
           </div>
         </div>
 
@@ -2179,9 +2175,77 @@ const ShopView = ({ setView, stats, setStats }) => {
   );
 };
 
+// --- ドリル(コース)の複数選択リスト ---
+// プルダウン1択の代わりに、タップで ON/OFF できるチェックリスト。
+// 学年フィルタで隠れているぶんも含めて、えらんだドリルは下のチップ行でいつでも一覧・解除できる
+const CourseMultiSelect = ({ filteredGroups, allGroups, selected, setSelected }) => {
+  const toggle = (name) => {
+    audioCtrl.playSE('click');
+    setSelected(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+  };
+  const visibleNames = filteredGroups.map(g => g.name);
+  const allVisibleSelected = visibleNames.length > 0 && visibleNames.every(n => selected.includes(n));
+  const toggleAllVisible = () => {
+    audioCtrl.playSE('click');
+    setSelected(prev => allVisibleSelected ? prev.filter(n => !visibleNames.includes(n)) : [...new Set([...prev, ...visibleNames])]);
+  };
+  const groupOf = (name) => allGroups.find(g => g.name === name);
+  const totalCount = selected.reduce((sum, name) => sum + (groupOf(name)?.count || 0), 0);
+
+  return (
+    <div>
+      <div className="flex items-end justify-between mb-1 gap-2">
+        <label className="font-bold text-sm text-[var(--text)] opacity-70">ドリル（タップで えらぶ・いくつでもOK）</label>
+        {visibleNames.length > 0 && (
+          <button onClick={toggleAllVisible} className="shrink-0 text-xs font-bold px-3 py-1 rounded-full border-2 border-[var(--text)] bg-[var(--bg)] text-[var(--text)] active:scale-95 transition-transform touch-manipulation">
+            {allVisibleSelected ? 'ぜんぶ はずす' : 'ぜんぶ えらぶ'}
+          </button>
+        )}
+      </div>
+      <div className="border-[3px] border-[var(--text)] rounded-xl bg-[var(--bg)] overflow-hidden">
+        <div className="max-h-52 overflow-y-auto p-2 flex flex-col gap-1.5">
+          {filteredGroups.length === 0 && <p className="text-center font-bold text-sm text-[var(--text)] opacity-50 py-4">該当するコースがありません</p>}
+          {filteredGroups.map(g => {
+            const on = selected.includes(g.name);
+            return (
+              <button key={g.name} onClick={() => toggle(g.name)} aria-pressed={on}
+                className={`flex items-center gap-2.5 p-2.5 rounded-lg border-2 text-left transition-colors touch-manipulation ${on ? 'bg-[var(--accent)] border-[var(--text)]' : 'bg-[var(--panel)] border-transparent'}`}>
+                <span className={`w-6 h-6 shrink-0 rounded flex items-center justify-center border-2 transition-colors ${on ? 'bg-[var(--secondary)] border-[var(--secondary)]' : 'bg-[var(--panel)] border-[var(--text)]'}`}>
+                  {on && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
+                </span>
+                <span className="flex-grow font-bold text-sm text-[var(--text)] truncate">{g.displayName || g.name}</span>
+                <span className="shrink-0 text-xs font-bold text-[var(--text)] opacity-50">{g.count}問</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="border-t-2 border-dashed border-[var(--text)] bg-[var(--panel)] p-2 flex items-center gap-1.5 flex-wrap min-h-[44px]">
+          {selected.length === 0 ? (
+            <span className="font-bold text-xs text-[var(--text)] opacity-50 px-1">ドリルを えらんでね</span>
+          ) : (
+            <>
+              <span className="shrink-0 font-black text-xs bg-[var(--text)] text-[var(--panel)] rounded-full px-2.5 py-1">{selected.length}こ / {totalCount}問</span>
+              {selected.map(name => (
+                <button key={name} onClick={() => toggle(name)} className="flex items-center gap-1 max-w-[160px] text-xs font-bold bg-[var(--bg)] border-2 border-[var(--text)] rounded-full pl-2.5 pr-1.5 py-0.5 active:scale-95 transition-transform touch-manipulation">
+                  <span className="truncate">{groupOf(name)?.displayName || name}</span>
+                  <XCircle size={14} className="shrink-0 opacity-60" />
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// えらんだドリル(複数)の問題をまとめて集める。mistakes はにがて克服ボックス
+const collectProblems = (names) => names.flatMap(name => (name === 'mistakes' ? StorageAPI.getMistakes() : StorageAPI.getProblemsByGroup(name)) || []);
+const joinCourseNames = (names) => names.map(n => n === 'mistakes' ? 'にがて克服ボックス' : n).join('、');
+
 // --- 設定・スタート画面 ---
 const SingleConfigView = ({ setView, setState, configMode }) => {
-  const [groups, setGroups] = useState([]); const [selectedGroup, setSelectedGroup] = useState(''); const [time, setTime] = useState(3); const [isShuffle, setIsShuffle] = useState(true); const [selectedGrade, setSelectedGrade] = useState('すべて');
+  const [groups, setGroups] = useState([]); const [selectedGroups, setSelectedGroups] = useState([]); const [time, setTime] = useState(3); const [isShuffle, setIsShuffle] = useState(true); const [selectedGrade, setSelectedGrade] = useState('すべて');
   const grades = ['すべて', '1年', '2年', '3年', '4年', '5年', '6年', 'その他'];
   const mistakesCount = StorageAPI.getMistakes().length;
 
@@ -2192,20 +2256,19 @@ const SingleConfigView = ({ setView, setState, configMode }) => {
     return g.name.startsWith(selectedGrade);
   });
 
-  useEffect(() => { if (filteredGroups.length > 0 && !filteredGroups.find(g => g.name === selectedGroup)) setSelectedGroup(filteredGroups[0].name); }, [selectedGrade, groups]);
   useEffect(() => { const list = StorageAPI.getProblemGroups(); if (mistakesCount > 0) list.unshift({ name: 'mistakes', count: mistakesCount, displayName: '★ にがて克服ボックス' }); setGroups(list); }, []);
 
   const start = () => {
-    if (!selectedGroup) return showToast('warning', 'コースを選択してください');
-    let probs = selectedGroup === 'mistakes' ? StorageAPI.getMistakes() : StorageAPI.getProblemsByGroup(selectedGroup);
-    if (!probs || probs.length === 0) return showToast('error', '問題がありません');
+    if (selectedGroups.length === 0) return showToast('warning', 'ドリルを選んでください');
+    let probs = collectProblems(selectedGroups);
+    if (probs.length === 0) return showToast('error', '問題がありません');
     if (isShuffle) probs = [...probs].sort(() => Math.random() - 0.5);
     if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
 
     setState({
       timeLimitSec: configMode === 'SCORE_ATTACK' ? time * 60 : 0,
       problemSet: probs.map(p => ({ q: p.q, a: String(p.a).split('|') })),
-      courseName: selectedGroup === 'mistakes' ? 'にがて克服ボックス' : selectedGroup,
+      courseName: joinCourseNames(selectedGroups),
       gameMode: configMode
     });
     setView('game');
@@ -2227,15 +2290,7 @@ const SingleConfigView = ({ setView, setState, configMode }) => {
           </div>
         </div>
 
-        <div>
-          <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-70">コース</label>
-          <div className="relative">
-            <select className={`w-full appearance-none border-[3px] rounded-xl p-3 font-bold outline-none bg-[var(--panel)] text-[var(--text)] focus:border-[var(--secondary)] ${selectedGroup === 'mistakes' ? 'border-[var(--primary)]' : 'border-[var(--text)]'}`} value={selectedGroup} onChange={e => { audioCtrl.playSE('click'); setSelectedGroup(e.target.value); }}>
-              {filteredGroups.length > 0 ? filteredGroups.map(g => <option key={g.name} value={g.name}>{g.displayName || g.name} ({g.count}問)</option>) : <option value="">該当するコースがありません</option>}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-[var(--text)]"><ChevronRight size={20} className="rotate-90" /></div>
-          </div>
-        </div>
+        <CourseMultiSelect filteredGroups={filteredGroups} allGroups={groups} selected={selectedGroups} setSelected={setSelectedGroups} />
 
         {configMode === 'SCORE_ATTACK' && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
@@ -2562,7 +2617,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       setAns(''); canvasRef.current?.clear();
 
       // にがて克服ボックスの問題は、正解した時点でボックスから取り除く（同セッション内で先に間違えていても、最後に正解すれば克服とみなす）
-      if (state.courseName === 'にがて克服ボックス') {
+      // courseName は複数ドリル選択時に「、」区切りで連結されるため includes で判定する
+      if ((state.courseName || '').includes('にがて克服ボックス')) {
         StorageAPI.removeMistakes([{ q: q.q }]);
         mistakesRef.current = mistakesRef.current.filter(m => m.q !== q.q);
       }
@@ -2692,8 +2748,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           </div>
 
           <motion.div animate={cardAnim} className={`bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] relative z-30 shrink-0 ${isTerritory ? 'h-16 mb-2 md:h-24 md:mb-4' : 'h-24 mb-4'}`}>
+            {/* onClick で開閉する(onPointerDown だと、開いた直後に指を離したときの合成 click が
+                最前面のオーバーレイに当たって即閉じてしまい、長押ししないと開けない挙動になる) */}
             {availableTools.length > 0 && (
-              <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showTools ? 'bg-[var(--accent)] text-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-50'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
+              <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 touch-manipulation ${showTools ? 'bg-[var(--accent)] text-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-50'}`} onClick={() => { audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
                 <Lightbulb size={24} />
               </motion.button>
             )}
