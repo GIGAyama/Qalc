@@ -1594,6 +1594,86 @@ const LEGACY_DEFAULT_KEYS = [
   '3年_ことば（あまりのある わり算）', '3年_ことば（長さと重さの たんい）'
 ];
 
+// ==========================================
+// マスター判定 & 報酬減衰（コイン・EXP稼ぎ目的の周回対策）
+// 方針: プレイ自体は制限しない（復習は自由）。ただし
+//  1) 高正答率・高速で安定してクリアできる＝「マスター済み」コースを楽々クリアしたとき
+//  2) 同じコースを同じ日に何度も繰り返したとき（難易度によらず。自作コース悪用対策も兼ねる）
+// はEXP・コイン・ミッション進捗が減衰し、代わりに「つぎのドリルへ挑戦しよう」と促す。
+const DECAY = {
+  REPEAT_SCHEDULE: [1, 1, 0.5, 0.25], // その日すでに遊んだ回数 → 倍率（3回目から半減）
+  REPEAT_FLOOR: 0.1,                  // 5回目以降の倍率
+  MASTERED_MULT: 0.2,                 // マスター済みコースを楽々クリアしたときの倍率
+  FLOOR: 0.05,                        // 合成倍率の下限（ゼロにはしない）
+  MASTER_MIN_CORRECT: 10,             // マスター判定に必要な1セッションの正解数
+  MASTER_MIN_ACC: 0.95,               // マスター判定に必要な正答率
+  MASTER_MAX_SPQ: 5,                  // マスター判定: 1問あたりの秒数上限（指折り計算では届かない速さ）
+  MASTER_STREAK: 3,                   // 連続何セッション条件を満たせばマスターか
+  DEMOTE_ACC: 0.8,                    // マスター済みでもこれを下回ったら「忘れていた」として解除
+  EASY_ACC: 0.9,                      // マスター減衰が発動する正答率（苦戦した復習は減衰しない）
+  MIN_ATTEMPTS_FOR_REPEAT: 5          // これ未満の回答数のセッションは周回カウントに入れない（誤タップ即終了の救済）
+};
+
+// セッションの正答率。サドンデスは終了のきっかけになった1ミスを除外して評価する
+const sessionAccuracy = (session) => {
+  const wrongAdj = session.gameMode === 'SUDDEN_DEATH' ? Math.max(0, session.wrongCount - 1) : session.wrongCount;
+  const attempts = session.correctCount + wrongAdj;
+  return { attempts, acc: attempts > 0 ? session.correctCount / attempts : 0 };
+};
+
+// にがて克服ボックス('mistakes')は常に減衰対象外（まちがい直しはいつでも全額）
+const realCoursesOf = (courseNames) => (courseNames || []).filter(n => n !== 'mistakes');
+
+const isCourseMastered = (stats, name) => !!(stats.courseStats && stats.courseStats[name] && stats.courseStats[name].mastered);
+
+// 減衰倍率を計算する（stats は変更しない。今セッションを記録する「前」の値で呼ぶこと）
+const computeRewardDecay = (stats, courseNames, session) => {
+  const real = realCoursesOf(courseNames);
+  if (real.length === 0) return { mult: 1, masteredApplied: false, repeatPlays: 0, repeatMult: 1 };
+  const today = new Date().toLocaleDateString();
+  const counts = (stats.repeat && stats.repeat.date === today) ? stats.repeat.counts : {};
+  // 複数ドリル選択時は「いちばん周回されているコース」に合わせる（稼ぎコースに新規1つ混ぜる抜け道の防止）
+  const repeatPlays = Math.max(...real.map(n => counts[n] || 0));
+  const repeatMult = repeatPlays < DECAY.REPEAT_SCHEDULE.length ? DECAY.REPEAT_SCHEDULE[repeatPlays] : DECAY.REPEAT_FLOOR;
+  const { acc } = sessionAccuracy(session);
+  // マスター減衰は「選んだ全コースがマスター済み」かつ「今回も楽々だった」ときだけ。苦戦したなら復習が必要だった証拠なので全額
+  const masteredApplied = real.every(n => isCourseMastered(stats, n)) && acc >= DECAY.EASY_ACC;
+  const mult = Math.max(DECAY.FLOOR, repeatMult * (masteredApplied ? DECAY.MASTERED_MULT : 1));
+  return { mult, masteredApplied, repeatPlays, repeatMult };
+};
+
+// 今セッションを周回カウント・マスター判定に記録する（stats を直接変更する）
+// 戻り値: { newlyMastered: 新しくマスターになったコース名 | null }
+const recordCourseSession = (stats, courseNames, session) => {
+  const real = realCoursesOf(courseNames);
+  if (real.length === 0) return { newlyMastered: null };
+  const today = new Date().toLocaleDateString();
+  if (!stats.repeat || stats.repeat.date !== today) stats.repeat = { date: today, counts: {} };
+  const { attempts, acc } = sessionAccuracy(session);
+  if (attempts >= DECAY.MIN_ATTEMPTS_FOR_REPEAT) {
+    real.forEach(n => { stats.repeat.counts[n] = (stats.repeat.counts[n] || 0) + 1; });
+  }
+  if (!stats.courseStats) stats.courseStats = {};
+  let newlyMastered = null;
+  // 複数ドリル混合ではコース別の正答率が分からないため、単一コースのセッションだけを判定の証拠にする
+  if (real.length === 1) {
+    const name = real[0];
+    const cs = stats.courseStats[name] || (stats.courseStats[name] = { plays: 0, streak: 0, mastered: false });
+    cs.plays += 1;
+    const spq = session.correctCount > 0 ? session.elapsedSec / session.correctCount : Infinity;
+    const qualifies = session.correctCount >= DECAY.MASTER_MIN_CORRECT && acc >= DECAY.MASTER_MIN_ACC && spq <= DECAY.MASTER_MAX_SPQ;
+    if (qualifies) {
+      cs.streak += 1;
+      if (!cs.mastered && cs.streak >= DECAY.MASTER_STREAK) { cs.mastered = true; cs.masteredAt = today; newlyMastered = name; }
+    } else {
+      cs.streak = 0;
+      // 久しぶりに遊んで正答率が落ちていたらマスター解除（忘れていた復習は全額で報いる）
+      if (cs.mastered && attempts >= DECAY.MIN_ATTEMPTS_FOR_REPEAT && acc < DECAY.DEMOTE_ACC) cs.mastered = false;
+    }
+  }
+  return { newlyMastered };
+};
+
 const StorageAPI = {
   safeGet: (key, fallback = null) => { try { const v = window.localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; } },
   safeSet: (key, val) => { try { window.localStorage.setItem(key, JSON.stringify(val)); return true; } catch (e) { console.warn("Quota exceeded"); return false; } },
@@ -1620,12 +1700,16 @@ const StorageAPI = {
         list: getRandomMissions(3, stats.streak || 0)
       };
     }
+    // マスター判定・周回カウントのマイグレーション（周回カウントは日替わりでリセット）
+    if (!stats.courseStats) stats.courseStats = {};
+    if (!stats.repeat || stats.repeat.date !== todayStr) stats.repeat = { date: todayStr, counts: {} };
     StorageAPI.safeSet('qalc_stats', stats);
     return stats;
   },
   saveStats: (stats) => StorageAPI.safeSet('qalc_stats', stats),
 
-  updateDailyAndMissions: (stats, exp, combo, playCount, gameMode, correctCount) => {
+  // missionPlayCredit: 減衰の強いセッションはミッションの「あそぶ系」進捗に数えない（省略時は playCount と同じ）
+  updateDailyAndMissions: (stats, exp, combo, playCount, gameMode, correctCount, missionPlayCredit = playCount) => {
     const today = new Date().toLocaleDateString();
     if (!stats.daily) stats.daily = {};
     if (!stats.daily[today]) stats.daily[today] = { exp: 0, count: 0 };
@@ -1643,16 +1727,16 @@ const StorageAPI = {
 
     if (stats.missions && stats.missions.date === today) {
       stats.missions.list.forEach(m => {
-        if (m.type === 'play' && !m.claimed) m.current += playCount;
+        if (m.type === 'play' && !m.claimed) m.current += missionPlayCredit;
         if (m.type === 'combo' && !m.claimed && combo > m.current) m.current = combo;
         if (m.type === 'score' && !m.claimed && exp > m.current) m.current = exp;
 
-        if (m.type === 'play_score_attack' && gameMode === 'SCORE_ATTACK' && !m.claimed) m.current += playCount;
-        if (m.type === 'play_time_attack' && gameMode === 'TIME_ATTACK' && !m.claimed) m.current += playCount;
-        if (m.type === 'play_sudden_death' && gameMode === 'SUDDEN_DEATH' && !m.claimed) m.current += playCount;
+        if (m.type === 'play_score_attack' && gameMode === 'SCORE_ATTACK' && !m.claimed) m.current += missionPlayCredit;
+        if (m.type === 'play_time_attack' && gameMode === 'TIME_ATTACK' && !m.claimed) m.current += missionPlayCredit;
+        if (m.type === 'play_sudden_death' && gameMode === 'SUDDEN_DEATH' && !m.claimed) m.current += missionPlayCredit;
         if (m.type === 'sudden_death_correct' && gameMode === 'SUDDEN_DEATH' && !m.claimed && correctCount > m.current) m.current = correctCount;
-        if (m.type === 'play_boss_raid' && gameMode === 'BOSS_RAID' && !m.claimed) m.current += playCount;
-        if (m.type === 'play_territory' && gameMode === 'TERRITORY' && !m.claimed) m.current += playCount;
+        if (m.type === 'play_boss_raid' && gameMode === 'BOSS_RAID' && !m.claimed) m.current += missionPlayCredit;
+        if (m.type === 'play_territory' && gameMode === 'TERRITORY' && !m.claimed) m.current += missionPlayCredit;
       });
     }
     return stats;
@@ -2595,7 +2679,7 @@ const ShopView = ({ setView, stats, setStats }) => {
 // --- ドリル(コース)の複数選択リスト ---
 // プルダウン1択の代わりに、タップで ON/OFF できるチェックリスト。
 // 学年フィルタで隠れているぶんも含めて、えらんだドリルは下のチップ行でいつでも一覧・解除できる
-const CourseMultiSelect = ({ filteredGroups, allGroups, selected, setSelected }) => {
+const CourseMultiSelect = ({ filteredGroups, allGroups, selected, setSelected, masteredSet = new Set() }) => {
   const toggle = (name) => {
     audioCtrl.playSE('click');
     setSelected(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
@@ -2631,6 +2715,7 @@ const CourseMultiSelect = ({ filteredGroups, allGroups, selected, setSelected })
                   {on && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
                 </span>
                 <span className="flex-grow font-bold text-sm text-[var(--text)] truncate">{g.displayName || g.name}</span>
+                {masteredSet.has(g.name) && <span className="shrink-0 text-[10px] font-black bg-[var(--accent)] text-[var(--text)] border-2 border-[var(--text)] rounded-full px-1.5 py-0.5">⭐マスター</span>}
                 <span className="shrink-0 text-xs font-bold text-[var(--text)] opacity-50">{g.count}問</span>
               </button>
             );
@@ -2661,10 +2746,20 @@ const collectProblems = (names) => names.flatMap(name => (name === 'mistakes' ? 
 const joinCourseNames = (names) => names.map(n => n === 'mistakes' ? 'にがて克服ボックス' : n).join('、');
 
 // --- 設定・スタート画面 ---
-const SingleConfigView = ({ setView, setState, configMode }) => {
+const SingleConfigView = ({ setView, setState, configMode, stats }) => {
   const [groups, setGroups] = useState([]); const [selectedGroups, setSelectedGroups] = useState([]); const [time, setTime] = useState(3); const [isShuffle, setIsShuffle] = useState(true); const [selectedGrade, setSelectedGrade] = useState('すべて');
   const grades = ['すべて', '1年', '2年', '3年', '4年', '5年', '6年', 'その他'];
   const mistakesCount = StorageAPI.getMistakes().length;
+
+  // マスター済みコースと今日の周回状況（選ぶ前に「減るよ」を知らせるための情報）
+  const masteredSet = new Set(Object.keys(stats?.courseStats || {}).filter(n => stats.courseStats[n].mastered));
+  const todayCounts = (stats?.repeat && stats.repeat.date === new Date().toLocaleDateString()) ? stats.repeat.counts : {};
+  const realSelected = realCoursesOf(selectedGroups);
+  const allSelectedMastered = realSelected.length > 0 && realSelected.every(n => masteredSet.has(n));
+  const maxRepeatPlays = realSelected.length > 0 ? Math.max(...realSelected.map(n => todayCounts[n] || 0)) : 0;
+  const previewRepeatMult = maxRepeatPlays < DECAY.REPEAT_SCHEDULE.length ? DECAY.REPEAT_SCHEDULE[maxRepeatPlays] : DECAY.REPEAT_FLOOR;
+  // おすすめ: 学習順(groups は courseCompare 順)で、まだマスターしていない最初のドリル
+  const recommend = groups.find(g => g.name !== 'mistakes' && !masteredSet.has(g.name) && !selectedGroups.includes(g.name));
 
   const filteredGroups = groups.filter(g => {
     if (g.name === 'mistakes') return true;
@@ -2686,6 +2781,7 @@ const SingleConfigView = ({ setView, setState, configMode }) => {
       timeLimitSec: configMode === 'SCORE_ATTACK' ? time * 60 : 0,
       problemSet: probs.map(p => ({ q: p.q, a: String(p.a).split('|') })),
       courseName: joinCourseNames(selectedGroups),
+      courseNames: [...selectedGroups],
       gameMode: configMode
     });
     setView('game');
@@ -2707,7 +2803,24 @@ const SingleConfigView = ({ setView, setState, configMode }) => {
           </div>
         </div>
 
-        <CourseMultiSelect filteredGroups={filteredGroups} allGroups={groups} selected={selectedGroups} setSelected={setSelectedGroups} />
+        <CourseMultiSelect filteredGroups={filteredGroups} allGroups={groups} selected={selectedGroups} setSelected={setSelectedGroups} masteredSet={masteredSet} />
+
+        {(allSelectedMastered || maxRepeatPlays >= 2) && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="bg-[var(--bg)] border-2 border-dashed border-[var(--text)] rounded-xl p-3 text-sm font-bold text-[var(--text)] flex flex-col gap-2">
+            {allSelectedMastered && (
+              <p className="ruby-text">⭐このドリルはもうマスターしたよ！つぎのドリルに<R c="挑" r="ちょう" /><R c="戦" r="せん" />するとEXPがいっぱいもらえるよ！</p>
+            )}
+            {maxRepeatPlays >= 2 && (
+              <p>🔁きょう {maxRepeatPlays + 1}かいめだよ。もらえるEXPは {Math.round(previewRepeatMult * 100)}% になるよ。</p>
+            )}
+            {recommend && (
+              <button onClick={() => { audioCtrl.playSE('click'); setSelectedGroups([recommend.name]); }}
+                className="self-start flex items-center gap-1.5 text-xs font-black bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-3 py-1.5 active:scale-95 transition-transform touch-manipulation">
+                👉つぎのおすすめ: <span className="max-w-[180px] truncate">{recommend.name}</span>
+              </button>
+            )}
+          </motion.div>
+        )}
 
         {configMode === 'SCORE_ATTACK' && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
@@ -2805,6 +2918,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const [showTools, setShowTools] = useState(false);
   const canvasRef = useRef(null); const [fever, setFever] = useState(false); const [cardAnim, setCardAnim] = useState({});
   const mistakesRef = useRef(resumeSnapshot?.mistakes ? [...resumeSnapshot.mistakes] : []);
+  // 正答率の算出用。mistakesRef はにがて克服で途中除去されるため、別カウンタで数える
+  const wrongCountRef = useRef(resumeSnapshot?.wrongCount || 0);
   const isResumedSessionRef = useRef(!!resumeSnapshot);
   const [quitDialog, setQuitDialog] = useState(false);
   const participantsList = isMultiplayer ? Object.entries(peerState.participants || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => b.score - a.score) : [];
@@ -2929,7 +3044,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
     let baseExp = scoreRef.current;
     if (state.gameMode === 'TIME_ATTACK') {
-      baseExp = isTimeAttackCleared ? 1000 + Math.max(0, Math.floor(120 - exactElapsedSec) * 10) : correctCountRef.current * 50;
+      // クリアボーナスは問題数に比例させる（数問だけの小コースを秒でクリアして大量EXPを得る悪用の防止。20問=満額）
+      const sizeScale = Math.min(1, state.problemSet.length / 20);
+      baseExp = isTimeAttackCleared ? Math.round((1000 + Math.max(0, Math.floor(120 - exactElapsedSec) * 10)) * sizeScale) : correctCountRef.current * 50;
     }
     if (state.gameMode === 'SUDDEN_DEATH') baseExp = correctCountRef.current * 50;
     // ボスバトル: 自分の与ダメージ(score) + チームの撃破数 + 自分のおうえん回数。チーム成果が全員のEXPに入る
@@ -2943,7 +3060,16 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       if (won) newStats.territoryWins = (newStats.territoryWins || 0) + 1;
     }
 
-    newStats = StorageAPI.updateDailyAndMissions(newStats, baseExp, maxComboRef.current, 1, state.gameMode, correctCountRef.current);
+    // 報酬減衰: ソロモードのみ。マルチ(ボスバトル・じんとり)はリーダーがコースを決めるため対象外
+    const isDecayMode = !isMultiplayer && state.gameMode !== 'BOSS_RAID' && state.gameMode !== 'TERRITORY';
+    const session = { correctCount: correctCountRef.current, wrongCount: wrongCountRef.current, elapsedSec: exactElapsedSec, gameMode: state.gameMode };
+    // 減衰は「今セッションを記録する前」の状態で計算する（その日の1・2回目は満額のまま）
+    const decay = isDecayMode ? computeRewardDecay(newStats, state.courseNames, session) : { mult: 1, masteredApplied: false, repeatPlays: 0, repeatMult: 1 };
+    const earnedExp = baseExp > 0 ? Math.max(1, Math.round(baseExp * decay.mult)) : 0;
+    const masteryResult = isDecayMode ? recordCourseSession(newStats, state.courseNames, session) : { newlyMastered: null };
+
+    // 減衰の強いセッション(半額未満)は「あそぶ系」ミッションの進捗にも数えない
+    newStats = StorageAPI.updateDailyAndMissions(newStats, earnedExp, maxComboRef.current, 1, state.gameMode, correctCountRef.current, decay.mult >= 0.5 ? 1 : 0);
 
     // レベルアップしたらコインボーナスを付与（上がったレベル数 × 50コイン）
     const levelBefore = getLevelInfo(stats.totalExp).level;
@@ -2957,7 +3083,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     const raidResult = (state.gameMode === 'BOSS_RAID' && peerState && peerState.role === 'host' && collectRaidResult) ? collectRaidResult() : null;
     const territoryResult = (state.gameMode === 'TERRITORY' && peerState && peerState.role === 'host' && collectTerritoryResult) ? collectTerritoryResult() : null;
 
-    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp: baseExp, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, ...(raidResult ? { raidResult } : {}), ...(territoryResult ? { territoryResult } : {}) }));
+    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, decayInfo: { mult: decay.mult, mastered: decay.masteredApplied, repeatPlays: decay.repeatPlays, baseExp, newlyMastered: masteryResult.newlyMastered }, ...(raidResult ? { raidResult } : {}), ...(territoryResult ? { territoryResult } : {}) }));
 
     if (isResumedSessionRef.current) {
       StorageAPI.clearResume();
@@ -2974,7 +3100,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     }
 
     setView('result');
-  }, [stats, state.gameMode, state.problemSet, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult, collectTerritoryResult, myTeam]);
+  }, [stats, state.gameMode, state.problemSet, state.courseNames, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult, collectTerritoryResult, myTeam]);
 
   // じんとり: 盤面が全部うまったら時間切れを待たずに終了する(バナー演出のあとで全員が finishGame する)
   useEffect(() => {
@@ -2988,12 +3114,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       problemSet: state.problemSet,
       timeLimitSec: state.timeLimitSec,
       courseName: state.courseName,
+      courseNames: state.courseNames || [],
       gameMode: state.gameMode,
       qIndex,
       score: scoreRef.current,
       combo,
       maxCombo: maxComboRef.current,
       correctCount: correctCountRef.current,
+      wrongCount: wrongCountRef.current,
       elapsedMs: Date.now() - startTime,
       mistakes: mistakesRef.current,
       savedAt: Date.now()
@@ -3003,7 +3131,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     showToast('success', 'とちゅうから保存しました');
     setState(prev => ({ ...prev, resumeSnapshot: null }));
     setView('home');
-  }, [state.problemSet, state.timeLimitSec, state.courseName, state.gameMode, qIndex, combo, startTime, setState, setView, setResumeData]);
+  }, [state.problemSet, state.timeLimitSec, state.courseName, state.courseNames, state.gameMode, qIndex, combo, startTime, setState, setView, setResumeData]);
 
   const submitAns = useCallback(() => {
     if (!ans || isRaidLocked()) return; const q = state.problemSet[qIndex];
@@ -3043,7 +3171,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       if (state.gameMode === 'TIME_ATTACK' && correctCount + 1 >= state.problemSet.length) { setTimeout(finishGame, 500); }
       else { setQIndex(i => (i + 1) % state.problemSet.length); }
     } else {
-      audioCtrl.playSE('wrong'); setCombo(0);
+      audioCtrl.playSE('wrong'); setCombo(0); wrongCountRef.current += 1;
       setCardAnim({ x: [-15, 15, -10, 10, 0], boxShadow: ["0 8px 0 var(--text)", "0 0 20px var(--primary)", "0 8px 0 var(--text)"], transition: { duration: 0.4 } });
       setAns(''); mistakesRef.current.push({ q: q.q, a: q.a.join('|') });
       if (state.gameMode === 'SUDDEN_DEATH') setTimeout(finishGame, 500);
@@ -3247,6 +3375,14 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
 
   useEffect(() => {
     triggerConfetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#FF6B6B', '#4ECDC4', '#FFE66D'] });
+    // 新しくマスターしたら、ごほうびとしてお祝いする（マスターは達成であってペナルティではない）
+    if (state.decayInfo?.newlyMastered) {
+      setTimeout(() => {
+        audioCtrl.playSE('combo', 10);
+        triggerConfetti({ particleCount: 100, spread: 100, startVelocity: 35, origin: { y: 0.5 }, shapes: ['star'], colors: ['#FFD700', '#FFA500'], zIndex: 9999 });
+        showToast('success', `⭐「${state.decayInfo.newlyMastered}」をマスターしたよ！すごい！`);
+      }, 600);
+    }
     setTimeout(() => {
       if (newInfo.level > oldInfo.level) {
         audioCtrl.playSE('combo', 10); audioCtrl.playSE('coin'); setShowLevelUp(true);
@@ -3343,7 +3479,17 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
           {state.gameMode === 'SUDDEN_DEATH' && <><h4 className="text-[var(--text)] opacity-70 font-bold mb-1 ruby-text"><R c="連" r="れん" /><R c="続" r="ぞく" /><R c="正" r="せい" /><R c="解" r="かい" /><R c="数" r="すう" /></h4><div className="text-6xl font-black text-[var(--primary)] mb-2">{state.finalCorrect} <span className="text-2xl ruby-text"><R c="問" r="もん" /></span></div></>}
 
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="text-xl font-black text-[var(--secondary)] mb-4 flex flex-col items-center justify-center gap-1">
-            <div className="flex items-center gap-1">⬆ {earnedExp} EXP かくとく！</div>
+            <div className="flex items-center gap-1.5">
+              ⬆ {earnedExp} EXP かくとく！
+              {state.decayInfo && state.decayInfo.mult < 1 && <span className="text-sm font-bold opacity-50 line-through">{state.decayInfo.baseExp}</span>}
+            </div>
+            {state.decayInfo && state.decayInfo.mult < 1 && (
+              <div className="text-xs font-bold text-[var(--text)] opacity-70 ruby-text px-2">
+                {state.decayInfo.mastered
+                  ? <>⭐もうマスターしたドリルだよ！つぎのドリルに<R c="挑" r="ちょう" /><R c="戦" r="せん" />するとEXPがいっぱいもらえるよ！</>
+                  : <>🔁きょう{state.decayInfo.repeatPlays + 1}かいめだから EXPは{Math.round(state.decayInfo.mult * 100)}%だよ。ほかのドリルもやってみよう！</>}
+              </div>
+            )}
           </motion.div>
           <div className="inline-block bg-[var(--accent)] text-[var(--text)] font-black px-5 py-2 rounded-full border-[3px] border-[var(--text)] shadow-sm">Max Combo: {state.finalCombo || 0}</div>
 
@@ -3595,6 +3741,7 @@ export default function App() {
       timeLimitSec: data.timeLimitSec || 0,
       problemSet: data.problemSet || [],
       courseName: data.courseName || '',
+      courseNames: data.courseNames || [],
       gameMode: data.gameMode || 'SCORE_ATTACK',
       resumeSnapshot: data,
       mistakes: [],
@@ -4149,7 +4296,7 @@ export default function App() {
       <main className="flex-grow relative overflow-hidden">
         <AnimatePresence mode="wait">
           {view === 'home' && <PageWrapper key="home"><HomeView setView={setView} stats={stats} setStats={setStats} setConfigMode={setConfigMode} initHost={initHost} resumeData={resumeData} onResume={resumeGame} onDiscardResume={discardResume} /></PageWrapper>}
-          {view === 'singleConfig' && <PageWrapper key="single"><SingleConfigView setView={setView} setState={setState} configMode={configMode} /></PageWrapper>}
+          {view === 'singleConfig' && <PageWrapper key="single"><SingleConfigView setView={setView} setState={setState} configMode={configMode} stats={stats} /></PageWrapper>}
 
           {/* 追加ビュー */}
           {view === 'hostRoom' && <PageWrapper key="host"><HostRoomView peerState={peerState} setPeerState={setPeerState} broadcast={broadcast} setView={setView} setState={setState} configMode={configMode} setConfigMode={setConfigMode} initRaid={initRaid} initTerritory={initTerritory} /></PageWrapper>}
