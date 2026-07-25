@@ -9,6 +9,11 @@ import {
   LayoutDashboard, Lightbulb
 } from 'lucide-react';
 import { LearningToolPanel, getAvailableTools } from './LearningTools.jsx';
+import {
+  RAID_CONSTANTS, bossForStage, bossMaxHp, calcRaidDamage, attackIntervalMs, pickBossAttack,
+  makeShuffledLayout, useRaidDebuffs, raidInputLocked,
+  BossPanel, SupportButton, ProblemDebuffOverlay, FreezeOverlay, RaidEventOverlay, RaidResultPanel
+} from './BossBattle.jsx';
 
 // ふりがなヘルパー: <R k="かん" g="じ" /> → <ruby>漢<rt>かん</rt></ruby><ruby>字<rt>じ</rt></ruby>
 // 使い方: <R k="漢" r="かん" /> は1文字用。複数文字は直接rubyタグで書く。
@@ -1229,6 +1234,7 @@ const MISSION_POOL = [
   { id: 'sudden_death_correct_20', type: 'sudden_death_correct', target: 20, reward: 150, desc: 'サドンデスで 20問 正解' },
   { id: 'sudden_death_correct_30', type: 'sudden_death_correct', target: 30, reward: 300, desc: 'サドンデスで 30問 正解' },
   { id: 'sudden_death_correct_50', type: 'sudden_death_correct', target: 50, reward: 500, desc: 'サドンデスで 50問 正解' },
+  { id: 'play_boss_raid_1', type: 'play_boss_raid', target: 1, reward: 50, desc: 'みんなでボスバトルを 1回 プレイ' },
 ];
 
 const getRandomMissions = (count = 3, streak = 0) => {
@@ -1336,7 +1342,7 @@ const StorageAPI = {
         totalExp: parseInt(window.localStorage.getItem('qalc_exp') || '0', 10),
         streak: parseInt(window.localStorage.getItem('qalc_streak') || '0', 10),
         lastDate: window.localStorage.getItem('qalc_last_date') || '',
-        maxComboRecord: 0, suddenDeathRecord: 0, timeAttackRecord: 0,
+        maxComboRecord: 0, suddenDeathRecord: 0, timeAttackRecord: 0, bossRaidRecord: 0,
         coins: 100, inventory: { bases: ['b_dog'], hats: [], faces: [], props: [], themes: ['default'] },
         equipped: { base: 'b_dog', hat: null, face: null, prop: null }, theme: 'default', missions: null, daily: {}
       };
@@ -1379,6 +1385,7 @@ const StorageAPI = {
         if (m.type === 'play_time_attack' && gameMode === 'TIME_ATTACK' && !m.claimed) m.current += playCount;
         if (m.type === 'play_sudden_death' && gameMode === 'SUDDEN_DEATH' && !m.claimed) m.current += playCount;
         if (m.type === 'sudden_death_correct' && gameMode === 'SUDDEN_DEATH' && !m.claimed && correctCount > m.current) m.current = correctCount;
+        if (m.type === 'play_boss_raid' && gameMode === 'BOSS_RAID' && !m.claimed) m.current += playCount;
       });
     }
     return stats;
@@ -1614,15 +1621,17 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
 }));
 
 // 数字キーパッド（answer/score/timer の更新で再レンダーしないよう memo 化し、安定したコールバックのみ受け取る）
-const Keypad = React.memo(({ onAppend, onClear, onSubmit }) => (
+// digitLayout: ボスバトルのシャッフルデバフ用。省略時は通常配列
+const DEFAULT_DIGIT_LAYOUT = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0'];
+const Keypad = React.memo(({ onAppend, onClear, onSubmit, digitLayout = DEFAULT_DIGIT_LAYOUT }) => (
   <div className="flex-grow flex flex-col gap-2 z-30 min-h-[30vh]">
     <div className="flex h-14 gap-2 shrink-0">
       {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }}>{c}</motion.button>)}
     </div>
     <div className="grid grid-cols-3 gap-2 flex-grow">
-      {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
+      {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
       <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }}>C</motion.button>
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend('0'); }}>0</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
       <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--panel)] border-[3px] border-[var(--text)] font-black text-3xl rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }}>OK</motion.button>
     </div>
   </div>
@@ -1792,7 +1801,14 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
 };
 
 // --- ホスト(リーダー) ルーム画面 ---
-const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, configMode, setConfigMode }) => {
+// みんなであそぶ専用のモード一覧（BOSS_RAID は協力モードなのでマルチにのみ登場する）
+const MULTI_MODES = [
+  { id: 'SCORE_ATTACK', label: 'スコア' },
+  { id: 'TIME_ATTACK', label: 'タイム' },
+  { id: 'SUDDEN_DEATH', label: 'サドンデス' },
+  { id: 'BOSS_RAID', label: 'ボス' },
+];
+const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, configMode, setConfigMode, initRaid }) => {
   const [groups, setGroups] = useState([]); const [selectedGroup, setSelectedGroup] = useState('');
   const [time, setTime] = useState(3);
   const [selectedGrade, setSelectedGrade] = useState('すべて');
@@ -1823,11 +1839,17 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
     if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
 
     const gameConfig = {
-      timeLimitSec: configMode === 'SCORE_ATTACK' ? time * 60 : 0,
+      timeLimitSec: (configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID') ? time * 60 : 0,
       problemSet: probs.map(p => ({ q: p.q, a: String(p.a).split('|') })),
       courseName: selectedGroup,
       gameMode: configMode
     };
+
+    // ボスバトル: ホスト権威のレイド状態を初期化し、初期スナップショットを全員に配る
+    if (configMode === 'BOSS_RAID') {
+      const playerCount = peerState.connections.length + 1; // メンバー + ホスト
+      gameConfig.raid = initRaid(playerCount);
+    }
 
     // ホスト自身を参加者リストに追加し、全参加者のスコアをリセット
     setPeerState(p => {
@@ -1869,9 +1891,9 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
         <div className="shrink-0">
           <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-70 ruby-text"><R c="出" r="しゅつ" /><R c="題" r="だい" />モード</label>
           <div className="flex gap-2 mb-4">
-            {['SCORE_ATTACK', 'TIME_ATTACK', 'SUDDEN_DEATH'].map(mode => (
-              <button key={mode} onClick={() => { audioCtrl.playSE('click'); setConfigMode(mode); }} className={`flex-1 py-2 text-xs font-bold rounded-lg border-2 transition-colors ${configMode === mode ? 'bg-[var(--text)] text-white border-[var(--text)]' : 'bg-transparent border-gray-300 text-gray-500 hover:border-gray-400'}`}>
-                {mode === 'SCORE_ATTACK' ? 'スコア' : mode === 'TIME_ATTACK' ? 'タイム' : 'サドンデス'}
+            {MULTI_MODES.map(m => (
+              <button key={m.id} onClick={() => { audioCtrl.playSE('click'); setConfigMode(m.id); }} className={`flex-1 py-2 text-xs font-bold rounded-lg border-2 transition-colors ${configMode === m.id ? 'bg-[var(--text)] text-white border-[var(--text)]' : 'bg-transparent border-gray-300 text-gray-500 hover:border-gray-400'}`}>
+                {m.label}
               </button>
             ))}
           </div>
@@ -1890,7 +1912,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
           </div>
         </div>
 
-        {configMode === 'SCORE_ATTACK' && (
+        {(configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID') && (
           <div className="shrink-0 mb-2">
             <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-70 flex justify-between ruby-text"><span><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary)] text-lg">{time} <R c="分" r="ふん" /></span></label>
             <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[var(--primary)]" />
@@ -2184,10 +2206,11 @@ const TimerClock = React.memo(({ gameMode, startTime, timeLimitSec }) => {
   }, [startTime]);
   const elapsedSec = Math.floor((currentTime - startTime) / 1000);
   const remainSec = Math.max(0, timeLimitSec - elapsedSec);
-  const displaySec = gameMode === 'SCORE_ATTACK' ? remainSec : elapsedSec;
+  const isCountdown = gameMode === 'SCORE_ATTACK' || gameMode === 'BOSS_RAID';
+  const displaySec = isCountdown ? remainSec : elapsedSec;
   const m = Math.floor(displaySec / 60).toString().padStart(2, '0');
   const s = (displaySec % 60).toString().padStart(2, '0');
-  const danger = gameMode === 'SCORE_ATTACK' && remainSec <= 10;
+  const danger = isCountdown && remainSec <= 10;
   return (
     <div className={`font-black text-2xl flex items-center gap-2 ${danger ? 'text-red-500 animate-pulse' : 'text-[var(--text)]'}`}><Clock size={24} /> {m}:{s}</div>
   );
@@ -2195,7 +2218,7 @@ const TimerClock = React.memo(({ gameMode, startTime, timeLimitSec }) => {
 
 // 上部の進捗バー。SCORE_ATTACK のみ毎秒tickし、時間切れで onTimeUp を呼ぶ（GameView 本体は tick で再レンダーしない）
 const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correctCount, total, onTimeUp }) => {
-  const isScoreAttack = gameMode === 'SCORE_ATTACK';
+  const isScoreAttack = gameMode === 'SCORE_ATTACK' || gameMode === 'BOSS_RAID'; // 残り時間でtickするモード
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const onTimeUpRef = useRef(onTimeUp);
   useEffect(() => { onTimeUpRef.current = onTimeUp; }, [onTimeUp]);
@@ -2223,8 +2246,9 @@ const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correc
 });
 
 // --- ゲーム画面 ---
-const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData }) => {
+const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult }) => {
   const isMultiplayer = peerState && peerState.role;
+  const isRaid = state.gameMode === 'BOSS_RAID';
   const resumeSnapshot = (!isMultiplayer && state.resumeSnapshot) ? state.resumeSnapshot : null;
 
   const [score, setScore] = useState(resumeSnapshot?.score || 0);
@@ -2242,6 +2266,48 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const [quitDialog, setQuitDialog] = useState(false);
   const participantsList = isMultiplayer ? Object.entries(peerState.participants || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => b.score - a.score) : [];
   const top5 = participantsList.slice(0, 5);
+
+  // --- ボスバトル用 ---
+  const myId = peerState?.role === 'host' ? peerState.hostId : (peerState?.peer ? peerState.peer.id : null);
+  const myDebuffs = useRaidDebuffs(isRaid ? raidState : null, myId);
+  const shuffleDebuff = myDebuffs.find(d => d.kind === 'shuffle');
+  const digitLayout = isRaid && shuffleDebuff ? makeShuffledLayout(shuffleDebuff.shuffleSeed) : undefined;
+  const [cheerGauge, setCheerGauge] = useState(0);
+  const mySupportsRef = useRef(0);
+  const defeatedRef = useRef(0);
+  useEffect(() => { if (raidState) defeatedRef.current = raidState.defeated || 0; }, [raidState?.defeated]);
+  // 入力ガードはイベントハンドラから呼ばれるため ref 経由で最新の raidState を参照する
+  const raidStateRef = useRef(raidState);
+  useEffect(() => { raidStateRef.current = raidState; }, [raidState]);
+  const isRaidLocked = () => isRaid && raidInputLocked(raidStateRef.current, myId);
+
+  // レイドイベントへのローカル反応(効果音・立て直し時のコンボリセット)
+  const lastEventAtRef = useRef(0);
+  useEffect(() => {
+    const ev = raidState?.lastEvent;
+    if (!isRaid || !ev || ev.at === lastEventAtRef.current) return;
+    lastEventAtRef.current = ev.at;
+    if (ev.kind === 'boss_defeated') { audioCtrl.playSE('combo', 10); audioCtrl.playSE('coin'); triggerConfetti({ particleCount: 80, spread: 90, origin: { y: 0.4 }, zIndex: 9999 }); }
+    if (ev.kind === 'team_down') { audioCtrl.playSE('wrong'); setCombo(0); }
+    if (ev.kind === 'support') { audioCtrl.playSE('coin'); }
+    if (ev.kind === 'boss_enter') { audioCtrl.playSE('combo', 3); }
+  }, [isRaid, raidState?.lastEvent]);
+
+  // ボスの攻撃が自分に当たった瞬間の効果音
+  const lastAttackAtRef = useRef(0);
+  useEffect(() => {
+    const atk = raidState?.lastAttack;
+    if (!isRaid || !atk || atk.at === lastAttackAtRef.current) return;
+    lastAttackAtRef.current = atk.at;
+    if (atk.targets === 'all' || (Array.isArray(atk.targets) && atk.targets.includes(myId))) audioCtrl.playSE('wrong');
+  }, [isRaid, raidState?.lastAttack]);
+
+  const fireSupport = useCallback(() => {
+    audioCtrl.playSE('coin');
+    setCheerGauge(0);
+    mySupportsRef.current += 1;
+    sendRaidSupport?.();
+  }, [sendRaidSupport]);
 
   useEffect(() => { setFever(combo >= 5); }, [combo]);
 
@@ -2276,12 +2342,15 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       const rec = newStats.timeAttackRecord || 9999; if (exactElapsedSec < rec || rec === 0) newStats.timeAttackRecord = exactElapsedSec;
     }
     if (state.gameMode === 'SUDDEN_DEATH') { newStats.suddenDeathRecord = Math.max(newStats.suddenDeathRecord || 0, correctCountRef.current); }
+    if (state.gameMode === 'BOSS_RAID') { newStats.bossRaidRecord = Math.max(newStats.bossRaidRecord || 0, defeatedRef.current); }
 
     let baseExp = scoreRef.current;
     if (state.gameMode === 'TIME_ATTACK') {
       baseExp = isTimeAttackCleared ? 1000 + Math.max(0, Math.floor(120 - exactElapsedSec) * 10) : correctCountRef.current * 50;
     }
     if (state.gameMode === 'SUDDEN_DEATH') baseExp = correctCountRef.current * 50;
+    // ボスバトル: 自分の与ダメージ(score) + チームの撃破数 + 自分のおうえん回数。チーム成果が全員のEXPに入る
+    if (state.gameMode === 'BOSS_RAID') baseExp = Math.round(scoreRef.current * 0.5 + defeatedRef.current * 100 + mySupportsRef.current * 30);
 
     newStats = StorageAPI.updateDailyAndMissions(newStats, baseExp, maxComboRef.current, 1, state.gameMode, correctCountRef.current);
 
@@ -2293,7 +2362,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
     StorageAPI.saveStats(newStats); setStats(newStats);
 
-    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp: baseExp, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null }));
+    // ボスバトル: ホストが権威データから最終的な貢献度を確定し、結果画面と全クライアントに配る
+    const raidResult = (state.gameMode === 'BOSS_RAID' && peerState && peerState.role === 'host' && collectRaidResult) ? collectRaidResult() : null;
+
+    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp: baseExp, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, ...(raidResult ? { raidResult } : {}) }));
 
     if (isResumedSessionRef.current) {
       StorageAPI.clearResume();
@@ -2306,11 +2378,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       peerState.conn.send({ type: 'game_finish', data: { finalScore: baseExp } });
     } else if (peerState && peerState.role === 'host') {
       // ホストが終了した場合、全クライアントにも終了を通知
-      peerState.connections.forEach(c => c.send({ type: 'game_finish' }));
+      peerState.connections.forEach(c => c.send({ type: 'game_finish', data: raidResult ? { raidResult } : undefined }));
     }
 
     setView('result');
-  }, [stats, state.gameMode, state.problemSet, startTime, setStats, setState, setView, peerState, setResumeData]);
+  }, [stats, state.gameMode, state.problemSet, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult]);
 
   const pauseAndExit = useCallback(() => {
     const snapshot = {
@@ -2335,14 +2407,24 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   }, [state.problemSet, state.timeLimitSec, state.courseName, state.gameMode, qIndex, combo, startTime, setState, setView, setResumeData]);
 
   const submitAns = useCallback(() => {
-    if (!ans) return; const q = state.problemSet[qIndex];
+    if (!ans || isRaidLocked()) return; const q = state.problemSet[qIndex];
     const normalizedAns = normalizeStr(ans);
     const isCorrect = q.a.some(correctStr => normalizeStr(correctStr) === normalizedAns);
 
     if (isCorrect) {
       const newC = combo + 1; audioCtrl.playSE('correct'); if (newC > 1) audioCtrl.playSE('combo', newC);
       if (newC % 10 === 0) triggerConfetti({ particleCount: 50, spread: 60, origin: { y: 0.8 }, zIndex: 9999 });
-      setScore(s => s + 100 + (combo * 10)); setCombo(newC); setMaxCombo(m => Math.max(m, newC));
+      if (isRaid) {
+        // 正解=ボスへの攻撃。score は与ダメージ累計として既存のスコア同期をそのまま使う
+        const cheerActive = (raidStateRef.current?.cheerUntil || 0) > Date.now();
+        const dmg = calcRaidDamage(newC, cheerActive);
+        setScore(s => s + dmg);
+        sendRaidAttack?.(dmg, newC);
+        setCheerGauge(g => Math.min(RAID_CONSTANTS.GAUGE_MAX, g + (newC >= 5 ? 2 : 1)));
+      } else {
+        setScore(s => s + 100 + (combo * 10));
+      }
+      setCombo(newC); setMaxCombo(m => Math.max(m, newC));
       setCorrectCount(c => c + 1);
       setCardAnim({ scale: [1, 1.05, 1], boxShadow: ["0 8px 0 var(--text)", "0 0 20px var(--secondary)", "0 8px 0 var(--text)"], transition: { duration: 0.3 } });
       setAns(''); canvasRef.current?.clear();
@@ -2376,6 +2458,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   useEffect(() => {
     const handleKey = (e) => {
       if (quitDialog) return; // ダイアログ表示中は背後のゲームに入力を流さない
+      if (isRaidLocked()) return; // ボスの凍結攻撃・撃破演出中は物理キーボードもロック
       const key = e.key;
       if ((key >= '0' && key <= '9') || ['.', '/', '-', '(', ')'].includes(key)) { audioCtrl.playSE('click'); setAns(a => (a.length < 15 ? a + key : a)); }
       else if (key === 'Backspace') { audioCtrl.playSE('click'); setAns(a => a.slice(0, -1)); }
@@ -2387,7 +2470,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
   // キーパッドへ渡す安定コールバック（submitAns は ref 経由で最新を参照し、Keypad の memo を維持する）
   const submitAnsRef = useRef(submitAns); useEffect(() => { submitAnsRef.current = submitAns; }, [submitAns]);
-  const handleAppend = useCallback((c) => { audioCtrl.playSE('click'); setAns(a => (a.length < 15 ? a + c : a)); }, []);
+  const isRaidLockedRef = useRef(isRaidLocked); useEffect(() => { isRaidLockedRef.current = isRaidLocked; });
+  const handleAppend = useCallback((c) => { if (isRaidLockedRef.current()) return; audioCtrl.playSE('click'); setAns(a => (a.length < 15 ? a + c : a)); }, []);
   const handleClear = useCallback(() => { audioCtrl.playSE('click'); setAns(''); }, []);
   const handleSubmit = useCallback(() => { submitAnsRef.current(); }, []);
 
@@ -2415,8 +2499,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         <TimerProgressBar gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} correctCount={correctCount} total={state.problemSet.length} onTimeUp={finishGame} />
       )}
 
+      {/* ボスバトル: ランキングの代わりにボスパネルを表示 */}
+      {isRaid && <BossPanel raidState={raidState} compact={showMemo} />}
+
       {/* ランキング表示（メインレイアウトの外に配置） */}
-      {isMultiplayer && top5.length > 0 && (
+      {!isRaid && isMultiplayer && top5.length > 0 && (
         <div className="flex justify-center gap-2 p-2 overflow-x-auto no-scrollbar shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm">
           {top5.map((p, idx) => (
             <div key={p.id} className="bg-[var(--bg)] border-2 border-[var(--text)] rounded-lg px-3 py-1.5 flex flex-col items-center min-w-[80px]">
@@ -2438,7 +2525,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             <button onClick={() => { audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-2 py-1 font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center gap-1"><XCircle size={16} /> やめる</button>
             <TimerClock gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} />
             <div className="font-black text-2xl text-[var(--primary)] flex items-center gap-2 drop-shadow-sm">
-              {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : <>{score} <span className="text-sm text-[var(--text)] opacity-50">pt</span></>}
+              {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : state.gameMode === 'BOSS_RAID' ? <>⚔ {score} <span className="text-sm text-[var(--text)] opacity-50">ダメージ</span></> : <>{score} <span className="text-sm text-[var(--text)] opacity-50">pt</span></>}
             </div>
           </div>
 
@@ -2453,6 +2540,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
                 <MathText text={q.q} />
               </motion.div>
             </AnimatePresence>
+            {/* ボスの妨害デバフ(問題隠し・くらやみ)を問題の上に重ねる */}
+            {isRaid && <ProblemDebuffOverlay debuffs={myDebuffs} />}
+            {/* おうえんボタン: 正解でゲージが貯まり、満タンで仲間の回復+デバフ解除+ダメージ2倍 */}
+            {isRaid && <SupportButton gauge={cheerGauge} onFire={fireSupport} />}
           </div>
 
           <motion.div animate={cardAnim} className="h-24 bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] relative z-30 shrink-0 mb-4">
@@ -2466,7 +2557,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--panel)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-50'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
           </motion.div>
 
-          <Keypad onAppend={handleAppend} onClear={handleClear} onSubmit={handleSubmit} />
+          <div className="relative flex-grow flex flex-col">
+            <Keypad onAppend={handleAppend} onClear={handleClear} onSubmit={handleSubmit} digitLayout={digitLayout} />
+            {isRaid && <FreezeOverlay debuffs={myDebuffs} />}
+          </div>
         </div>
 
         {/* min-h-0/min-w-0: canvas の固有サイズが flex の min-content 経由でレイアウトを押し広げないようにする */}
@@ -2479,6 +2573,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
       <LearningToolPanel open={showTools} onClose={() => { audioCtrl.playSE('click'); setShowTools(false); }} courseName={state.courseName} qText={q.q} onFx={() => audioCtrl.playSE('click')} />
 
+      {/* ボスバトルの全画面イベント演出(撃破・新ボス登場・たてなおし・おうえん) */}
+      {isRaid && <RaidEventOverlay lastEvent={raidState?.lastEvent} />}
+
       <AnimatePresence>
         {quitDialog && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -2488,6 +2585,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
               <p className="text-sm text-[var(--text)] opacity-70 mb-5 ruby-text">
                 ここまでの<R c="正" r="せい" /><R c="解" r="かい" />: <span className="font-black text-[var(--primary)]">{correctCount}<R c="問" r="もん" /></span>
                 {state.gameMode === 'SCORE_ATTACK' && <> ／ スコア: <span className="font-black text-[var(--primary)]">{score}pt</span></>}
+                {state.gameMode === 'BOSS_RAID' && <> ／ <R c="与" r="あた" />えたダメージ: <span className="font-black text-[var(--primary)]">⚔{score}</span></>}
               </p>
               <div className="flex flex-col w-full gap-2">
                 <MotionButton className="bg-[var(--primary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 w-full ruby-text" onClick={() => { setQuitDialog(false); finishGame(true); }}>
@@ -2560,10 +2658,12 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
       </AnimatePresence>
 
       <motion.h2 initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.6 }} className="font-black text-5xl text-center mb-4 text-[var(--primary)] shrink-0">
-        {state.gameMode === 'SUDDEN_DEATH' ? <span className="text-[var(--text)] ruby-text"><HeartCrack size={40} className="inline mr-2 text-red-500 mb-2" /><R c="終" r="しゅう" /><R c="了" r="りょう" />！</span> : '🎉 FINISH!'}
+        {state.gameMode === 'SUDDEN_DEATH' ? <span className="text-[var(--text)] ruby-text"><HeartCrack size={40} className="inline mr-2 text-red-500 mb-2" /><R c="終" r="しゅう" /><R c="了" r="りょう" />！</span> : state.gameMode === 'BOSS_RAID' ? '👑 バトルしゅうりょう！' : '🎉 FINISH!'}
       </motion.h2>
 
-      {isMultiplayer && participantsList.length > 0 ? (
+      {isMultiplayer && state.gameMode === 'BOSS_RAID' && state.raidResult ? (
+        <RaidResultPanel raidResult={state.raidResult} myId={myId} />
+      ) : isMultiplayer && participantsList.length > 0 ? (
         <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] p-4 w-full mb-6 shrink-0 relative overflow-hidden flex flex-col items-center shadow-[4px_4px_0_var(--text)]">
           <h3 className="font-black text-xl mb-6 text-[var(--text)] flex items-center gap-2 ruby-text"><Trophy size={24} className="text-yellow-400" /> <R c="最" r="さい" /><R c="終" r="しゅう" />ランキング</h3>
 
@@ -2892,6 +2992,187 @@ export default function App() {
   const peerStateRef = useRef(peerState);
   useEffect(() => { peerStateRef.current = peerState; }, [peerState]);
 
+  // 【ボスバトル(BOSS_RAID)の状態】
+  // raidRef がホスト権威の真実(HP・攻撃スケジュール・貢献度)、raidState は全端末共通の描画用スナップショット。
+  // クライアントは raid_state / raid_boss_attack / raid_event の受信だけで raidState を組み立てる。
+  const [raidState, setRaidState] = useState(null);
+  const raidRef = useRef(null);
+
+  // --- 全端末共通: 受信メッセージ(またはホスト自身のブロードキャスト)を raidState に反映する ---
+  const applyRaidSnapshot = useCallback((snap) => {
+    setRaidState(prev => ({ ...(prev || {}), ...snap }));
+  }, []);
+
+  const applyRaidBossAttack = useCallback((data) => {
+    const at = Date.now();
+    setRaidState(prev => {
+      if (!prev) return prev;
+      const kept = (prev.activeDebuffs || []).filter(d => d.expiresAt > at);
+      const withNew = data.durationMs > 0 ? [...kept, { ...data, at, expiresAt: at + data.durationMs }] : kept;
+      return { ...prev, activeDebuffs: withNew, lastAttack: { ...data, at } };
+    });
+  }, []);
+
+  const applyRaidEvent = useCallback((data) => {
+    const at = Date.now();
+    setRaidState(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, lastEvent: { ...data, at } };
+      if (data.kind === 'support') next.activeDebuffs = []; // おうえんで全デバフ解除
+      return next;
+    });
+  }, []);
+
+  // --- ここからホスト専用ロジック(すべて ref 経由で最新を参照する) ---
+  const raidSnapshot = () => {
+    const r = raidRef.current;
+    return {
+      stage: r.stage, bossHp: r.bossHp, bossMaxHp: r.bossMaxHp,
+      teamHp: r.teamHp, teamHpMax: r.teamHpMax, defeated: r.defeated,
+      telegraphAt: r.pendingAdvanceAt ? 0 : r.nextAttackAt - RAID_CONSTANTS.TELEGRAPH_MS,
+      cheerUntil: r.cheerUntil || 0,
+    };
+  };
+
+  const broadcastRaidState = () => {
+    if (!raidRef.current) return;
+    const snap = raidSnapshot();
+    raidRef.current.lastBeatAt = Date.now();
+    broadcast({ type: 'raid_state', data: snap });
+    applyRaidSnapshot(snap);
+  };
+
+  // ゲーム開始時にホストが呼ぶ。初期スナップショットを返し、game_start に同梱される
+  const initRaid = (playerCount) => {
+    const now = Date.now();
+    const maxHp = bossMaxHp(1, playerCount);
+    // 0ダメージの子も結果画面に載るよう、開始時点の参加者全員を貢献度テーブルへ登録しておく
+    const contributions = {};
+    const p = peerStateRef.current;
+    Object.entries(p.participants).forEach(([id, part]) => { contributions[id] = { name: part.name, damage: 0, supports: 0, maxCombo: 0 }; });
+    if (p.hostId) contributions[p.hostId] = { name: 'リーダー', damage: 0, supports: 0, maxCombo: 0 };
+    raidRef.current = {
+      stage: 1, playerCount, bossHp: maxHp, bossMaxHp: maxHp,
+      teamHp: RAID_CONSTANTS.TEAM_HP_MAX, teamHpMax: RAID_CONSTANTS.TEAM_HP_MAX,
+      defeated: 0, contributions,
+      nextAttackAt: now + RAID_CONSTANTS.GRACE_MS, pendingAdvanceAt: 0, cheerUntil: 0, lastBeatAt: now,
+    };
+    const snap = raidSnapshot();
+    setRaidState({ ...snap, activeDebuffs: [], lastAttack: null, lastEvent: null });
+    return snap;
+  };
+
+  const raidContribution = (peerId) => {
+    const r = raidRef.current;
+    if (!r.contributions[peerId]) {
+      const p = peerStateRef.current;
+      const name = p.participants[peerId]?.name || (peerId === p.hostId ? 'リーダー' : '???');
+      r.contributions[peerId] = { name, damage: 0, supports: 0, maxCombo: 0 };
+    }
+    return r.contributions[peerId];
+  };
+
+  const hostApplyDamage = (peerId, damage, combo) => {
+    const r = raidRef.current;
+    if (!r || !(damage > 0)) return;
+    const c = raidContribution(peerId);
+    c.damage += damage;
+    c.maxCombo = Math.max(c.maxCombo, combo || 0);
+    // 撃破演出中(次ボス待ち)に届いた攻撃は貢献度のみ有効
+    if (!r.pendingAdvanceAt && r.bossHp > 0) {
+      r.bossHp = Math.max(0, r.bossHp - damage);
+      if (r.bossHp <= 0) {
+        r.defeated += 1;
+        r.pendingAdvanceAt = Date.now() + RAID_CONSTANTS.DEFEAT_LOCK_MS;
+        const ev = { kind: 'boss_defeated', stage: r.stage };
+        broadcast({ type: 'raid_event', data: ev });
+        applyRaidEvent(ev);
+      }
+    }
+    broadcastRaidState();
+  };
+
+  const hostApplySupport = (peerId) => {
+    const r = raidRef.current;
+    if (!r) return;
+    const c = raidContribution(peerId);
+    c.supports += 1;
+    r.teamHp = Math.min(r.teamHpMax, r.teamHp + RAID_CONSTANTS.CHEER_HEAL);
+    r.cheerUntil = Date.now() + RAID_CONSTANTS.CHEER_DURATION_MS;
+    const ev = { kind: 'support', name: c.name };
+    broadcast({ type: 'raid_event', data: ev });
+    applyRaidEvent(ev);
+    broadcastRaidState();
+  };
+
+  const hostAdvanceBoss = () => {
+    const r = raidRef.current;
+    r.stage += 1;
+    r.pendingAdvanceAt = 0;
+    r.bossMaxHp = bossMaxHp(r.stage, r.playerCount);
+    r.bossHp = r.bossMaxHp;
+    r.teamHp = Math.min(r.teamHpMax, r.teamHp + RAID_CONSTANTS.STAGE_CLEAR_HEAL);
+    r.nextAttackAt = Date.now() + RAID_CONSTANTS.GRACE_MS;
+    const ev = { kind: 'boss_enter', stage: r.stage };
+    broadcast({ type: 'raid_event', data: ev });
+    applyRaidEvent(ev);
+    broadcastRaidState();
+  };
+
+  const hostFireAttack = () => {
+    const r = raidRef.current;
+    const info = bossForStage(r.stage);
+    const ids = Object.keys(peerStateRef.current.participants);
+    const atk = pickBossAttack(info.bossIndex, r.stage, ids);
+    if (atk.kind === 'hp') {
+      r.teamHp -= atk.damage;
+      if (r.teamHp <= 0) {
+        // 全滅にはしない: ボスがHPを回復し、チームは立て直しペナルティ(コンボリセット)で継続する
+        r.teamHp = RAID_CONSTANTS.TEAM_DOWN_RECOVER_HP;
+        r.bossHp = Math.min(r.bossMaxHp, r.bossHp + Math.round(r.bossMaxHp * RAID_CONSTANTS.TEAM_DOWN_BOSS_HEAL_RATE));
+        const ev = { kind: 'team_down' };
+        broadcast({ type: 'raid_event', data: ev });
+        applyRaidEvent(ev);
+      }
+    }
+    r.nextAttackAt = Date.now() + attackIntervalMs(r.stage);
+    broadcast({ type: 'raid_boss_attack', data: atk });
+    applyRaidBossAttack(atk);
+    broadcastRaidState();
+  };
+
+  // ボスAI: setInterval + Date.now() 比較でタブスロットリングに耐える。2秒ごとのハートビート同期も同居
+  useEffect(() => {
+    if (view !== 'game' || state.gameMode !== 'BOSS_RAID' || peerState.role !== 'host') return;
+    const id = setInterval(() => {
+      const r = raidRef.current;
+      if (!r) return;
+      const now = Date.now();
+      if (r.pendingAdvanceAt && now >= r.pendingAdvanceAt) hostAdvanceBoss();
+      else if (!r.pendingAdvanceAt && now >= r.nextAttackAt) hostFireAttack();
+      if (now - r.lastBeatAt >= RAID_CONSTANTS.HEARTBEAT_MS) broadcastRaidState();
+    }, 500);
+    return () => clearInterval(id);
+  }, [view, state.gameMode, peerState.role]);
+
+  // GameView から呼ばれる送信ヘルパー(ホストなら直接権威ロジックへ、クライアントならホストへ送信)
+  const sendRaidAttack = useCallback((damage, combo) => {
+    const p = peerStateRef.current;
+    if (p.role === 'host') hostApplyDamage(p.hostId, damage, combo);
+    else if (p.conn) p.conn.send({ type: 'raid_attack', data: { damage, combo } });
+  }, []);
+
+  const sendRaidSupport = useCallback(() => {
+    const p = peerStateRef.current;
+    if (p.role === 'host') hostApplySupport(p.hostId);
+    else if (p.conn) p.conn.send({ type: 'raid_support', data: {} });
+  }, []);
+
+  // 結果画面用(ホストのみ実体を持つ)
+  const collectRaidResult = useCallback(() => (
+    raidRef.current ? { defeated: raidRef.current.defeated, contributions: raidRef.current.contributions } : null
+  ), []);
+
   // URLパラメータのチェック（児童がURLからアクセスした場合）
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2933,6 +3214,10 @@ export default function App() {
             newP.connections.forEach(c => c.send({ type: 'participants_update', data: newP.participants }));
             return newP;
           });
+        } else if (rawData.type === 'raid_attack') {
+          hostApplyDamage(conn.peer, rawData.data.damage, rawData.data.combo);
+        } else if (rawData.type === 'raid_support') {
+          hostApplySupport(conn.peer);
         }
       });
       conn.on('close', () => { setPeerState(p => ({ ...p, connections: p.connections.filter(c => c.peer !== conn.peer) })); });
@@ -2963,12 +3248,21 @@ export default function App() {
       });
       conn.on('data', (rawData) => {
         if (rawData.type === 'game_start') {
-          setState(prev => ({ ...prev, ...rawData.data }));
+          setState(prev => ({ ...prev, raidResult: null, ...rawData.data }));
+          // ボスバトルなら初期スナップショットからレイド表示を立ち上げる
+          setRaidState(rawData.data.raid ? { ...rawData.data.raid, activeDebuffs: [], lastAttack: null, lastEvent: null } : null);
           setView('game');
         } else if (rawData.type === 'game_finish') {
+          if (rawData.data && rawData.data.raidResult) setState(prev => ({ ...prev, raidResult: rawData.data.raidResult }));
           setView('result');
         } else if (rawData.type === 'participants_update') {
           setPeerState(p => ({ ...p, participants: rawData.data }));
+        } else if (rawData.type === 'raid_state') {
+          applyRaidSnapshot(rawData.data);
+        } else if (rawData.type === 'raid_boss_attack') {
+          applyRaidBossAttack(rawData.data);
+        } else if (rawData.type === 'raid_event') {
+          applyRaidEvent(rawData.data);
         }
       });
       conn.on('error', () => showToast('error', 'リーダーとの接続が切れました'));
@@ -2988,6 +3282,8 @@ export default function App() {
       peerState.peer.destroy();
     }
     setPeerState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {} });
+    raidRef.current = null;
+    setRaidState(null);
     setUrlHostId(null);
     setView('home');
     showToast('success', 'ルームから退出しました');
@@ -3064,11 +3360,11 @@ export default function App() {
           {view === 'singleConfig' && <PageWrapper key="single"><SingleConfigView setView={setView} setState={setState} configMode={configMode} /></PageWrapper>}
 
           {/* 追加ビュー */}
-          {view === 'hostRoom' && <PageWrapper key="host"><HostRoomView peerState={peerState} setPeerState={setPeerState} broadcast={broadcast} setView={setView} setState={setState} configMode={configMode} setConfigMode={setConfigMode} /></PageWrapper>}
+          {view === 'hostRoom' && <PageWrapper key="host"><HostRoomView peerState={peerState} setPeerState={setPeerState} broadcast={broadcast} setView={setView} setState={setState} configMode={configMode} setConfigMode={setConfigMode} initRaid={initRaid} /></PageWrapper>}
           {view === 'clientJoin' && <PageWrapper key="clientJoin"><ClientJoinView initClient={initClient} urlHostId={urlHostId} setView={setView} /></PageWrapper>}
           {view === 'clientWait' && <PageWrapper key="clientWait"><ClientWaitView peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
 
-          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} /></PageWrapper>}
+          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} /></PageWrapper>}
           {view === 'result' && <PageWrapper key="result"><ResultView state={state} setView={setView} peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
           {view === 'manager' && <PageWrapper key="manager"><ManagerView setView={setView} /></PageWrapper>}
           {view === 'import' && <PageWrapper key="import"><ImportView setView={setView} /></PageWrapper>}
