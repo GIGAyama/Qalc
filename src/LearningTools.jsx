@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Lightbulb, LayoutGrid, Cherry, PencilLine, Table2 } from 'lucide-react';
+import { X, Lightbulb, LayoutGrid, Cherry, PencilLine, Table2, Clock, Ruler, GlassWater, Circle } from 'lucide-react';
 
 // ==========================================
 // 学習補助ツール（算数ブロック・さくらんぼ計算・筆算・位取り表）
@@ -22,7 +22,55 @@ const parseArith = (qText) => {
 
 const extractNumbers = (qText) => (String(qText).match(/\d+(?:\.\d+)?/g) || []).slice(0, 2);
 
+// ---- 図で見る系（時計・長さ・かさ・円）の問題文パース ----
+const parseClock = (q) => {
+  let m = q.match(/みじかい はりが (\d+)。ながい はりが 12/);
+  if (m) return { hour: +m[1], minute: 0 };
+  m = q.match(/みじかい はりが (\d+)と \d+の あいだ。ながい はりが 6/);
+  if (m) return { hour: +m[1], minute: 30 };
+  m = q.match(/いま (\d+)じ です/);
+  if (m) return { hour: +m[1], minute: 0 };
+  m = q.match(/ながい はりが 12から (\d+)まで うごきました/);
+  if (m) return { minute: +m[1] * 5, noHour: true, arc: [0, +m[1] * 5] };
+  m = q.match(/ながい はりが (\d+)の ところから、(\d+)つ すすみました/);
+  if (m) {
+    const start = +m[1] * 5;
+    return { minute: (start + +m[2] * 5) % 60, noHour: true, ghostMinute: start, arc: [start, start + +m[2] * 5] };
+  }
+  m = q.match(/ながい はりが (\d+)の とき/);
+  if (m) return { minute: +m[1] * 5, noHour: true };
+  return null;
+};
+
+const parseTape = (q) => {
+  let m = q.match(/(\d+)cmの テープと (\d+)cmの テープを つなぐと/);
+  if (m) return { type: 'join', a: +m[1], b: +m[2] };
+  m = q.match(/(\d+)cmの ひもから (\d+)cm きりとると/);
+  if (m) return { type: 'cut', a: +m[1], b: +m[2] };
+  return null;
+};
+
+const parseKasa = (q) => {
+  let m = q.match(/(\d+)Lの 水と (\d+)Lの 水を あわせると/);
+  if (m) return { type: 'join', a: +m[1], b: +m[2], unit: 'L' };
+  m = q.match(/(\d+)dLの ジュースから (\d+)dL のむと/);
+  if (m) return { type: 'cut', a: +m[1], b: +m[2], unit: 'dL' };
+  return null;
+};
+
+const parseCircle = (q) => {
+  let m = q.match(/はんけいが (\d+)cmの えん/);
+  if (m) return { kind: 'radius', v: +m[1] };
+  m = q.match(/ちょっけいが (\d+)cmの えん/);
+  if (m) return { kind: 'diameter', v: +m[1] };
+  return null;
+};
+
 export const TOOL_META = {
+  tokei: { Icon: Clock, label: 'とけい' },
+  nagasa: { Icon: Ruler, label: 'ながさ' },
+  kasa: { Icon: GlassWater, label: 'かさ' },
+  en: { Icon: Circle, label: 'えん' },
   blocks: { Icon: LayoutGrid, label: 'ブロック' },
   sakuranbo: { Icon: Cherry, label: 'さくらんぼ' },
   hissan: { Icon: PencilLine, label: 'ひっ算' },
@@ -35,10 +83,17 @@ export const getAvailableTools = (courseName = '', qText = '') => {
   const tools = [];
   const isLowGrade = /^[12]年/.test(courseName);
 
+  // 図で見る系は問題文そのものを図にするので、使えるときは先頭（初期タブ）にする
+  if (parseClock(qText)) tools.push('tokei');
+  if (parseTape(qText)) tools.push('nagasa');
+  if (parseKasa(qText)) tools.push('kasa');
+  if (parseCircle(qText)) tools.push('en');
+  const hasGraphic = tools.length > 0;
+
   if (p && p.isInt && (p.op === '+' || p.op === '-')) {
     const result = p.op === '+' ? p.a + p.b : p.a - p.b;
     if (p.a <= 20 && p.b <= 20 && result >= 0 && result <= 20) tools.push('blocks');
-  } else if (!p && isLowGrade) {
+  } else if (!p && isLowGrade && !hasGraphic) {
     // 1・2年の文章題などは自由に数えられるブロックを出す
     tools.push('blocks');
   }
@@ -302,6 +357,169 @@ const KuraiTool = ({ qText }) => {
   );
 };
 
+// ---- とけい（アナログ時計SVG） ----
+const ClockTool = ({ spec }) => {
+  if (!spec) return null;
+  const cx = 100, cy = 100;
+  const pt = (deg, r) => [cx + r * Math.sin((deg * Math.PI) / 180), cy - r * Math.cos((deg * Math.PI) / 180)];
+  const minuteDeg = (spec.minute ?? 0) * 6;
+  const hourDeg = ((spec.hour ?? 0) % 12) * 30 + (spec.minute ?? 0) * 0.5;
+  const [mx, my] = pt(minuteDeg, 60);
+  const [hx, hy] = pt(hourDeg, 38);
+  const arcPath = () => {
+    const [a1, a2] = spec.arc.map((m) => m * 6);
+    const [x1, y1] = pt(a1, 72); const [x2, y2] = pt(a2, 72);
+    return `M ${x1} ${y1} A 72 72 0 ${a2 - a1 > 180 ? 1 : 0} 1 ${x2} ${y2}`;
+  };
+  const hint = spec.arc
+    ? 'ながいはりが どれだけ うごいたかな（1めもり＝5ふん）'
+    : spec.noHour
+      ? 'ながいはりの めもりを よもう（1めもり＝5ふん）'
+      : 'みじかいはりと ながいはりを よく みよう';
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <ToolHint>{hint}</ToolHint>
+      <svg viewBox="0 0 200 200" className="w-52 h-52 sm:w-60 sm:h-60" aria-label="とけい">
+        <circle cx={cx} cy={cy} r={92} fill="var(--panel)" stroke="var(--text)" strokeWidth="5" />
+        {Array.from({ length: 60 }).map((_, i) => {
+          const major = i % 5 === 0;
+          const [x1, y1] = pt(i * 6, major ? 80 : 85);
+          const [x2, y2] = pt(i * 6, 89);
+          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--text)" strokeWidth={major ? 3 : 1.5} opacity={major ? 0.8 : 0.35} />;
+        })}
+        {Array.from({ length: 12 }).map((_, i) => {
+          const [x, y] = pt((i + 1) * 30, 66);
+          return <text key={i} x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize="17" fontWeight="bold" fill="var(--text)">{i + 1}</text>;
+        })}
+        {spec.arc && <path d={arcPath()} fill="none" stroke="var(--accent)" strokeWidth="9" strokeLinecap="round" />}
+        {spec.ghostMinute != null && (() => { const [gx, gy] = pt(spec.ghostMinute * 6, 60); return <line x1={cx} y1={cy} x2={gx} y2={gy} stroke="var(--secondary)" strokeWidth="5" strokeLinecap="round" strokeDasharray="6 6" opacity="0.6" />; })()}
+        {!spec.noHour && <line x1={cx} y1={cy} x2={hx} y2={hy} stroke="var(--text)" strokeWidth="9" strokeLinecap="round" />}
+        <line x1={cx} y1={cy} x2={mx} y2={my} stroke="var(--primary)" strokeWidth="6" strokeLinecap="round" />
+        <circle cx={cx} cy={cy} r={6} fill="var(--text)" />
+      </svg>
+      <div className="flex gap-4 text-xs font-bold text-[var(--text)]">
+        <span className="flex items-center gap-1"><span className="inline-block w-5 h-1.5 rounded-full bg-[var(--primary)]" /> ながいはり</span>
+        {!spec.noHour && <span className="flex items-center gap-1"><span className="inline-block w-4 h-2 rounded-full bg-[var(--text)]" /> みじかいはり</span>}
+        {spec.ghostMinute != null && <span className="flex items-center gap-1"><span className="inline-block w-5 h-1.5 rounded-full bg-[var(--secondary)] opacity-60" /> うごくまえ</span>}
+      </div>
+    </div>
+  );
+};
+
+// ---- ながさ（テープ図） ----
+const TapeTool = ({ spec }) => {
+  if (!spec) return null;
+  if (spec.type === 'join') {
+    const total = spec.a + spec.b;
+    return (
+      <div className="flex flex-col items-center gap-2 w-full">
+        <ToolHint>2ほんの テープを つないだ ながさを かんがえよう</ToolHint>
+        <div className="w-full max-w-sm">
+          <div className="flex w-full">
+            <div className="flex flex-col items-center" style={{ width: `${(spec.a / total) * 100}%` }}>
+              <span className="font-black text-sm text-orange-500">{spec.a}cm</span>
+              <div className="w-full h-10 bg-orange-400 border-[3px] border-[var(--text)] rounded-l-xl" />
+            </div>
+            <div className="flex flex-col items-center" style={{ width: `${(spec.b / total) * 100}%` }}>
+              <span className="font-black text-sm text-sky-500">{spec.b}cm</span>
+              <div className="w-full h-10 bg-sky-400 border-[3px] border-l-0 border-[var(--text)] rounded-r-xl" />
+            </div>
+          </div>
+          <div className="mx-1 h-3 border-x-[3px] border-b-[3px] border-[var(--text)] rounded-b" />
+          <div className="text-center font-black text-[var(--text)] mt-1">ぜんぶで ?cm</div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-2 w-full">
+      <ToolHint>きりとった のこりの ながさを かんがえよう</ToolHint>
+      <div className="w-full max-w-sm">
+        <div className="text-center font-black text-[var(--text)] mb-1">はじめは {spec.a}cm</div>
+        <div className="flex w-full">
+          <div className="h-10 bg-orange-400 border-[3px] border-[var(--text)] rounded-l-xl flex items-center justify-center font-black text-white" style={{ width: `${((spec.a - spec.b) / spec.a) * 100}%` }}>?</div>
+          <div className="h-10 bg-[var(--bg)] border-[3px] border-l-0 border-dashed border-[var(--text)] rounded-r-xl flex items-center justify-center" style={{ width: `${(spec.b / spec.a) * 100}%` }}>
+            <span className="font-black text-xs text-[var(--text)] opacity-70 whitespace-nowrap">✂ {spec.b}cm</span>
+          </div>
+        </div>
+        <div className="flex w-full text-xs font-bold text-[var(--text)] opacity-60 mt-1">
+          <div className="text-center" style={{ width: `${((spec.a - spec.b) / spec.a) * 100}%` }}>のこり</div>
+          <div className="text-center" style={{ width: `${(spec.b / spec.a) * 100}%` }}>きりとる</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---- かさ（ますの図） ----
+const KasaBeaker = ({ value, denom, unit, drink = 0 }) => (
+  <div className="flex flex-col items-center gap-1">
+    <span className="font-black text-sky-500">{value}{unit}</span>
+    <div className="relative w-16 h-28 border-[3px] border-t-2 border-[var(--text)] rounded-b-xl overflow-hidden bg-[var(--bg)]">
+      <div className="absolute bottom-0 left-0 right-0 bg-sky-400" style={{ height: `${Math.min(100, (value / denom) * 100)}%` }}>
+        {drink > 0 && (
+          <div className="absolute top-0 left-0 right-0 bg-sky-200 border-b-2 border-dashed border-[var(--text)] flex items-center justify-center" style={{ height: `${(drink / value) * 100}%` }}>
+            <span className="font-black text-[10px] text-[var(--text)] opacity-70">のむ</span>
+          </div>
+        )}
+      </div>
+      {/* 1単位ごとの めもり */}
+      {Array.from({ length: denom - 1 }).map((_, i) => (
+        <div key={i} className="absolute left-0 w-2.5 h-[2px] bg-[var(--text)] opacity-40" style={{ bottom: `${((i + 1) / denom) * 100}%` }} />
+      ))}
+    </div>
+  </div>
+);
+
+const KasaTool = ({ spec }) => {
+  if (!spec) return null;
+  if (spec.type === 'join') {
+    const denom = Math.max(10, spec.a, spec.b);
+    return (
+      <div className="flex flex-col items-center gap-3">
+        <ToolHint>2つの ますの 水を あわせると どれだけかな（1めもり＝1{spec.unit}）</ToolHint>
+        <div className="flex items-end gap-3">
+          <KasaBeaker value={spec.a} denom={denom} unit={spec.unit} />
+          <span className="font-black text-3xl text-[var(--text)] pb-10">＋</span>
+          <KasaBeaker value={spec.b} denom={denom} unit={spec.unit} />
+        </div>
+      </div>
+    );
+  }
+  const denom = Math.max(15, spec.a);
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <ToolHint>うすい ところが のむ ぶん。のこりは どれだけかな（1めもり＝1{spec.unit}）</ToolHint>
+      <KasaBeaker value={spec.a} denom={denom} unit={spec.unit} drink={spec.b} />
+      <span className="font-black text-sm text-[var(--text)] opacity-70">{spec.b}{spec.unit} のむと のこりは ?{spec.unit}</span>
+    </div>
+  );
+};
+
+// ---- えん（半径と直径） ----
+const CircleTool = ({ spec }) => {
+  if (!spec) return null;
+  const isRadius = spec.kind === 'radius';
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <ToolHint>ちょっけいは はんけいの 2つぶん だよ</ToolHint>
+      <svg viewBox="0 0 200 170" className="w-56 h-48" aria-label="えん">
+        <circle cx="100" cy="90" r="70" fill="var(--bg)" stroke="var(--text)" strokeWidth="4" />
+        {/* 直径（よこ） */}
+        <line x1="30" y1="90" x2="170" y2="90" stroke={isRadius ? 'var(--secondary)' : 'var(--primary)'} strokeWidth="5" strokeLinecap="round" strokeDasharray={isRadius ? '7 7' : 'none'} />
+        <text x="100" y="112" textAnchor="middle" fontSize="14" fontWeight="bold" fill={isRadius ? 'var(--secondary)' : 'var(--primary)'}>
+          ちょっけい {isRadius ? '?' : spec.v}cm
+        </text>
+        {/* 半径（たて）。ラベルは線の左側に2行で置き、見切れを防ぐ */}
+        <line x1="100" y1="90" x2="100" y2="20" stroke={isRadius ? 'var(--primary)' : 'var(--secondary)'} strokeWidth="5" strokeLinecap="round" strokeDasharray={isRadius ? 'none' : '7 7'} />
+        <text x="93" y="44" textAnchor="end" fontSize="13" fontWeight="bold" fill={isRadius ? 'var(--primary)' : 'var(--secondary)'}>はんけい</text>
+        <text x="93" y="60" textAnchor="end" fontSize="13" fontWeight="bold" fill={isRadius ? 'var(--primary)' : 'var(--secondary)'}>{isRadius ? spec.v : '?'}cm</text>
+        <circle cx="100" cy="90" r="5" fill="var(--text)" />
+      </svg>
+    </div>
+  );
+};
+
 // ---- どうぐパネル（ボトムシート） ----
 export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx }) => {
   const tools = useMemo(() => getAvailableTools(courseName, qText), [courseName, qText]);
@@ -313,16 +531,20 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx }) =>
   }, [qText, tools, active]);
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[80]">
-          <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+    <>
+      {/* 背景は常設して CSS で開閉する。AnimatePresence の終了アニメーション中も全画面の
+          オーバーレイがタップを吸ってしまい、閉じた直後にどうぐボタンが反応しなくなるのを防ぐ */}
+      <div
+        className={`fixed inset-0 z-[75] bg-black/30 transition-opacity duration-200 ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={onClose}
+      />
+      <AnimatePresence>
+        {open && (
           <motion.div
             initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className="absolute bottom-0 left-0 right-0 mx-auto max-w-2xl bg-[var(--panel)] border-[3px] border-b-0 border-[var(--text)] rounded-t-3xl flex flex-col max-h-[70vh] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] pb-[env(safe-area-inset-bottom)]"
+            animate={{ y: 0, transition: { type: 'spring', damping: 28, stiffness: 300 } }}
+            exit={{ y: '100%', transition: { duration: 0.15, ease: 'easeIn' } }}
+            className="fixed bottom-0 left-0 right-0 z-[80] mx-auto max-w-2xl bg-[var(--panel)] border-[3px] border-b-0 border-[var(--text)] rounded-t-3xl flex flex-col max-h-[70vh] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] pb-[env(safe-area-inset-bottom)]"
           >
             <div className="flex items-center gap-2 p-3 pb-2 shrink-0">
               <Lightbulb size={22} className="text-[var(--secondary)] shrink-0" />
@@ -349,14 +571,18 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx }) =>
                 <p className="text-center font-bold text-[var(--text)] opacity-60 py-8">このもんだいで つかえる どうぐは ないよ</p>
               )}
               {/* key に問題文を含めて、次の問題に進んだらどうぐの状態をリセットする */}
+              {active === 'tokei' && <ClockTool key={`t_${qText}`} spec={parseClock(qText)} />}
+              {active === 'nagasa' && <TapeTool key={`n_${qText}`} spec={parseTape(qText)} />}
+              {active === 'kasa' && <KasaTool key={`ks_${qText}`} spec={parseKasa(qText)} />}
+              {active === 'en' && <CircleTool key={`e_${qText}`} spec={parseCircle(qText)} />}
               {active === 'blocks' && <BlocksTool key={`b_${qText}`} p={p && p.isInt && (p.op === '+' || p.op === '-') ? p : null} onFx={onFx} />}
               {active === 'sakuranbo' && <SakuranboTool key={`s_${qText}`} p={p} onFx={onFx} />}
               {active === 'hissan' && <HissanTool key={`h_${qText}`} p={p} />}
               {active === 'kurai' && <KuraiTool key={`k_${qText}`} qText={qText} />}
             </div>
           </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
