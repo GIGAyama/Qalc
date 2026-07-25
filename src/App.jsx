@@ -2266,7 +2266,6 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
   const finishGame = useCallback((quitEarly = false) => {
     if (mistakesRef.current.length > 0) StorageAPI.addMistakes(mistakesRef.current);
-    if (state.courseName === 'にがて克服ボックス') StorageAPI.removeMistakes(state.problemSet.filter(p => !mistakesRef.current.some(m => m.q === p.q)));
 
     let newStats = { ...stats };
     newStats.maxComboRecord = Math.max(newStats.maxComboRecord || 0, maxComboRef.current);
@@ -2311,7 +2310,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     }
 
     setView('result');
-  }, [stats, state.gameMode, state.courseName, state.problemSet, startTime, setStats, setState, setView, peerState, setResumeData]);
+  }, [stats, state.gameMode, state.problemSet, startTime, setStats, setState, setView, peerState, setResumeData]);
 
   const pauseAndExit = useCallback(() => {
     const snapshot = {
@@ -2348,6 +2347,12 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       setCardAnim({ scale: [1, 1.05, 1], boxShadow: ["0 8px 0 var(--text)", "0 0 20px var(--secondary)", "0 8px 0 var(--text)"], transition: { duration: 0.3 } });
       setAns(''); canvasRef.current?.clear();
 
+      // にがて克服ボックスの問題は、正解した時点でボックスから取り除く（同セッション内で先に間違えていても、最後に正解すれば克服とみなす）
+      if (state.courseName === 'にがて克服ボックス') {
+        StorageAPI.removeMistakes([{ q: q.q }]);
+        mistakesRef.current = mistakesRef.current.filter(m => m.q !== q.q);
+      }
+
       if (state.gameMode === 'TIME_ATTACK' && correctCount + 1 >= state.problemSet.length) { setTimeout(finishGame, 500); }
       else { setQIndex(i => (i + 1) % state.problemSet.length); }
     } else {
@@ -2356,7 +2361,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       setAns(''); mistakesRef.current.push({ q: q.q, a: q.a.join('|') });
       if (state.gameMode === 'SUDDEN_DEATH') setTimeout(finishGame, 500);
     }
-  }, [ans, qIndex, combo, correctCount, state.problemSet, state.gameMode, finishGame]);
+  }, [ans, qIndex, combo, correctCount, state.problemSet, state.gameMode, state.courseName, finishGame]);
 
   // 正解の瞬間に自動で次の問題へ進む
   useEffect(() => {
