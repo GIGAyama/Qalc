@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X, Lightbulb, LayoutGrid, Cherry, PencilLine, Table2 } from 'lucide-react';
 
 // ==========================================
 // 学習補助ツール（算数ブロック・さくらんぼ計算・筆算・位取り表）
@@ -23,10 +23,10 @@ const parseArith = (qText) => {
 const extractNumbers = (qText) => (String(qText).match(/\d+(?:\.\d+)?/g) || []).slice(0, 2);
 
 export const TOOL_META = {
-  blocks: { emoji: '🟧', label: 'ブロック' },
-  sakuranbo: { emoji: '🍒', label: 'さくらんぼ' },
-  hissan: { emoji: '✏️', label: 'ひっ算' },
-  kurai: { emoji: '📊', label: 'くらい' },
+  blocks: { Icon: LayoutGrid, label: 'ブロック' },
+  sakuranbo: { Icon: Cherry, label: 'さくらんぼ' },
+  hissan: { Icon: PencilLine, label: 'ひっ算' },
+  kurai: { Icon: Table2, label: 'くらい' },
 };
 
 // 問題文とコース名から、この問題で役に立つどうぐの一覧を返す
@@ -325,17 +325,20 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx }) =>
             className="absolute bottom-0 left-0 right-0 mx-auto max-w-2xl bg-[var(--panel)] border-[3px] border-b-0 border-[var(--text)] rounded-t-3xl flex flex-col max-h-[70vh] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] pb-[env(safe-area-inset-bottom)]"
           >
             <div className="flex items-center gap-2 p-3 pb-2 shrink-0">
-              <span className="text-2xl">🧮</span>
+              <Lightbulb size={22} className="text-[var(--secondary)] shrink-0" />
               <div className="flex gap-1.5 flex-grow overflow-x-auto no-scrollbar">
-                {tools.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => { onFx?.(); setActive(t); }}
-                    className={`px-3 py-1.5 rounded-full font-bold text-sm whitespace-nowrap border-2 transition-colors touch-manipulation ${active === t ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] border-transparent'}`}
-                  >
-                    {TOOL_META[t].emoji} {TOOL_META[t].label}
-                  </button>
-                ))}
+                {tools.map((t) => {
+                  const { Icon, label } = TOOL_META[t];
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => { onFx?.(); setActive(t); }}
+                      className={`px-3 py-1.5 rounded-full font-bold text-sm whitespace-nowrap border-2 transition-colors touch-manipulation flex items-center gap-1.5 ${active === t ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] border-transparent'}`}
+                    >
+                      <Icon size={16} /> {label}
+                    </button>
+                  );
+                })}
               </div>
               <button onClick={onClose} className="w-9 h-9 shrink-0 rounded-full bg-[var(--bg)] border-2 border-[var(--text)] flex items-center justify-center text-[var(--text)] active:scale-90 transition-transform touch-manipulation" aria-label="とじる">
                 <X size={18} />
