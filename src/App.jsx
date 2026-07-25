@@ -8,6 +8,7 @@ import {
   Store, CheckCircle2, PaintBucket, Shirt, Users, Radio,
   LayoutDashboard
 } from 'lucide-react';
+import { LearningToolPanel, getAvailableTools } from './LearningTools.jsx';
 
 // ふりがなヘルパー: <R k="かん" g="じ" /> → <ruby>漢<rt>かん</rt></ruby><ruby>字<rt>じ</rt></ruby>
 // 使い方: <R k="漢" r="かん" /> は1文字用。複数文字は直接rubyタグで書く。
@@ -1418,7 +1419,7 @@ const LayeredAvatar = React.memo(({ equipped, size = "text-5xl", className = "" 
 
 const PageWrapper = ({ children, keyName }) => (
   <motion.div key={keyName} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.25, ease: "easeOut" }} className="absolute inset-0 flex flex-col overflow-y-auto overflow-x-hidden p-4 no-scrollbar">
-    <div className="m-auto w-full max-w-lg">{children}</div>
+    <div className="m-auto w-full max-w-lg md:max-w-xl">{children}</div>
   </motion.div>
 );
 
@@ -1602,6 +1603,11 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
       {/* Profile Card */}
       <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-4 relative">
         <div className="absolute top-3 right-3 flex items-center gap-2">
+          {(stats.streak || 0) > 0 && (
+            <div className="flex items-center gap-1 font-black text-sm text-[var(--panel)] bg-[var(--primary)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm" title="連続学習日数">
+              <Flame size={16} /> {stats.streak}<span className="text-[10px]">日</span>
+            </div>
+          )}
           <div className="flex items-center gap-1 font-black text-sm text-[var(--text)] bg-[var(--accent)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm"><Coins size={16} /> {stats.coins}</div>
         </div>
         <div className="flex items-center gap-4 mt-2">
@@ -1972,7 +1978,10 @@ const ShopView = ({ setView, stats, setStats }) => {
 
       <div className="flex gap-4 mb-4 shrink-0">
         <div className="w-24 h-24 bg-[var(--bg)] border-[3px] border-[var(--text)] rounded-2xl shrink-0 overflow-hidden">
-          <LayeredAvatar equipped={stats.equipped} size="text-6xl" className="w-full h-full" />
+          {/* key を装備内容にして、きせかえのたびにポヨンと弾ませる */}
+          <motion.div key={`${stats.equipped.base}_${stats.equipped.hat}_${stats.equipped.face}_${stats.equipped.prop}`} initial={{ scale: 0.6, rotate: -8 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.6 }} className="w-full h-full">
+            <LayeredAvatar equipped={stats.equipped} size="text-6xl" className="w-full h-full" />
+          </motion.div>
         </div>
         <div className="flex-grow grid grid-cols-3 gap-1 content-start">
           {[{ id: 'bases', icon: <User size={16} />, label: 'ベース' }, { id: 'hats', icon: <Shirt size={16} />, label: 'ぼうし' }, { id: 'faces', icon: <span className="text-sm">🕶️</span>, label: 'かお' }, { id: 'props', icon: <span className="text-sm">🎒</span>, label: 'もちもの' }, { id: 'themes', icon: <PaintBucket size={16} />, label: 'テーマ' }].map(t => (
@@ -2151,6 +2160,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const [correctCount, setCorrectCount] = useState(resumeSnapshot?.correctCount || 0);
   const [startTime] = useState(() => Date.now() - (resumeSnapshot?.elapsedMs || 0));
   const [showMemo, setShowMemo] = useState(false); const [memoPosition, setMemoPosition] = useState('right');
+  const [showTools, setShowTools] = useState(false);
   const canvasRef = useRef(null); const [fever, setFever] = useState(false); const [cardAnim, setCardAnim] = useState({});
   const mistakesRef = useRef(resumeSnapshot?.mistakes ? [...resumeSnapshot.mistakes] : []);
   const isResumedSessionRef = useRef(!!resumeSnapshot);
@@ -2200,9 +2210,16 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     if (state.gameMode === 'SUDDEN_DEATH') baseExp = correctCountRef.current * 50;
 
     newStats = StorageAPI.updateDailyAndMissions(newStats, baseExp, maxComboRef.current, 1, state.gameMode, correctCountRef.current);
+
+    // レベルアップしたらコインボーナスを付与（上がったレベル数 × 50コイン）
+    const levelBefore = getLevelInfo(stats.totalExp).level;
+    const levelAfter = getLevelInfo(newStats.totalExp).level;
+    const levelUpCoins = levelAfter > levelBefore ? (levelAfter - levelBefore) * 50 : 0;
+    if (levelUpCoins > 0) newStats.coins = (newStats.coins || 0) + levelUpCoins;
+
     StorageAPI.saveStats(newStats); setStats(newStats);
 
-    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp: baseExp, previousExp: stats.totalExp, mistakes: mistakesRef.current, resumeSnapshot: null }));
+    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp: baseExp, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null }));
 
     if (isResumedSessionRef.current) {
       StorageAPI.clearResume();
@@ -2295,6 +2312,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const handleSubmit = useCallback(() => { submitAnsRef.current(); }, []);
 
   const q = state.problemSet[qIndex] || { q: '?', a: ['?'] };
+  const availableTools = getAvailableTools(state.courseName, q.q);
 
   const textLen = q.q.length;
   let fontSizeClass = "text-[5rem] md:text-8xl";
@@ -2303,7 +2321,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   else if (textLen >= 8) { fontSizeClass = "text-4xl md:text-6xl"; }
 
   return (
-    <div className="absolute inset-0 w-full h-[100dvh] flex flex-col z-10 overflow-hidden bg-[var(--bg)]">
+    <div className="absolute inset-0 w-full h-[100dvh] flex flex-col z-10 overflow-hidden bg-[var(--bg)] pb-[env(safe-area-inset-bottom)]">
       {/* フィーバー演出: 毎フレーム合成が走る全画面アニメーションは、手書きパッドを開いている間は無効化して描画性能を優先する */}
       {fever && !showMemo && (
         <motion.div
@@ -2358,9 +2376,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           </div>
 
           <motion.div animate={cardAnim} className="h-24 bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] relative z-30 shrink-0 mb-4">
-            {showMemo && <motion.button whileTap={{ scale: 0.8 }} className={`absolute ${memoPosition === 'right' ? 'left-4' : 'right-4'} w-12 h-12 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
+            {availableTools.length > 0 && (
+              <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showTools ? 'bg-[var(--accent)]' : 'bg-[var(--bg)] opacity-70'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
+                <span className="text-2xl">🧮</span>
+              </motion.button>
+            )}
             <span className="text-5xl font-black text-[var(--secondary)] tracking-widest">{ans || <span className="text-4xl font-bold text-[var(--text)] opacity-20">?</span>}</span>
-            <motion.button whileTap={{ scale: 0.8 }} className={`absolute ${memoPosition === 'right' && showMemo ? 'right-4' : (showMemo ? 'left-4' : 'right-4')} w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--panel)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-50'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
+            {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 w-12 h-12 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
+            <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--panel)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-50'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
           </motion.div>
 
           <Keypad onAppend={handleAppend} onClear={handleClear} onSubmit={handleSubmit} />
@@ -2373,6 +2396,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           </div>
         </div>
       </div>
+
+      <LearningToolPanel open={showTools} onClose={() => { audioCtrl.playSE('click'); setShowTools(false); }} courseName={state.courseName} qText={q.q} onFx={() => audioCtrl.playSE('click')} />
 
       <AnimatePresence>
         {quitDialog && (
@@ -2420,7 +2445,12 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
 
   useEffect(() => {
     triggerConfetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#FF6B6B', '#4ECDC4', '#FFE66D'] });
-    setTimeout(() => { if (newInfo.level > oldInfo.level) { audioCtrl.playSE('combo', 10); setShowLevelUp(true); } }, 1000);
+    setTimeout(() => {
+      if (newInfo.level > oldInfo.level) {
+        audioCtrl.playSE('combo', 10); audioCtrl.playSE('coin'); setShowLevelUp(true);
+        triggerConfetti({ particleCount: 120, spread: 120, startVelocity: 40, origin: { y: 0.5 }, shapes: ['star'], colors: ['#FFD700', '#FFA500', '#FFE66D'], zIndex: 9999 });
+      }
+    }, 1000);
   }, []);
 
   return (
@@ -2435,9 +2465,14 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
             className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--bg)]/80 backdrop-blur-sm rounded-[20px] m-4"
           >
             <div className="bg-[var(--panel)] border-[4px] border-[var(--accent)] p-8 rounded-3xl text-center shadow-2xl flex flex-col items-center w-full max-w-sm">
-              <div className="text-7xl mb-4">{newInfo.badge}</div>
+              <motion.div initial={{ scale: 0, rotate: -30 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.6, delay: 0.1 }} className="text-7xl mb-4">{newInfo.badge}</motion.div>
               <h3 className="text-3xl font-black text-[var(--text)] mb-2">レベルアップ！</h3>
-              <p className="text-xl font-bold text-[var(--primary)] mb-6">Lv.{newInfo.level} {newInfo.title}</p>
+              <p className="text-xl font-bold text-[var(--primary)] mb-3">Lv.{oldInfo.level} <span className="opacity-50">→</span> Lv.{newInfo.level} {newInfo.title}</p>
+              {(state.levelUpCoins || 0) > 0 && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="flex items-center gap-1.5 bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-[var(--text)] mb-6">
+                  <Coins size={18} /> ボーナス +{state.levelUpCoins} コイン！
+                </motion.div>
+              )}
               <MotionButton className="bg-[var(--accent)] text-[var(--text)] w-full py-3 text-lg border-[3px] border-[var(--text)]" onClick={() => setShowLevelUp(false)}>やったー！</MotionButton>
             </div>
           </motion.div>
@@ -2505,6 +2540,17 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
             <div className="flex items-center gap-1">⬆ {earnedExp} EXP かくとく！</div>
           </motion.div>
           <div className="inline-block bg-[var(--accent)] text-[var(--text)] font-black px-5 py-2 rounded-full border-[3px] border-[var(--text)] shadow-sm">Max Combo: {state.finalCombo || 0}</div>
+
+          {/* EXPバー: 獲得EXPがレベルにどれだけ近づいたかをその場でアニメーション表示する */}
+          <div className="mt-5 text-left">
+            <div className="flex justify-between items-end mb-1">
+              <span className="font-black text-sm text-[var(--text)]">{newInfo.badge} Lv.{newInfo.level}</span>
+              <span className="text-[10px] font-bold text-[var(--text)] opacity-60">NEXT: {Math.floor(newInfo.nextLevelExp - newExp)} pt</span>
+            </div>
+            <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden border border-[var(--text)]">
+              <motion.div initial={{ width: `${newInfo.level > oldInfo.level ? 0 : oldInfo.progress}%` }} animate={{ width: `${newInfo.progress}%` }} transition={{ delay: 0.8, duration: 1, ease: 'easeOut' }} className="h-full bg-[var(--secondary)]" />
+            </div>
+          </div>
         </div>
       )}
 
