@@ -14,6 +14,11 @@ import {
   makeShuffledLayout, useRaidDebuffs, raidInputLocked,
   BossPanel, SupportButton, ProblemDebuffOverlay, FreezeOverlay, RaidEventOverlay, RaidResultPanel
 } from './BossBattle.jsx';
+import {
+  TERRITORY_CONSTANTS, TEAMS, otherTeam, createTerritoryCells, isSelectable, autoPickTarget,
+  computeScores, resolveCaptures,
+  TerritoryScoreBar, TerritoryBoard, TerritoryEventOverlay, TerritoryResultPanel
+} from './TerritoryBattle.jsx';
 
 // ふりがなヘルパー: <R k="かん" g="じ" /> → <ruby>漢<rt>かん</rt></ruby><ruby>字<rt>じ</rt></ruby>
 // 使い方: <R k="漢" r="かん" /> は1文字用。複数文字は直接rubyタグで書く。
@@ -1235,6 +1240,7 @@ const MISSION_POOL = [
   { id: 'sudden_death_correct_30', type: 'sudden_death_correct', target: 30, reward: 300, desc: 'サドンデスで 30問 正解' },
   { id: 'sudden_death_correct_50', type: 'sudden_death_correct', target: 50, reward: 500, desc: 'サドンデスで 50問 正解' },
   { id: 'play_boss_raid_1', type: 'play_boss_raid', target: 1, reward: 50, desc: 'みんなでボスバトルを 1回 プレイ' },
+  { id: 'play_territory_1', type: 'play_territory', target: 1, reward: 50, desc: 'みんなでじんとりバトルを 1回 プレイ' },
 ];
 
 const getRandomMissions = (count = 3, streak = 0) => {
@@ -1386,6 +1392,7 @@ const StorageAPI = {
         if (m.type === 'play_sudden_death' && gameMode === 'SUDDEN_DEATH' && !m.claimed) m.current += playCount;
         if (m.type === 'sudden_death_correct' && gameMode === 'SUDDEN_DEATH' && !m.claimed && correctCount > m.current) m.current = correctCount;
         if (m.type === 'play_boss_raid' && gameMode === 'BOSS_RAID' && !m.claimed) m.current += playCount;
+        if (m.type === 'play_territory' && gameMode === 'TERRITORY' && !m.claimed) m.current += playCount;
       });
     }
     return stats;
@@ -1801,14 +1808,15 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
 };
 
 // --- ホスト(リーダー) ルーム画面 ---
-// みんなであそぶ専用のモード一覧（BOSS_RAID は協力モードなのでマルチにのみ登場する）
+// みんなであそぶ専用のモード一覧（BOSS_RAID / TERRITORY は協力・チーム戦モードなのでマルチにのみ登場する）
 const MULTI_MODES = [
   { id: 'SCORE_ATTACK', label: 'スコア' },
   { id: 'TIME_ATTACK', label: 'タイム' },
   { id: 'SUDDEN_DEATH', label: 'サドンデス' },
   { id: 'BOSS_RAID', label: 'ボス' },
+  { id: 'TERRITORY', label: 'じんとり' },
 ];
-const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, configMode, setConfigMode, initRaid }) => {
+const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, configMode, setConfigMode, initRaid, initTerritory }) => {
   const [groups, setGroups] = useState([]); const [selectedGroup, setSelectedGroup] = useState('');
   const [time, setTime] = useState(3);
   const [selectedGrade, setSelectedGrade] = useState('すべて');
@@ -1832,6 +1840,24 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
     }
   }, [peerState.hostId]);
 
+  const hostTeam = peerState.hostTeam || 'red';
+
+  // じんとり用: メンバーのチームをタップで入れかえる(参加者リスト経由で全員に同期される)
+  const toggleMemberTeam = (id) => {
+    audioCtrl.playSE('click');
+    setPeerState(p => {
+      const cur = p.participants[id];
+      if (!cur) return p;
+      const newP = { ...p, participants: { ...p.participants, [id]: { ...cur, team: cur.team === 'blue' ? 'red' : 'blue' } } };
+      newP.connections.forEach(c => c.send({ type: 'participants_update', data: newP.participants }));
+      return newP;
+    });
+  };
+  const toggleHostTeam = () => {
+    audioCtrl.playSE('click');
+    setPeerState(p => ({ ...p, hostTeam: (p.hostTeam || 'red') === 'red' ? 'blue' : 'red' }));
+  };
+
   const startGame = () => {
     let probs = StorageAPI.getProblemsByGroup(selectedGroup);
     if (!probs || probs.length === 0) return showToast('error', '問題がありません');
@@ -1839,7 +1865,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
     if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
 
     const gameConfig = {
-      timeLimitSec: (configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID') ? time * 60 : 0,
+      timeLimitSec: (configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') ? time * 60 : 0,
       problemSet: probs.map(p => ({ q: p.q, a: String(p.a).split('|') })),
       courseName: selectedGroup,
       gameMode: configMode
@@ -1851,13 +1877,28 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
       gameConfig.raid = initRaid(playerCount);
     }
 
+    // じんとり: チーム分けを確定し(未割当は人数の少ない側へ)、ホスト権威の盤面を初期化する
+    let teamsMap = null;
+    if (configMode === 'TERRITORY') {
+      teamsMap = { [peerState.hostId]: { name: 'リーダー', team: hostTeam } };
+      let red = hostTeam === 'red' ? 1 : 0; let blue = 1 - red;
+      Object.entries(peerState.participants).forEach(([id, m]) => {
+        if (id === peerState.hostId) return;
+        let team = m.team === 'red' || m.team === 'blue' ? m.team : (red <= blue ? 'red' : 'blue');
+        if (team === 'red') red++; else blue++;
+        teamsMap[id] = { name: m.name, team };
+      });
+      if (red === 0 || blue === 0) return showToast('warning', 'あかチームと あおチームに 1人ずつは 必要です');
+      gameConfig.territory = initTerritory(teamsMap);
+    }
+
     // ホスト自身を参加者リストに追加し、全参加者のスコアをリセット
     setPeerState(p => {
       const resetParticipants = {};
       Object.entries(p.participants).forEach(([id, participant]) => {
-        resetParticipants[id] = { ...participant, score: 0, combo: 0 };
+        resetParticipants[id] = { ...participant, score: 0, combo: 0, ...(teamsMap && teamsMap[id] ? { team: teamsMap[id].team } : {}) };
       });
-      resetParticipants[p.hostId] = { id: p.hostId, name: 'リーダー', score: 0, combo: 0 };
+      resetParticipants[p.hostId] = { id: p.hostId, name: 'リーダー', score: 0, combo: 0, ...(teamsMap ? { team: hostTeam } : {}) };
       const newP = { ...p, participants: resetParticipants };
       newP.connections.forEach(c => c.send({ type: 'participants_update', data: newP.participants }));
       return newP;
@@ -1898,6 +1939,35 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
             ))}
           </div>
 
+          {/* じんとり: ルール説明とチーム分けUI */}
+          {configMode === 'TERRITORY' && (
+            <div className="mb-4">
+              <div className="bg-[var(--bg)] border-2 border-dashed border-[var(--text)] rounded-xl p-3 text-xs font-bold text-[var(--text)] opacity-90 mb-3 leading-relaxed">
+                🚩 2チームに<R c="分" r="わ" />かれて、7×7の ばんめんを ぬりあうチーム<R c="戦" r="せん" />！<R c="正" r="せい" /><R c="解" r="かい" />すると ねらったマスに ぬれるよ。★マスは ポイントが<R c="大" r="おお" />きい！
+              </div>
+              <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-70">チームわけ（なまえをタップで いれかえ）</label>
+              <div className="grid grid-cols-2 gap-2">
+                {['red', 'blue'].map(team => {
+                  const members = Object.entries(peerState.participants).filter(([id, m]) => id !== peerState.hostId && ((m.team === 'blue' ? 'blue' : 'red') === team));
+                  const count = members.length + (hostTeam === team ? 1 : 0);
+                  return (
+                    <div key={team} className="rounded-xl border-[3px] p-2 min-h-[88px]" style={{ borderColor: TEAMS[team].color, background: TEAMS[team].soft }}>
+                      <div className="font-black text-xs mb-1.5" style={{ color: TEAMS[team].color }}>{TEAMS[team].label}チーム（{count}<R c="人" r="にん" />）</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {hostTeam === team && (
+                          <button onClick={toggleHostTeam} className="text-[11px] font-black bg-[var(--panel)] border-2 border-[var(--text)] rounded-full px-2 py-0.5 active:scale-95">👑 リーダー</button>
+                        )}
+                        {members.map(([id, m]) => (
+                          <button key={id} onClick={() => toggleMemberTeam(id)} className="text-[11px] font-bold bg-[var(--panel)] border-2 border-[var(--text)] rounded-full px-2 py-0.5 active:scale-95 max-w-[110px] truncate">{m.name}</button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-70 ruby-text"><R c="学" r="がく" /><R c="年" r="ねん" /></label>
           <div className="flex gap-2 overflow-x-auto pb-2 mb-3 no-scrollbar sm:flex-wrap sm:overflow-visible sm:pb-0">
             {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-2 transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--bg)] border-transparent text-[var(--text)] hover:border-gray-400'}`}>{grade}</button>)}
@@ -1912,7 +1982,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
           </div>
         </div>
 
-        {(configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID') && (
+        {(configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') && (
           <div className="shrink-0 mb-2">
             <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-70 flex justify-between ruby-text"><span><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary)] text-lg">{time} <R c="分" r="ふん" /></span></label>
             <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[var(--primary)]" />
@@ -2206,7 +2276,7 @@ const TimerClock = React.memo(({ gameMode, startTime, timeLimitSec }) => {
   }, [startTime]);
   const elapsedSec = Math.floor((currentTime - startTime) / 1000);
   const remainSec = Math.max(0, timeLimitSec - elapsedSec);
-  const isCountdown = gameMode === 'SCORE_ATTACK' || gameMode === 'BOSS_RAID';
+  const isCountdown = gameMode === 'SCORE_ATTACK' || gameMode === 'BOSS_RAID' || gameMode === 'TERRITORY';
   const displaySec = isCountdown ? remainSec : elapsedSec;
   const m = Math.floor(displaySec / 60).toString().padStart(2, '0');
   const s = (displaySec % 60).toString().padStart(2, '0');
@@ -2218,7 +2288,7 @@ const TimerClock = React.memo(({ gameMode, startTime, timeLimitSec }) => {
 
 // 上部の進捗バー。SCORE_ATTACK のみ毎秒tickし、時間切れで onTimeUp を呼ぶ（GameView 本体は tick で再レンダーしない）
 const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correctCount, total, onTimeUp }) => {
-  const isScoreAttack = gameMode === 'SCORE_ATTACK' || gameMode === 'BOSS_RAID'; // 残り時間でtickするモード
+  const isScoreAttack = gameMode === 'SCORE_ATTACK' || gameMode === 'BOSS_RAID' || gameMode === 'TERRITORY'; // 残り時間でtickするモード
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const onTimeUpRef = useRef(onTimeUp);
   useEffect(() => { onTimeUpRef.current = onTimeUp; }, [onTimeUp]);
@@ -2246,9 +2316,10 @@ const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correc
 });
 
 // --- ゲーム画面 ---
-const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult }) => {
+const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, collectTerritoryResult }) => {
   const isMultiplayer = peerState && peerState.role;
   const isRaid = state.gameMode === 'BOSS_RAID';
+  const isTerritory = state.gameMode === 'TERRITORY';
   const resumeSnapshot = (!isMultiplayer && state.resumeSnapshot) ? state.resumeSnapshot : null;
 
   const [score, setScore] = useState(resumeSnapshot?.score || 0);
@@ -2280,6 +2351,42 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const raidStateRef = useRef(raidState);
   useEffect(() => { raidStateRef.current = raidState; }, [raidState]);
   const isRaidLocked = () => isRaid && raidInputLocked(raidStateRef.current, myId);
+
+  // --- じんとりバトル用 ---
+  const myTeam = isTerritory ? terrState?.teams?.[myId]?.team : null;
+  const terrStateRef = useRef(terrState);
+  useEffect(() => { terrStateRef.current = terrState; }, [terrState]);
+  const [terrTarget, setTerrTarget] = useState(null);
+  const terrTargetRef = useRef(terrTarget);
+  useEffect(() => { terrTargetRef.current = terrTarget; }, [terrTarget]);
+
+  // ねらいが未選択・ぬり終わった・うばわれ済みになったら、いちばんぬりやすいマスへ自動でねらい直す
+  useEffect(() => {
+    if (!isTerritory || !terrState?.cells || !myTeam) return;
+    if (terrTarget != null && isSelectable(terrState.cells, terrTarget, myTeam)) return;
+    const next = autoPickTarget(terrState.cells, myTeam);
+    setTerrTarget(next);
+    if (next != null) sendTerrTarget?.(next);
+  }, [isTerritory, terrState, myTeam, terrTarget, sendTerrTarget]);
+
+  const selectTerrTarget = useCallback((idx) => {
+    audioCtrl.playSE('click');
+    setTerrTarget(idx);
+    sendTerrTarget?.(idx);
+  }, [sendTerrTarget]);
+
+  // じんとりイベントへのローカル反応(マス確保・うばい・盤面うまりの効果音)
+  const lastTerrEventAtRef = useRef(0);
+  useEffect(() => {
+    const ev = terrState?.lastEvent;
+    if (!isTerritory || !ev || ev.at === lastTerrEventAtRef.current) return;
+    lastTerrEventAtRef.current = ev.at;
+    if (ev.kind === 'capture') {
+      if (ev.team === myTeam) audioCtrl.playSE('coin');
+      else if (ev.steal) audioCtrl.playSE('wrong');
+    }
+    if (ev.kind === 'board_full') { audioCtrl.playSE('combo', 8); }
+  }, [isTerritory, terrState?.lastEvent, myTeam]);
 
   // レイドイベントへのローカル反応(効果音・立て直し時のコンボリセット)
   const lastEventAtRef = useRef(0);
@@ -2329,8 +2436,12 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const scoreRef = useRef(score); useEffect(() => { scoreRef.current = score; }, [score]);
   const maxComboRef = useRef(maxCombo); useEffect(() => { maxComboRef.current = maxCombo; }, [maxCombo]);
   const correctCountRef = useRef(correctCount); useEffect(() => { correctCountRef.current = correctCount; }, [correctCount]);
+  const gameEndedRef = useRef(false);
 
   const finishGame = useCallback((quitEarly = false) => {
+    // 盤面うまりの早期終了とタイマー満了が重なっても、集計・EXP付与を二重に行わない
+    if (gameEndedRef.current) return;
+    gameEndedRef.current = true;
     if (mistakesRef.current.length > 0) StorageAPI.addMistakes(mistakesRef.current);
 
     let newStats = { ...stats };
@@ -2351,6 +2462,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     if (state.gameMode === 'SUDDEN_DEATH') baseExp = correctCountRef.current * 50;
     // ボスバトル: 自分の与ダメージ(score) + チームの撃破数 + 自分のおうえん回数。チーム成果が全員のEXPに入る
     if (state.gameMode === 'BOSS_RAID') baseExp = Math.round(scoreRef.current * 0.5 + defeatedRef.current * 100 + mySupportsRef.current * 30);
+    // じんとり: 自分のぬり回数(score) + チームの勝敗ボーナス
+    if (state.gameMode === 'TERRITORY') {
+      const s = terrStateRef.current?.scores || { red: 0, blue: 0 };
+      const won = myTeam && s[myTeam] > s[otherTeam(myTeam)];
+      const draw = myTeam && s[myTeam] === s[otherTeam(myTeam)];
+      baseExp = scoreRef.current * 25 + (won ? 400 : draw ? 250 : 150);
+      if (won) newStats.territoryWins = (newStats.territoryWins || 0) + 1;
+    }
 
     newStats = StorageAPI.updateDailyAndMissions(newStats, baseExp, maxComboRef.current, 1, state.gameMode, correctCountRef.current);
 
@@ -2362,10 +2481,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
     StorageAPI.saveStats(newStats); setStats(newStats);
 
-    // ボスバトル: ホストが権威データから最終的な貢献度を確定し、結果画面と全クライアントに配る
+    // ボスバトル/じんとり: ホストが権威データから最終結果を確定し、結果画面と全クライアントに配る
     const raidResult = (state.gameMode === 'BOSS_RAID' && peerState && peerState.role === 'host' && collectRaidResult) ? collectRaidResult() : null;
+    const territoryResult = (state.gameMode === 'TERRITORY' && peerState && peerState.role === 'host' && collectTerritoryResult) ? collectTerritoryResult() : null;
 
-    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp: baseExp, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, ...(raidResult ? { raidResult } : {}) }));
+    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp: baseExp, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, ...(raidResult ? { raidResult } : {}), ...(territoryResult ? { territoryResult } : {}) }));
 
     if (isResumedSessionRef.current) {
       StorageAPI.clearResume();
@@ -2378,11 +2498,18 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       peerState.conn.send({ type: 'game_finish', data: { finalScore: baseExp } });
     } else if (peerState && peerState.role === 'host') {
       // ホストが終了した場合、全クライアントにも終了を通知
-      peerState.connections.forEach(c => c.send({ type: 'game_finish', data: raidResult ? { raidResult } : undefined }));
+      peerState.connections.forEach(c => c.send({ type: 'game_finish', data: raidResult ? { raidResult } : territoryResult ? { territoryResult } : undefined }));
     }
 
     setView('result');
-  }, [stats, state.gameMode, state.problemSet, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult]);
+  }, [stats, state.gameMode, state.problemSet, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult, collectTerritoryResult, myTeam]);
+
+  // じんとり: 盤面が全部うまったら時間切れを待たずに終了する(バナー演出のあとで全員が finishGame する)
+  useEffect(() => {
+    if (!isTerritory || !terrState?.boardFull) return;
+    const id = setTimeout(() => finishGame(), TERRITORY_CONSTANTS.END_BANNER_MS);
+    return () => clearTimeout(id);
+  }, [isTerritory, terrState?.boardFull, finishGame]);
 
   const pauseAndExit = useCallback(() => {
     const snapshot = {
@@ -2421,6 +2548,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         setScore(s => s + dmg);
         sendRaidAttack?.(dmg, newC);
         setCheerGauge(g => Math.min(RAID_CONSTANTS.GAUGE_MAX, g + (newC >= 5 ? 2 : 1)));
+      } else if (isTerritory) {
+        // 正解=ねらっているマスへのぬり。フィーバー(5コンボ以上)中は2ぬり。score はぬり回数の累計
+        const amount = newC >= 5 ? TERRITORY_CONSTANTS.FEVER_CHARGE : 1;
+        setScore(s => s + amount);
+        sendTerrCharge?.(terrTargetRef.current, amount, newC);
       } else {
         setScore(s => s + 100 + (combo * 10));
       }
@@ -2502,8 +2634,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       {/* ボスバトル: ランキングの代わりにボスパネルを表示 */}
       {isRaid && <BossPanel raidState={raidState} compact={showMemo} />}
 
+      {/* じんとり: ランキングの代わりにチームスコアバーを表示 */}
+      {isTerritory && <TerritoryScoreBar terrState={terrState} myTeam={myTeam} />}
+
       {/* ランキング表示（メインレイアウトの外に配置） */}
-      {!isRaid && isMultiplayer && top5.length > 0 && (
+      {!isRaid && !isTerritory && isMultiplayer && top5.length > 0 && (
         <div className="flex justify-center gap-2 p-2 overflow-x-auto no-scrollbar shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm">
           {top5.map((p, idx) => (
             <div key={p.id} className="bg-[var(--bg)] border-2 border-[var(--text)] rounded-lg px-3 py-1.5 flex flex-col items-center min-w-[80px]">
@@ -2519,17 +2654,27 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
       <div className={`flex-grow flex flex-col ${memoPosition === 'right' ? 'md:flex-row' : 'md:flex-row-reverse'} overflow-y-auto md:overflow-hidden relative w-full h-full`}>
 
-        <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : 'w-full max-w-4xl mx-auto h-full'} md:h-full p-4`}>
+        {/* じんとり: 盤面を問題エリアと並べて常時表示する(モバイルは上段・PCは左カラム)。手書きメモ使用中はモバイルのみ盤面をたたむ */}
+        {isTerritory && (
+          <div className={`shrink-0 w-full md:h-full md:order-first border-b-2 md:border-b-0 md:border-r-2 border-[var(--text)] bg-[var(--panel)] p-2 flex-col items-center justify-center ${showMemo ? 'hidden md:flex md:w-[240px]' : 'flex md:w-[340px]'}`}>
+            <div className="h-[24vh] md:h-auto md:w-full md:flex-grow md:min-h-0 flex items-center justify-center w-full">
+              <TerritoryBoard terrState={terrState} myTeam={myTeam} myId={myId} targetIdx={terrTarget} onSelect={selectTerrTarget} />
+            </div>
+            <p className="shrink-0 text-[10px] font-bold text-[var(--text)] opacity-60 mt-1 text-center">タップで ねらうマスを えらぼう（<R c="数" r="すう" /><R c="字" r="じ" />＝あと<R c="何" r="なん" /><R c="回" r="かい" />で ぬれるか）</p>
+          </div>
+        )}
+
+        <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : `w-full ${isTerritory ? 'md:flex-grow md:w-auto max-w-4xl' : 'max-w-4xl h-full'} mx-auto`} md:h-full p-4`}>
 
           <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
             <button onClick={() => { audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-2 py-1 font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center gap-1"><XCircle size={16} /> やめる</button>
             <TimerClock gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} />
             <div className="font-black text-2xl text-[var(--primary)] flex items-center gap-2 drop-shadow-sm">
-              {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : state.gameMode === 'BOSS_RAID' ? <>⚔ {score} <span className="text-sm text-[var(--text)] opacity-50">ダメージ</span></> : <>{score} <span className="text-sm text-[var(--text)] opacity-50">pt</span></>}
+              {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : state.gameMode === 'BOSS_RAID' ? <>⚔ {score} <span className="text-sm text-[var(--text)] opacity-50">ダメージ</span></> : state.gameMode === 'TERRITORY' ? <>🖌 {score} <span className="text-sm text-[var(--text)] opacity-50">ぬり</span></> : <>{score} <span className="text-sm text-[var(--text)] opacity-50">pt</span></>}
             </div>
           </div>
 
-          <div className="relative flex-grow flex flex-col justify-center items-center min-h-[150px] mb-4">
+          <div className={`relative flex-grow flex flex-col justify-center items-center ${isTerritory ? 'min-h-[90px] mb-2 md:min-h-[150px] md:mb-4' : 'min-h-[150px] mb-4'}`}>
             <div className="absolute top-0 h-10 flex justify-center items-center w-full">
               <AnimatePresence>
                 {combo > 1 && <motion.div initial={{ scale: 0, y: 10 }} animate={{ scale: [0, 1.3, 1], y: 0, rotate: -6 }} exit={{ scale: 0 }} className="bg-[var(--accent)] text-[var(--text)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-sm shadow-[2px_2px_0_var(--text)] z-30">{combo} COMBO! 🔥</motion.div>}
@@ -2546,7 +2691,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             {isRaid && <SupportButton gauge={cheerGauge} onFire={fireSupport} />}
           </div>
 
-          <motion.div animate={cardAnim} className="h-24 bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] relative z-30 shrink-0 mb-4">
+          <motion.div animate={cardAnim} className={`bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] relative z-30 shrink-0 ${isTerritory ? 'h-16 mb-2 md:h-24 md:mb-4' : 'h-24 mb-4'}`}>
             {availableTools.length > 0 && (
               <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showTools ? 'bg-[var(--accent)] text-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-50'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
                 <Lightbulb size={24} />
@@ -2576,6 +2721,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       {/* ボスバトルの全画面イベント演出(撃破・新ボス登場・たてなおし・おうえん) */}
       {isRaid && <RaidEventOverlay lastEvent={raidState?.lastEvent} />}
 
+      {/* じんとりの全画面イベント演出(うばい・ボーナスマス確保・盤面うまり) */}
+      {isTerritory && <TerritoryEventOverlay lastEvent={terrState?.lastEvent} />}
+
       <AnimatePresence>
         {quitDialog && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -2586,6 +2734,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
                 ここまでの<R c="正" r="せい" /><R c="解" r="かい" />: <span className="font-black text-[var(--primary)]">{correctCount}<R c="問" r="もん" /></span>
                 {state.gameMode === 'SCORE_ATTACK' && <> ／ スコア: <span className="font-black text-[var(--primary)]">{score}pt</span></>}
                 {state.gameMode === 'BOSS_RAID' && <> ／ <R c="与" r="あた" />えたダメージ: <span className="font-black text-[var(--primary)]">⚔{score}</span></>}
+                {state.gameMode === 'TERRITORY' && <> ／ ぬった<R c="回" r="かい" /><R c="数" r="すう" />: <span className="font-black text-[var(--primary)]">🖌{score}</span></>}
               </p>
               <div className="flex flex-col w-full gap-2">
                 <MotionButton className="bg-[var(--primary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 w-full ruby-text" onClick={() => { setQuitDialog(false); finishGame(true); }}>
@@ -2658,11 +2807,13 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
       </AnimatePresence>
 
       <motion.h2 initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.6 }} className="font-black text-5xl text-center mb-4 text-[var(--primary)] shrink-0">
-        {state.gameMode === 'SUDDEN_DEATH' ? <span className="text-[var(--text)] ruby-text"><HeartCrack size={40} className="inline mr-2 text-red-500 mb-2" /><R c="終" r="しゅう" /><R c="了" r="りょう" />！</span> : state.gameMode === 'BOSS_RAID' ? '👑 バトルしゅうりょう！' : '🎉 FINISH!'}
+        {state.gameMode === 'SUDDEN_DEATH' ? <span className="text-[var(--text)] ruby-text"><HeartCrack size={40} className="inline mr-2 text-red-500 mb-2" /><R c="終" r="しゅう" /><R c="了" r="りょう" />！</span> : state.gameMode === 'BOSS_RAID' ? '👑 バトルしゅうりょう！' : state.gameMode === 'TERRITORY' ? '🚩 じんとり しゅうりょう！' : '🎉 FINISH!'}
       </motion.h2>
 
       {isMultiplayer && state.gameMode === 'BOSS_RAID' && state.raidResult ? (
         <RaidResultPanel raidResult={state.raidResult} myId={myId} />
+      ) : isMultiplayer && state.gameMode === 'TERRITORY' && state.territoryResult ? (
+        <TerritoryResultPanel territoryResult={state.territoryResult} myId={myId} />
       ) : isMultiplayer && participantsList.length > 0 ? (
         <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] p-4 w-full mb-6 shrink-0 relative overflow-hidden flex flex-col items-center shadow-[4px_4px_0_var(--text)]">
           <h3 className="font-black text-xl mb-6 text-[var(--text)] flex items-center gap-2 ruby-text"><Trophy size={24} className="text-yellow-400" /> <R c="最" r="さい" /><R c="終" r="しゅう" />ランキング</h3>
@@ -3173,6 +3324,132 @@ export default function App() {
     raidRef.current ? { defeated: raidRef.current.defeated, contributions: raidRef.current.contributions } : null
   ), []);
 
+  // 【じんとりバトル(TERRITORY)の状態】
+  // terrRef がホスト権威の真実(盤面・ぬり進行・貢献度)、terrState は全端末共通の描画用スナップショット。
+  // クライアントは terr_state / terr_event の受信だけで terrState を組み立てる。
+  const [terrState, setTerrState] = useState(null);
+  const terrRef = useRef(null);
+
+  // --- 全端末共通: 受信スナップショット/イベントを terrState に反映する ---
+  const applyTerrSnapshot = useCallback((snap) => {
+    setTerrState(prev => ({ ...(prev || {}), ...snap }));
+  }, []);
+
+  const applyTerrEvent = useCallback((data) => {
+    setTerrState(prev => (prev ? { ...prev, lastEvent: { ...data, at: Date.now() } } : prev));
+  }, []);
+
+  // --- ここからホスト専用ロジック ---
+  // ホストは cells を直接ミューテートするため、スナップショットは必ず複製して配る
+  const terrSnapshot = () => {
+    const t = terrRef.current;
+    return {
+      cells: t.cells.map(c => ({ owner: c.owner, charge: { ...c.charge } })),
+      scores: { ...t.scores },
+      targets: { ...t.targets },
+      boardFull: t.boardFull,
+    };
+  };
+
+  const broadcastTerrState = () => {
+    if (!terrRef.current) return;
+    const snap = terrSnapshot();
+    terrRef.current.lastBeatAt = Date.now();
+    broadcast({ type: 'terr_state', data: snap });
+    applyTerrSnapshot(snap);
+  };
+
+  // ゲーム開始時にホストが呼ぶ。初期スナップショット(チーム表つき)を返し、game_start に同梱される
+  const initTerritory = (teamsMap) => {
+    const cells = createTerritoryCells();
+    const contributions = {};
+    Object.entries(teamsMap).forEach(([id, m]) => {
+      contributions[id] = { name: m.name, team: m.team, charges: 0, captures: 0, steals: 0, maxCombo: 0 };
+    });
+    terrRef.current = {
+      cells, scores: computeScores(cells), targets: {}, contributions,
+      teams: teamsMap, boardFull: false, lastBeatAt: Date.now(),
+    };
+    const snap = { ...terrSnapshot(), teams: teamsMap };
+    setTerrState({ ...snap, lastEvent: null });
+    return snap;
+  };
+
+  // 正解によるぬりを盤面へ適用する。ねらいが無効(ぬり済みなど)なら自動でぬりやすいマスへ振り替える
+  const hostApplyCharge = (peerId, cellIdx, amount, combo) => {
+    const t = terrRef.current;
+    if (!t || t.boardFull || !(amount > 0)) return;
+    const c = t.contributions[peerId];
+    if (!c) return; // チーム未登録(開始後参加)のぬりは無効
+    c.charges += amount;
+    c.maxCombo = Math.max(c.maxCombo, combo || 0);
+
+    let idx = cellIdx;
+    if (idx == null || !t.cells[idx] || !isSelectable(t.cells, idx, c.team)) idx = autoPickTarget(t.cells, c.team);
+    if (idx == null) return;
+    t.cells[idx].charge[c.team] += amount;
+
+    const captured = resolveCaptures(t.cells);
+    if (captured.length > 0) {
+      captured.forEach(cap => {
+        if (cap.team === c.team) { c.captures += 1; if (cap.steal) c.steals += 1; }
+      });
+      t.scores = computeScores(t.cells);
+      // いちばん目立つ確保(うばい > 高価値)をイベントとして流す
+      const notable = [...captured].sort((a, b) => (b.steal - a.steal) || (b.value - a.value))[0];
+      const ev = { kind: 'capture', name: c.name, team: notable.team, cellIdx: notable.idx, steal: notable.steal, value: notable.value };
+      broadcast({ type: 'terr_event', data: ev });
+      applyTerrEvent(ev);
+      if (t.cells.every(cell => cell.owner)) {
+        t.boardFull = true;
+        const endEv = { kind: 'board_full' };
+        broadcast({ type: 'terr_event', data: endEv });
+        applyTerrEvent(endEv);
+      }
+    }
+    broadcastTerrState();
+  };
+
+  const hostSetTarget = (peerId, cellIdx) => {
+    const t = terrRef.current;
+    if (!t) return;
+    t.targets[peerId] = cellIdx;
+    broadcastTerrState();
+  };
+
+  // ハートビート同期(タブスロットリング・取りこぼし対策)
+  useEffect(() => {
+    if (view !== 'game' || state.gameMode !== 'TERRITORY' || peerState.role !== 'host') return;
+    const id = setInterval(() => {
+      const t = terrRef.current;
+      if (t && Date.now() - t.lastBeatAt >= TERRITORY_CONSTANTS.HEARTBEAT_MS) broadcastTerrState();
+    }, 1000);
+    return () => clearInterval(id);
+  }, [view, state.gameMode, peerState.role]);
+
+  // GameView から呼ばれる送信ヘルパー(ホストなら直接権威ロジックへ、クライアントならホストへ送信)
+  const sendTerrCharge = useCallback((cellIdx, amount, combo) => {
+    const p = peerStateRef.current;
+    if (p.role === 'host') hostApplyCharge(p.hostId, cellIdx, amount, combo);
+    else if (p.conn) p.conn.send({ type: 'terr_charge', data: { cellIdx, amount, combo } });
+  }, []);
+
+  const sendTerrTarget = useCallback((cellIdx) => {
+    const p = peerStateRef.current;
+    if (p.role === 'host') hostSetTarget(p.hostId, cellIdx);
+    else if (p.conn) p.conn.send({ type: 'terr_target', data: { cellIdx } });
+  }, []);
+
+  // 結果画面用(ホストのみ実体を持つ)
+  const collectTerritoryResult = useCallback(() => (
+    terrRef.current ? {
+      scores: { ...terrRef.current.scores },
+      cells: terrRef.current.cells.map(c => ({ owner: c.owner })),
+      contributions: terrRef.current.contributions,
+      teams: terrRef.current.teams,
+    } : null
+  ), []);
+
   // URLパラメータのチェック（児童がURLからアクセスした場合）
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -3202,7 +3479,12 @@ export default function App() {
       conn.on('data', (rawData) => {
         if (rawData.type === 'join') {
           setPeerState(p => {
-            const newP = { ...p, participants: { ...p.participants, [conn.peer]: { id: conn.peer, name: rawData.name, score: 0, combo: 0 } } };
+            // じんとり用に参加時点でチームを自動割当(人数の少ない側へ)。他モードでは使われないだけで無害
+            const hostTeam = p.hostTeam || 'red';
+            let red = hostTeam === 'red' ? 1 : 0; let blue = 1 - red;
+            Object.entries(p.participants).forEach(([id, m]) => { if (id === p.hostId) return; if (m.team === 'blue') blue++; else red++; });
+            const team = red <= blue ? 'red' : 'blue';
+            const newP = { ...p, participants: { ...p.participants, [conn.peer]: { id: conn.peer, name: rawData.name, score: 0, combo: 0, team } } };
             newP.connections.forEach(c => c.send({ type: 'participants_update', data: newP.participants }));
             return newP;
           });
@@ -3218,6 +3500,10 @@ export default function App() {
           hostApplyDamage(conn.peer, rawData.data.damage, rawData.data.combo);
         } else if (rawData.type === 'raid_support') {
           hostApplySupport(conn.peer);
+        } else if (rawData.type === 'terr_charge') {
+          hostApplyCharge(conn.peer, rawData.data.cellIdx, rawData.data.amount, rawData.data.combo);
+        } else if (rawData.type === 'terr_target') {
+          hostSetTarget(conn.peer, rawData.data.cellIdx);
         }
       });
       conn.on('close', () => { setPeerState(p => ({ ...p, connections: p.connections.filter(c => c.peer !== conn.peer) })); });
@@ -3248,12 +3534,14 @@ export default function App() {
       });
       conn.on('data', (rawData) => {
         if (rawData.type === 'game_start') {
-          setState(prev => ({ ...prev, raidResult: null, ...rawData.data }));
-          // ボスバトルなら初期スナップショットからレイド表示を立ち上げる
+          setState(prev => ({ ...prev, raidResult: null, territoryResult: null, ...rawData.data }));
+          // ボスバトル/じんとりなら初期スナップショットから表示を立ち上げる
           setRaidState(rawData.data.raid ? { ...rawData.data.raid, activeDebuffs: [], lastAttack: null, lastEvent: null } : null);
+          setTerrState(rawData.data.territory ? { ...rawData.data.territory, lastEvent: null } : null);
           setView('game');
         } else if (rawData.type === 'game_finish') {
           if (rawData.data && rawData.data.raidResult) setState(prev => ({ ...prev, raidResult: rawData.data.raidResult }));
+          if (rawData.data && rawData.data.territoryResult) setState(prev => ({ ...prev, territoryResult: rawData.data.territoryResult }));
           setView('result');
         } else if (rawData.type === 'participants_update') {
           setPeerState(p => ({ ...p, participants: rawData.data }));
@@ -3263,6 +3551,10 @@ export default function App() {
           applyRaidBossAttack(rawData.data);
         } else if (rawData.type === 'raid_event') {
           applyRaidEvent(rawData.data);
+        } else if (rawData.type === 'terr_state') {
+          applyTerrSnapshot(rawData.data);
+        } else if (rawData.type === 'terr_event') {
+          applyTerrEvent(rawData.data);
         }
       });
       conn.on('error', () => showToast('error', 'リーダーとの接続が切れました'));
@@ -3284,6 +3576,8 @@ export default function App() {
     setPeerState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {} });
     raidRef.current = null;
     setRaidState(null);
+    terrRef.current = null;
+    setTerrState(null);
     setUrlHostId(null);
     setView('home');
     showToast('success', 'ルームから退出しました');
@@ -3360,11 +3654,11 @@ export default function App() {
           {view === 'singleConfig' && <PageWrapper key="single"><SingleConfigView setView={setView} setState={setState} configMode={configMode} /></PageWrapper>}
 
           {/* 追加ビュー */}
-          {view === 'hostRoom' && <PageWrapper key="host"><HostRoomView peerState={peerState} setPeerState={setPeerState} broadcast={broadcast} setView={setView} setState={setState} configMode={configMode} setConfigMode={setConfigMode} initRaid={initRaid} /></PageWrapper>}
+          {view === 'hostRoom' && <PageWrapper key="host"><HostRoomView peerState={peerState} setPeerState={setPeerState} broadcast={broadcast} setView={setView} setState={setState} configMode={configMode} setConfigMode={setConfigMode} initRaid={initRaid} initTerritory={initTerritory} /></PageWrapper>}
           {view === 'clientJoin' && <PageWrapper key="clientJoin"><ClientJoinView initClient={initClient} urlHostId={urlHostId} setView={setView} /></PageWrapper>}
           {view === 'clientWait' && <PageWrapper key="clientWait"><ClientWaitView peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
 
-          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} /></PageWrapper>}
+          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} collectTerritoryResult={collectTerritoryResult} /></PageWrapper>}
           {view === 'result' && <PageWrapper key="result"><ResultView state={state} setView={setView} peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
           {view === 'manager' && <PageWrapper key="manager"><ManagerView setView={setView} /></PageWrapper>}
           {view === 'import' && <PageWrapper key="import"><ImportView setView={setView} /></PageWrapper>}
