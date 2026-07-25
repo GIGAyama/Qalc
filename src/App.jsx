@@ -1129,6 +1129,10 @@ const generateDynamicProblems = () => {
 
 Object.assign(DEFAULT_PROBLEMS, generateDynamicProblems());
 
+// アイテムの追加フィールド:
+//   lv: そのレベルに到達するまで購入できない(ながく遊ぶための解放条件)
+//   gacha: ショップでは買えず「ふしぎなたまごガチャ」からのみ出る
+//   rarity: ガチャ限定品のレアリティ明示。通常品は価格から自動判定(getRarity)
 const SHOP_ITEMS = {
   bases: [
     { id: 'b_dog', char: '🐶', name: 'イヌ', price: 0 }, { id: 'b_cat', char: '🐱', name: 'ネコ', price: 200 },
@@ -1140,6 +1144,27 @@ const SHOP_ITEMS = {
     { id: 'b_lion', char: '🦁', name: 'ライオン', price: 600 }, { id: 'b_ghost', char: '👻', name: 'オバケ', price: 700 },
     { id: 'b_alien', char: '👽', name: 'うちゅうじん', price: 800 }, { id: 'b_robot', char: '🤖', name: 'ロボット', price: 900 },
     { id: 'b_dragon', char: '🐉', name: 'ドラゴン', price: 1000 }, { id: 'b_unicorn', char: '🦄', name: 'ユニコーン', price: 1500 },
+    { id: 'b_hamster', char: '🐹', name: 'ハムスター', price: 250 }, { id: 'b_mouse', char: '🐭', name: 'ネズミ', price: 250 },
+    { id: 'b_chick', char: '🐥', name: 'ヒヨコ', price: 300 }, { id: 'b_chicken', char: '🐔', name: 'ニワトリ', price: 350 },
+    { id: 'b_cow', char: '🐮', name: 'ウシ', price: 400 }, { id: 'b_turtle', char: '🐢', name: 'カメ', price: 400 },
+    { id: 'b_horse', char: '🐴', name: 'ウマ', price: 450 }, { id: 'b_crab', char: '🦀', name: 'カニ', price: 450 },
+    { id: 'b_owl', char: '🦉', name: 'フクロウ', price: 500 }, { id: 'b_octopus', char: '🐙', name: 'タコ', price: 550 },
+    { id: 'b_wolf', char: '🐺', name: 'オオカミ', price: 650 }, { id: 'b_dolphin', char: '🐬', name: 'イルカ', price: 800 },
+    { id: 'b_whale', char: '🐳', name: 'クジラ', price: 1200 }, { id: 'b_parrot', char: '🦜', name: 'オウム', price: 1400 },
+    { id: 'b_shark', char: '🦈', name: 'サメ', price: 1600 }, { id: 'b_hedgehog', char: '🦔', name: 'ハリネズミ', price: 1600 },
+    { id: 'b_elephant', char: '🐘', name: 'ゾウ', price: 1800 }, { id: 'b_trex', char: '🦖', name: 'きょうりゅう', price: 2000 },
+    { id: 'b_giraffe', char: '🦒', name: 'キリン', price: 2200 }, { id: 'b_bronto', char: '🦕', name: 'くびながりゅう', price: 2500 },
+    { id: 'b_flamingo', char: '🦩', name: 'フラミンゴ', price: 2800 }, { id: 'b_snowman', char: '⛄', name: 'ゆきだるま', price: 3000 },
+    { id: 'b_pumpkin', char: '🎃', name: 'パンプキン', price: 3000 }, { id: 'b_peacock', char: '🦚', name: 'クジャク', price: 3500 },
+    { id: 'b_teddy', char: '🧸', name: 'テディベア', price: 4000 }, { id: 'b_moai', char: '🗿', name: 'モアイ', price: 5000 },
+    { id: 'b_eagle', char: '🦅', name: 'イーグル', price: 6000, lv: 10 }, { id: 'b_pixel', char: '👾', name: 'ピクセルモンスター', price: 9000, lv: 15 },
+    { id: 'b_ryuo', char: '🐲', name: 'りゅうおう', price: 15000, lv: 20 },
+    { id: 'b_seal', char: '🦭', name: 'アザラシ', price: 0, gacha: true, rarity: 'N' },
+    { id: 'b_fugu', char: '🐡', name: 'フグ', price: 0, gacha: true, rarity: 'N' },
+    { id: 'b_sloth', char: '🦥', name: 'ナマケモノ', price: 0, gacha: true, rarity: 'R' },
+    { id: 'b_otter', char: '🦦', name: 'カワウソ', price: 0, gacha: true, rarity: 'R' },
+    { id: 'b_scorpion', char: '🦂', name: 'サソリ', price: 0, gacha: true, rarity: 'SR' },
+    { id: 'b_mammoth', char: '🦣', name: 'マンモス', price: 0, gacha: true, rarity: 'UR' },
   ],
   hats: [
     { id: 'h_cap', char: '🧢', name: 'キャップ', price: 150 }, { id: 'h_ribbon', char: '🎀', name: 'リボン', price: 150 },
@@ -1157,6 +1182,23 @@ const SHOP_ITEMS = {
     { id: 'h_anger', char: '💢', name: 'イライラ', price: 150 }, { id: 'h_sweat', char: '💦', name: 'あせあせ', price: 150 },
     { id: 'h_bat', char: '🦇', name: 'コウモリ', price: 250 }, { id: 'h_butterfly', char: '🦋', name: 'チョウチョ', price: 250 },
     { id: 'h_spider', char: '🕷️', name: 'クモ', price: 250 }, { id: 'h_ufo', char: '🛸', name: 'UFO', price: 400 },
+    { id: 'h_carrot', char: '🥕', name: 'にんじん', price: 250 }, { id: 'h_strawberry', char: '🍓', name: 'いちご', price: 300 },
+    { id: 'h_watermelon', char: '🍉', name: 'スイカ', price: 300 }, { id: 'h_candy', char: '🍭', name: 'キャンディ', price: 400 },
+    { id: 'h_sunflower', char: '🌻', name: 'ひまわり', price: 400 }, { id: 'h_donut', char: '🍩', name: 'ドーナツ', price: 500 },
+    { id: 'h_balloon', char: '🎈', name: 'ふうせん', price: 500 }, { id: 'h_thunder', char: '⚡', name: 'いなずま', price: 600 },
+    { id: 'h_snowflake', char: '❄️', name: 'ゆきのけっしょう', price: 600 }, { id: 'h_bubble', char: '🫧', name: 'しゃぼんだま', price: 700 },
+    { id: 'h_rainbow', char: '🌈', name: 'にじ', price: 800 }, { id: 'h_fire', char: '🔥', name: 'ほのお', price: 800 },
+    { id: 'h_kite', char: '🪁', name: 'カイト', price: 900 }, { id: 'h_ice', char: '🧊', name: 'こおり', price: 1000 },
+    { id: 'h_cake', char: '🎂', name: 'バースデーケーキ', price: 1000 }, { id: 'h_xmas', char: '🎄', name: 'クリスマスツリー', price: 1200 },
+    { id: 'h_moon', char: '🌙', name: 'みかづき', price: 1500 }, { id: 'h_sun', char: '☀️', name: 'たいよう', price: 2000 },
+    { id: 'h_shooting', char: '💫', name: 'ながれぼし', price: 2500 }, { id: 'h_planet', char: '🪐', name: 'わくせい', price: 3000 },
+    { id: 'h_tornado', char: '🌪️', name: 'たつまき', price: 3500 }, { id: 'h_heli', char: '🚁', name: 'ヘリコプター', price: 4000 },
+    { id: 'h_tower', char: '🗼', name: 'タワー', price: 5000 }, { id: 'h_castle', char: '🏰', name: 'おしろ', price: 9000, lv: 10 },
+    { id: 'h_cactus', char: '🌵', name: 'サボテン', price: 0, gacha: true, rarity: 'N' },
+    { id: 'h_burger', char: '🍔', name: 'ハンバーガー', price: 0, gacha: true, rarity: 'R' },
+    { id: 'h_pizza', char: '🍕', name: 'ピザ', price: 0, gacha: true, rarity: 'R' },
+    { id: 'h_hanabi', char: '🎇', name: 'せんこうはなび', price: 0, gacha: true, rarity: 'R' },
+    { id: 'h_circus', char: '🎪', name: 'サーカステント', price: 0, gacha: true, rarity: 'SR' },
   ],
   faces: [
     { id: 'f_mask', char: '😷', name: 'マスク', price: 150 },
@@ -1169,6 +1211,17 @@ const SHOP_ITEMS = {
     { id: 'f_sparkle', char: '✨', name: 'きらきら', price: 200 }, { id: 'f_tear', char: '💧', name: 'なみだ', price: 150 },
     { id: 'f_dizzy', char: '🌀', name: 'ぐるぐる', price: 200 }, { id: 'f_flower', char: '💮', name: 'はなまる', price: 200 },
     { id: 'f_diving', char: '🤿', name: 'ダイバー', price: 300 }, { id: 'f_eye', char: '👁️', name: 'ギョロめ', price: 200 },
+    { id: 'f_nose', char: '👃', name: 'おはな', price: 300 }, { id: 'f_sleep', char: '😴', name: 'おやすみ', price: 400 },
+    { id: 'f_tooth', char: '🦷', name: 'まっしろな歯', price: 400 }, { id: 'f_rednose', char: '🔴', name: 'あかっぱな', price: 500 },
+    { id: 'f_sick', char: '🤢', name: 'うぇっぷ', price: 500 }, { id: 'f_scream', char: '😱', name: 'びっくり', price: 600 },
+    { id: 'f_party', char: '🥳', name: 'パーティー', price: 800 }, { id: 'f_cold', char: '🥶', name: 'こおりがお', price: 1000 },
+    { id: 'f_hot', char: '🥵', name: 'あつあつがお', price: 1000 }, { id: 'f_imp', char: '😈', name: 'こあくま', price: 1200 },
+    { id: 'f_clown', char: '🤡', name: 'ピエロ', price: 1500 }, { id: 'f_oni', char: '👹', name: 'おに', price: 2000 },
+    { id: 'f_tengu', char: '👺', name: 'てんぐ', price: 2000 }, { id: 'f_skull', char: '💀', name: 'ガイコツ', price: 2500 },
+    { id: 'f_eyeamulet', char: '🧿', name: 'おまもりアイ', price: 3500 },
+    { id: 'f_dizzy2', char: '😵‍💫', name: 'めがまわる', price: 0, gacha: true, rarity: 'R' },
+    { id: 'f_pinocchio', char: '🤥', name: 'ピノキオ', price: 0, gacha: true, rarity: 'R' },
+    { id: 'f_invisible', char: '🫥', name: 'とうめいにんげん', price: 0, gacha: true, rarity: 'SR' },
   ],
   props: [
     { id: 'p_apple', char: '🍎', name: 'リンゴ', price: 100 }, { id: 'p_pencil', char: '✏️', name: 'えんぴつ', price: 100 },
@@ -1179,16 +1232,107 @@ const SHOP_ITEMS = {
     { id: 'p_guitar', char: '🎸', name: 'ギター', price: 500 }, { id: 'p_pc', char: '💻', name: 'パソコン', price: 500 },
     { id: 'p_gem', char: '💎', name: 'ほうせき', price: 500 }, { id: 'p_rocket', char: '🚀', name: 'ロケット', price: 800 },
     { id: 'p_medal', char: '🏅', name: 'メダル', price: 800 }, { id: 'p_trophy', char: '🏆', name: 'トロフィー', price: 1000 },
+    { id: 'p_basketball', char: '🏀', name: 'バスケットボール', price: 300 }, { id: 'p_baseball', char: '⚾', name: 'やきゅうボール', price: 300 },
+    { id: 'p_tennis', char: '🎾', name: 'テニスボール', price: 350 }, { id: 'p_pingpong', char: '🏓', name: 'ピンポン', price: 350 },
+    { id: 'p_yoyo', char: '🪀', name: 'ヨーヨー', price: 400 }, { id: 'p_puzzle', char: '🧩', name: 'パズル', price: 500 },
+    { id: 'p_dart', char: '🎯', name: 'ダーツ', price: 600 }, { id: 'p_taiko', char: '🥁', name: 'たいこ', price: 700 },
+    { id: 'p_fishing', char: '🎣', name: 'つりざお', price: 700 }, { id: 'p_skateboard', char: '🛹', name: 'スケボー', price: 800 },
+    { id: 'p_trumpet', char: '🎺', name: 'トランペット', price: 800 }, { id: 'p_flask', char: '🧪', name: 'じっけんフラスコ', price: 900 },
+    { id: 'p_bicycle', char: '🚲', name: 'じてんしゃ', price: 1000 }, { id: 'p_telescope', char: '🔭', name: 'ぼうえんきょう', price: 1200 },
+    { id: 'p_microscope', char: '🔬', name: 'けんびきょう', price: 1200 }, { id: 'p_shield', char: '🛡️', name: 'たて', price: 1500 },
+    { id: 'p_bow', char: '🏹', name: 'ゆみや', price: 1500 }, { id: 'p_compass', char: '🧭', name: 'ぼうけんコンパス', price: 1600 },
+    { id: 'p_violin', char: '🎻', name: 'バイオリン', price: 1800 }, { id: 'p_map', char: '🗺️', name: 'ぼうけんのちず', price: 2000 },
+    { id: 'p_goldcoin', char: '🪙', name: 'きんか', price: 3000 }, { id: 'p_moneybag', char: '💰', name: 'かねぶくろ', price: 5000 },
+    { id: 'p_crystal', char: '🔮', name: 'すいしょうだま', price: 9000, lv: 10 },
+    { id: 'p_icecream', char: '🍦', name: 'ソフトクリーム', price: 0, gacha: true, rarity: 'N' },
+    { id: 'p_choco', char: '🍫', name: 'チョコレート', price: 0, gacha: true, rarity: 'N' },
+    { id: 'p_present', char: '🎁', name: 'プレゼント', price: 0, gacha: true, rarity: 'R' },
+    { id: 'p_train', char: '🚂', name: 'きかんしゃ', price: 0, gacha: true, rarity: 'R' },
+    { id: 'p_mirrorball', char: '🪩', name: 'ミラーボール', price: 0, gacha: true, rarity: 'SR' },
+  ],
+  backgrounds: [
+    { id: 'bg_rainbow', char: '🌈', name: 'にじぞら', price: 500 }, { id: 'bg_sakura', char: '🌸', name: 'さくらばたけ', price: 500 },
+    { id: 'bg_forest', char: '🌳', name: 'もり', price: 500 }, { id: 'bg_wave', char: '🌊', name: 'なみ', price: 600 },
+    { id: 'bg_momiji', char: '🍁', name: 'もみじ', price: 800 }, { id: 'bg_beach', char: '🏖️', name: 'ビーチ', price: 800 },
+    { id: 'bg_mountain', char: '🏔️', name: 'ゆきやま', price: 800 }, { id: 'bg_sunrise', char: '🌅', name: 'あさひ', price: 1000 },
+    { id: 'bg_volcano', char: '🌋', name: 'かざん', price: 1000 }, { id: 'bg_night', char: '🌃', name: 'よるのまち', price: 1200 },
+    { id: 'bg_shrine', char: '⛩️', name: 'じんじゃ', price: 1500 }, { id: 'bg_park', char: '🎡', name: 'ゆうえんち', price: 1500 },
+    { id: 'bg_castle', char: '🏯', name: 'おしろのまち', price: 2000 }, { id: 'bg_star', char: '🌠', name: 'ながれぼしぞら', price: 2000 },
+    { id: 'bg_stadium', char: '🏟️', name: 'スタジアム', price: 2500 }, { id: 'bg_galaxy', char: '🌌', name: 'ぎんが', price: 2500 },
+    { id: 'bg_island', char: '🏝️', name: 'みなみのしま', price: 3500 }, { id: 'bg_fireworks', char: '🎆', name: 'はなびたいかい', price: 4000 },
+    { id: 'bg_fuji', char: '🗻', name: 'ふじさん', price: 5000 }, { id: 'bg_earth', char: '🌍', name: 'ちきゅう', price: 9000, lv: 10 },
+    { id: 'bg_slide', char: '🛝', name: 'こうえん', price: 0, gacha: true, rarity: 'N' },
+    { id: 'bg_school', char: '🏫', name: 'がっこう', price: 0, gacha: true, rarity: 'R' },
+    { id: 'bg_sunsetcity', char: '🌇', name: 'ゆうやけまち', price: 0, gacha: true, rarity: 'R' },
+    { id: 'bg_fullmoon', char: '🌕', name: 'まんげつ', price: 0, gacha: true, rarity: 'SR' },
+  ],
+  effects: [
+    { id: 'e_sparkle', char: '✨', name: 'きらきらオーラ', price: 1000 }, { id: 'e_note', char: '🎵', name: 'おんぷオーラ', price: 1200 },
+    { id: 'e_heart', char: '💖', name: 'ハートオーラ', price: 1500 }, { id: 'e_star', char: '⭐', name: 'スターオーラ', price: 1800 },
+    { id: 'e_petal', char: '🌸', name: 'はなふぶき', price: 2000 }, { id: 'e_thunder', char: '⚡', name: 'でんげきオーラ', price: 2500 },
+    { id: 'e_fire', char: '🔥', name: 'ほのおオーラ', price: 2500 }, { id: 'e_snow', char: '❄️', name: 'ふぶきオーラ', price: 2500 },
+    { id: 'e_clover', char: '🍀', name: 'しあわせオーラ', price: 3000 }, { id: 'e_gem', char: '💎', name: 'ダイヤオーラ', price: 5000 },
+    { id: 'e_rainbow', char: '🌈', name: 'にじいろオーラ', price: 9000, lv: 10 }, { id: 'e_crown', char: '👑', name: 'おうじゃのオーラ', price: 15000, lv: 15 },
+    { id: 'e_bubble', char: '🫧', name: 'バブルオーラ', price: 0, gacha: true, rarity: 'R' },
+    { id: 'e_poop', char: '💩', name: 'うんちオーラ', price: 0, gacha: true, rarity: 'R' },
+    { id: 'e_butterfly', char: '🦋', name: 'バタフライオーラ', price: 0, gacha: true, rarity: 'SR' },
+    { id: 'e_comet', char: '☄️', name: 'すいせいオーラ', price: 0, gacha: true, rarity: 'UR' },
+  ],
+  titles: [
+    { id: 't_beginner', char: '🌱', name: 'けいさんビギナー', price: 300 }, { id: 't_drill', char: '✏️', name: 'ドリルずき', price: 500 },
+    { id: 't_game', char: '🎮', name: 'ゲームずき', price: 800 }, { id: 't_study', char: '📚', name: 'べんきょうか', price: 800 },
+    { id: 't_lucky', char: '🍀', name: 'ラッキーさん', price: 1000 }, { id: 't_cool', char: '😎', name: 'クールキャラ', price: 1200 },
+    { id: 't_speed', char: '⚡', name: 'スピードスター', price: 1500 }, { id: 't_streak', char: '🔥', name: 'まいにちがんばりや', price: 2000 },
+    { id: 't_perfect', char: '🎯', name: 'ノーミスめいじん', price: 2500 }, { id: 't_brain', char: '🧠', name: 'ひらめきはかせ', price: 3000 },
+    { id: 't_rocket', char: '🚀', name: 'ロケットずのう', price: 4000 }, { id: 't_hero', char: '🦸', name: 'けいさんヒーロー', price: 5000 },
+    { id: 't_king', char: '👑', name: 'けいさんおう', price: 8000, lv: 10 }, { id: 't_champion', char: '🏆', name: 'チャンピオン', price: 10000, lv: 15 },
+    { id: 't_legend', char: '🐉', name: 'でんせつのけいさんし', price: 15000, lv: 20 }, { id: 't_diamond', char: '💎', name: 'ダイヤモンドブレイン', price: 20000, lv: 25 },
+    { id: 't_galaxy', char: '🌌', name: 'ぎんがのちえもの', price: 30000, lv: 30 },
   ],
   themes: [
-    { id: 'default', name: 'いつもの色 (あたたかい)', price: 0 }, { id: 'dark', name: 'ダークモード (よる)', price: 1000 },
-    { id: 'sakura', name: 'さくら (ピンク)', price: 1000 }, { id: 'ocean', name: 'うみ (ブルー)', price: 1000 },
-    { id: 'mint', name: 'ミント (さわやか)', price: 1000 }, { id: 'sunset', name: 'ゆうやけ (オレンジ)', price: 1000 },
-    { id: 'forest', name: 'もり (グリーン)', price: 1000 }, { id: 'choco', name: 'チョコ (ブラウン)', price: 1000 },
-    { id: 'space', name: 'うちゅう (パープル)', price: 1500 }, { id: 'retro', name: 'レトロ (セピア)', price: 1500 },
-    { id: 'gold', name: 'おうごん (ゴールド)', price: 2000 }, { id: 'cyber', name: 'サイバー (ネオン)', price: 2000 },
-    { id: 'monochrome', name: 'モノクロ (しろくろ)', price: 2000 },
+    // c: ショップの色見本 [背景, メイン, サブ]。GlobalStyle の CSS 変数と揃えること
+    { id: 'default', name: 'いつもの色 (あたたかい)', price: 0, c: ['#fffbf0', '#FF6B6B', '#4ECDC4'] }, { id: 'dark', name: 'ダークモード (よる)', price: 1000, c: ['#0f172a', '#f43f5e', '#0ea5e9'] },
+    { id: 'sakura', name: 'さくら (ピンク)', price: 1000, c: ['#fdf2f8', '#d946ef', '#f472b6'] }, { id: 'ocean', name: 'うみ (ブルー)', price: 1000, c: ['#f0f9ff', '#0284c7', '#38bdf8'] },
+    { id: 'mint', name: 'ミント (さわやか)', price: 1000, c: ['#f0fdfa', '#14b8a6', '#2dd4bf'] }, { id: 'sunset', name: 'ゆうやけ (オレンジ)', price: 1000, c: ['#fff7ed', '#ea580c', '#f97316'] },
+    { id: 'forest', name: 'もり (グリーン)', price: 1000, c: ['#f0fdf4', '#16a34a', '#f59e0b'] }, { id: 'choco', name: 'チョコ (ブラウン)', price: 1000, c: ['#fdf8f5', '#92400e', '#d97706'] },
+    { id: 'space', name: 'うちゅう (パープル)', price: 1500, c: ['#17153B', '#c084fc', '#2dd4bf'] }, { id: 'retro', name: 'レトロ (セピア)', price: 1500, c: ['#f5eedc', '#c25953', '#6a7f72'] },
+    { id: 'gold', name: 'おうごん (ゴールド)', price: 2000, c: ['#fefce8', '#b45309', '#eab308'] }, { id: 'cyber', name: 'サイバー (ネオン)', price: 2000, c: ['#000000', '#39ff14', '#ff00ff'] },
+    { id: 'monochrome', name: 'モノクロ (しろくろ)', price: 2000, c: ['#f8f9fa', '#000000', '#666666'] },
+    { id: 'lavender', name: 'ラベンダー (むらさき)', price: 3000, c: ['#f5f3ff', '#7c3aed', '#a78bfa'] }, { id: 'candy', name: 'キャンディ (あまい)', price: 3000, c: ['#fff0f6', '#ec4899', '#60a5fa'] },
+    { id: 'soda', name: 'ソーダ (しゅわしゅわ)', price: 3000, c: ['#eff6ff', '#2563eb', '#22d3ee'] }, { id: 'matcha', name: 'まっちゃ (わふう)', price: 3000, c: ['#f7fee7', '#4d7c0f', '#84cc16'] },
+    { id: 'ruby', name: 'ルビー (じょうねつ)', price: 5000, c: ['#fff1f2', '#be123c', '#fb7185'] }, { id: 'hero', name: 'ヒーロー (せいぎ)', price: 5000, c: ['#f8fafc', '#dc2626', '#2563eb'] },
+    { id: 'aurora', name: 'オーロラ (ひかり)', price: 8000, c: ['#042f2e', '#34d399', '#818cf8'] }, { id: 'hanabi', name: 'はなび (よまつり)', price: 8000, c: ['#1e1b4b', '#f472b6', '#facc15'] },
+    { id: 'midnight', name: 'まよなか (しんかい)', price: 10000, c: ['#020617', '#38bdf8', '#818cf8'] }, { id: 'ninja', name: 'ニンジャ (すみいろ)', price: 12000, c: ['#18181b', '#ef4444', '#a1a1aa'] },
+    { id: 'royal', name: 'ロイヤル (おうぞく)', price: 15000, c: ['#faf5ff', '#7e22ce', '#eab308'] }, { id: 'rainbow', name: 'にじいろ (でんせつ)', price: 20000, lv: 15, c: ['#fdf4ff', '#e11d48', '#0ea5e9'] },
   ]
+};
+
+// ---- レアリティ & ガチャ ----
+const RARITY_INFO = {
+  N: { label: 'N', color: '#9ca3af' },
+  R: { label: 'R', color: '#3b82f6' },
+  SR: { label: 'SR', color: '#a855f7' },
+  UR: { label: 'UR', color: '#f59e0b' },
+};
+// 明示指定(ガチャ限定品)がなければ価格から自動判定
+const getRarity = (item) => item.rarity || (item.price >= 8000 ? 'UR' : item.price >= 3000 ? 'SR' : item.price >= 1000 ? 'R' : 'N');
+
+const GACHA_COST = 500;
+// ダブり時の返却コイン(レアリティ別)
+const GACHA_DUP_REFUND = { N: 100, R: 200, SR: 400, UR: 1000 };
+// 抽選の重み(レアなほど出にくい)
+const GACHA_WEIGHT = { N: 50, R: 30, SR: 15, UR: 5 };
+
+const getGachaPool = () => Object.entries(SHOP_ITEMS).flatMap(([category, items]) =>
+  items.filter(i => i.gacha).map(item => ({ category, item }))
+);
+const rollGacha = () => {
+  const pool = getGachaPool();
+  const weights = pool.map(e => GACHA_WEIGHT[getRarity(e.item)]);
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) return pool[i]; }
+  return pool[pool.length - 1];
 };
 
 const MISSION_POOL = [
@@ -1353,6 +1497,9 @@ const StorageAPI = {
         equipped: { base: 'b_dog', hat: null, face: null, prop: null }, theme: 'default', missions: null, daily: {}
       };
     }
+    // カテゴリ追加時のマイグレーション: 旧データに新カテゴリのキーを補う
+    stats.inventory = { bases: ['b_dog'], hats: [], faces: [], props: [], themes: ['default'], backgrounds: [], effects: [], titles: [], ...stats.inventory };
+    stats.equipped = { base: 'b_dog', hat: null, face: null, prop: null, background: null, effect: null, title: null, ...stats.equipped };
     const todayStr = new Date().toLocaleDateString();
     if (!stats.missions || stats.missions.date !== todayStr) {
       stats.missions = {
@@ -1496,12 +1643,19 @@ const getLevelInfo = (exp) => {
 
 const LayeredAvatar = React.memo(({ equipped, size = "text-5xl", className = "" }) => {
   const getChar = (category, id) => { if (!id) return null; const item = SHOP_ITEMS[category].find(i => i.id === id); return item ? item.char : null; };
+  const fx = getChar('effects', equipped.effect);
   return (
     <div className={`relative flex items-center justify-center aspect-square ${size} ${className}`}>
+      {equipped.background && <span className="absolute z-0 text-[1.5em] opacity-70 select-none">{getChar('backgrounds', equipped.background)}</span>}
       <span className="absolute z-10 drop-shadow-sm">{getChar('bases', equipped.base) || '🐶'}</span>
       {equipped.face && <span className="absolute z-20 text-[0.8em] top-[15%] drop-shadow-sm">{getChar('faces', equipped.face)}</span>}
       {equipped.hat && <span className="absolute z-30 text-[0.8em] -top-[25%] -rotate-12 drop-shadow-sm">{getChar('hats', equipped.hat)}</span>}
       {equipped.prop && <span className="absolute z-40 text-[0.7em] -bottom-[10%] -right-[10%] rotate-12 drop-shadow-sm">{getChar('props', equipped.prop)}</span>}
+      {fx && <>
+        <span className="absolute z-50 text-[0.45em] -top-[5%] -left-[5%] avatar-fx select-none">{fx}</span>
+        <span className="absolute z-50 text-[0.35em] top-[30%] -right-[8%] avatar-fx-delay select-none">{fx}</span>
+        <span className="absolute z-50 text-[0.3em] -bottom-[2%] left-[5%] avatar-fx-delay2 select-none">{fx}</span>
+      </>}
     </div>
   );
 });
@@ -1708,6 +1862,10 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
           <div className="flex-grow text-left">
             <div className="text-xs font-bold text-[var(--text)] opacity-70 mb-0.5"><span style={{ color }}>{badge} {title}</span></div>
             <div className="text-3xl font-black text-[var(--text)] tracking-wide">Lv.{level}</div>
+            {(() => {
+              const t = stats.equipped?.title ? SHOP_ITEMS.titles.find(i => i.id === stats.equipped.title) : null;
+              return t ? <div className="inline-flex items-center gap-1 text-[10px] font-black text-[var(--text)] bg-[var(--bg)] border-2 border-[var(--text)] rounded-full px-2 py-0.5 mt-1">{t.char} {t.name}</div> : null;
+            })()}
           </div>
         </div>
         <div className="w-full mt-4 h-3 bg-gray-200 rounded-full overflow-hidden z-10 border border-[var(--text)]">
@@ -2080,11 +2238,22 @@ const ClientWaitView = ({ peerState, leaveRoom }) => (
 const ShopView = ({ setView, stats, setStats }) => {
   const [tab, setTab] = useState('bases');
   const [confirmItem, setConfirmItem] = useState(null);
+  const [gachaResult, setGachaResult] = useState(null); // { category, item, isNew, refund, revealed }
+  const spinningRef = useRef(false);
+  const { level } = getLevelInfo(stats.totalExp);
+
+  const gachaPool = getGachaPool();
+  const gachaOwnedCount = gachaPool.filter(e => (stats.inventory[e.category] || []).includes(e.item.id)).length;
+  const totalItems = Object.values(SHOP_ITEMS).reduce((a, arr) => a + arr.length, 0);
+  const ownedItems = Object.entries(SHOP_ITEMS).reduce((a, [cat, arr]) => a + arr.filter(i => (stats.inventory[cat] || []).includes(i.id)).length, 0);
+  const collectionPct = Math.floor((ownedItems / totalItems) * 100);
 
   const handleItemClick = (item, category) => {
     audioCtrl.playSE('click'); let newStats = { ...stats }; const isOwned = newStats.inventory[category].includes(item.id);
 
     if (!isOwned) {
+      if (item.gacha) { showToast('error', '🥚 ガチャからでてくるよ！'); return; }
+      if (item.lv && level < item.lv) { showToast('error', `レベル${item.lv}になったら買えるよ！`); return; }
       if (newStats.coins >= item.price) {
         setConfirmItem({ item, category });
       } else {
@@ -2116,13 +2285,46 @@ const ShopView = ({ setView, stats, setStats }) => {
     StorageAPI.saveStats(newStats); setStats(newStats); setConfirmItem(null);
   };
 
+  const spinGacha = () => {
+    // 連打・演出中の多重スピン防止(state だと同一レンダー内の連打を防げないため ref を使う)
+    if (spinningRef.current) return;
+    if (stats.coins < GACHA_COST) { showToast('error', 'コインが足りません'); return; }
+    spinningRef.current = true;
+    audioCtrl.playSE('click');
+    const { category, item } = rollGacha();
+    let newStats = { ...stats };
+    newStats.coins -= GACHA_COST;
+    const isNew = !newStats.inventory[category].includes(item.id);
+    let refund = 0;
+    if (isNew) {
+      newStats.inventory = { ...newStats.inventory, [category]: [...newStats.inventory[category], item.id] };
+    } else {
+      refund = GACHA_DUP_REFUND[getRarity(item)];
+      newStats.coins += refund;
+    }
+    StorageAPI.saveStats(newStats); setStats(newStats);
+    setGachaResult({ category, item, isNew, refund, revealed: false });
+    setTimeout(() => {
+      audioCtrl.playSE(isNew ? 'finish' : 'coin');
+      if (isNew && getRarity(item) !== 'N') triggerConfetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+      setGachaResult(prev => (prev ? { ...prev, revealed: true } : prev));
+      spinningRef.current = false;
+    }, 1200);
+  };
+
+  const CATEGORY_LABELS = { bases: 'ベース', hats: 'ぼうし', faces: 'かお', props: 'もちもの', backgrounds: 'はいけい', effects: 'エフェクト', titles: 'しょうごう', themes: 'テーマ' };
+
   return (
     <div className="flex flex-col h-[80vh] relative">
       <AnimatePresence>
         {confirmItem && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
             <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
-              <div className="text-5xl mb-3 h-16 flex items-center justify-center">{confirmItem.category === 'themes' ? <PaintBucket size={48} className="text-[var(--text)]" /> : confirmItem.item.char}</div>
+              <div className="text-5xl mb-3 h-16 flex items-center justify-center">
+                {confirmItem.category === 'themes'
+                  ? (confirmItem.item.c ? <div className="flex gap-1">{confirmItem.item.c.map((col, i) => <span key={i} className="w-8 h-8 rounded-full border-[3px] border-[var(--text)]" style={{ background: col }} />)}</div> : <PaintBucket size={48} className="text-[var(--text)]" />)
+                  : confirmItem.item.char}
+              </div>
               <h3 className="font-black text-xl text-[var(--text)] mb-2 leading-snug">「{confirmItem.item.name}」を<br />買いますか？</h3>
               <p className="font-bold text-[var(--primary)] mb-6 flex items-center gap-1 justify-center"><Coins size={20} /> {confirmItem.item.price}</p>
               <div className="flex w-full gap-3">
@@ -2132,44 +2334,146 @@ const ShopView = ({ setView, stats, setStats }) => {
             </motion.div>
           </motion.div>
         )}
+
+        {gachaResult && (
+          <motion.div key="gachaModal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+              {!gachaResult.revealed ? (
+                <>
+                  <motion.div animate={{ rotate: [0, -15, 15, -15, 15, 0], scale: [1, 1.05, 1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 0.7 }} className="text-7xl mb-4">🥚</motion.div>
+                  <p className="font-black text-[var(--text)]">なにが でるかな…？</p>
+                </>
+              ) : (
+                <>
+                  <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.5 }} className="text-7xl mb-3">{gachaResult.item.char}</motion.div>
+                  <span className="text-[10px] font-black text-white px-2 py-0.5 rounded-full mb-2" style={{ background: RARITY_INFO[getRarity(gachaResult.item)].color }}>{RARITY_INFO[getRarity(gachaResult.item)].label}</span>
+                  <h3 className="font-black text-xl text-[var(--text)] leading-snug">{gachaResult.item.name}</h3>
+                  <p className="text-[10px] font-bold text-[var(--text)] opacity-60 mb-2">({CATEGORY_LABELS[gachaResult.category]})</p>
+                  {gachaResult.isNew
+                    ? <p className="font-black text-[var(--primary)] mb-4">✨ NEW! てにいれた！</p>
+                    : <p className="font-black text-[var(--text)] opacity-70 mb-4 flex items-center gap-1 justify-center">もってた！ <Coins size={16} /> +{gachaResult.refund} もどってきた</p>}
+                  <div className="flex w-full gap-3">
+                    <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setGachaResult(null); }}>とじる</MotionButton>
+                    <MotionButton className="bg-[var(--accent)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={spinGacha} disabled={stats.coins < GACHA_COST}>もう1かい</MotionButton>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
-      <div className="flex justify-between items-center mb-4 shrink-0">
+      <div className="flex justify-between items-center mb-2 shrink-0">
         <h3 className="font-bold text-xl text-[var(--text)] flex items-center gap-2"><Store size={24} /> ショップ＆きせかえ</h3>
         <div className="flex items-center gap-1 font-black text-sm text-[var(--text)] bg-[var(--accent)] px-3 py-1.5 rounded-full border-[3px] border-[var(--text)]"><Coins size={16} /> {stats.coins}</div>
       </div>
 
-      <div className="flex gap-4 mb-4 shrink-0">
+      {/* コレクションりつ */}
+      <div className="flex items-center gap-2 mb-3 shrink-0 text-[10px] font-bold text-[var(--text)]">
+        <span className="opacity-70 whitespace-nowrap">コレクション {ownedItems}/{totalItems}</span>
+        <div className="flex-grow h-2.5 bg-[var(--panel)] rounded-full border-2 border-[var(--text)] overflow-hidden">
+          <div className="h-full bg-[var(--secondary)] rounded-full transition-all" style={{ width: `${collectionPct}%` }} />
+        </div>
+        <span className="opacity-70">{collectionPct}%</span>
+      </div>
+
+      <div className="flex gap-3 mb-4 shrink-0">
         <div className="w-24 h-24 bg-[var(--bg)] border-[3px] border-[var(--text)] rounded-2xl shrink-0 overflow-hidden">
           {/* key を装備内容にして、きせかえのたびにポヨンと弾ませる */}
-          <motion.div key={`${stats.equipped.base}_${stats.equipped.hat}_${stats.equipped.face}_${stats.equipped.prop}`} initial={{ scale: 0.6, rotate: -8 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.6 }} className="w-full h-full">
+          <motion.div key={`${stats.equipped.base}_${stats.equipped.hat}_${stats.equipped.face}_${stats.equipped.prop}_${stats.equipped.background}_${stats.equipped.effect}`} initial={{ scale: 0.6, rotate: -8 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.6 }} className="w-full h-full">
             <LayeredAvatar equipped={stats.equipped} size="text-6xl" className="w-full h-full" />
           </motion.div>
         </div>
         <div className="flex-grow grid grid-cols-3 gap-1 content-start">
-          {[{ id: 'bases', icon: <User size={16} />, label: 'ベース' }, { id: 'hats', icon: <Shirt size={16} />, label: 'ぼうし' }, { id: 'faces', icon: <span className="text-sm">🕶️</span>, label: 'かお' }, { id: 'props', icon: <span className="text-sm">🎒</span>, label: 'もちもの' }, { id: 'themes', icon: <PaintBucket size={16} />, label: 'テーマ' }].map(t => (
-            <button key={t.id} onClick={() => { audioCtrl.playSE('click'); setTab(t.id); }} className={`flex flex-col items-center justify-center p-1 rounded-lg border-2 font-bold text-[10px] transition-all ${tab === t.id ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--panel)] text-[var(--text)] opacity-60 border-transparent hover:bg-[var(--bg)]'}`}>
+          {[
+            { id: 'bases', icon: <User size={14} />, label: 'ベース' },
+            { id: 'hats', icon: <Shirt size={14} />, label: 'ぼうし' },
+            { id: 'faces', icon: <span className="text-xs">🕶️</span>, label: 'かお' },
+            { id: 'props', icon: <span className="text-xs">🎒</span>, label: 'もちもの' },
+            { id: 'backgrounds', icon: <span className="text-xs">🖼️</span>, label: 'はいけい' },
+            { id: 'effects', icon: <span className="text-xs">✨</span>, label: 'エフェクト' },
+            { id: 'titles', icon: <span className="text-xs">🎖️</span>, label: 'しょうごう' },
+            { id: 'themes', icon: <PaintBucket size={14} />, label: 'テーマ' },
+            { id: 'gacha', icon: <span className="text-xs">🥚</span>, label: 'ガチャ' },
+          ].map(t => (
+            <button key={t.id} onClick={() => { audioCtrl.playSE('click'); setTab(t.id); }} className={`flex flex-col items-center justify-center p-1 rounded-lg border-2 font-bold text-[9px] transition-all ${tab === t.id ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--panel)] text-[var(--text)] opacity-60 border-transparent hover:bg-[var(--bg)]'}`}>
               {t.icon} {t.label}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] flex-grow p-3 overflow-y-auto grid grid-cols-3 gap-3 content-start shadow-sm">
-        {SHOP_ITEMS[tab].map(item => {
-          const isOwned = stats.inventory[tab].includes(item.id);
-          const isEquipped = tab === 'themes' ? stats.theme === item.id : stats.equipped[tab.slice(0, -1)] === item.id;
-          return (
-            <div key={item.id} onClick={() => handleItemClick(item, tab)} className={`flex flex-col items-center p-2 rounded-xl border-[3px] cursor-pointer transition-transform active:scale-95 ${isEquipped ? 'bg-[var(--accent)] border-[var(--text)]' : isOwned ? 'bg-[var(--bg)] border-[var(--text)] opacity-80' : 'bg-[var(--panel)] border-gray-200 grayscale hover:grayscale-0'}`}>
-              <div className="text-3xl mb-1 h-10 flex items-center justify-center">{tab === 'themes' ? <PaintBucket size={28} className={isEquipped ? 'text-[var(--text)]' : 'text-gray-400'} /> : item.char}</div>
-              <div className="text-[9px] font-bold text-[var(--text)] text-center leading-tight h-6 overflow-hidden">{item.name}</div>
-              <div className="mt-1 w-full text-center">
-                {isOwned ? <span className="text-[10px] font-bold bg-[var(--text)] text-[var(--panel)] px-2 py-0.5 rounded-full">{isEquipped ? 'そうび中' : 'もってる'}</span> : <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--accent)] border border-[var(--text)] px-1.5 py-0.5 rounded-full flex items-center justify-center gap-0.5"><Coins size={10} />{item.price}</span>}
-              </div>
+      {tab === 'gacha' ? (
+        <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] flex-grow p-4 overflow-y-auto shadow-sm flex flex-col items-center gap-3">
+          <motion.div animate={{ rotate: [0, -6, 6, -6, 6, 0] }} transition={{ repeat: Infinity, duration: 2.5, repeatDelay: 1 }} className="text-7xl">🥚</motion.div>
+          <h4 className="font-black text-lg text-[var(--text)]">ふしぎなたまごガチャ</h4>
+          <p className="text-xs font-bold text-[var(--text)] opacity-70 text-center leading-relaxed">
+            ここでしか手に入らないレアきせかえが ぜんぶで {gachaPool.length}しゅるい！<br />
+            もっているものが 出たときは コインが すこし もどってくるよ
+          </p>
+          <div className="w-full flex items-center gap-2 text-[10px] font-bold text-[var(--text)]">
+            <span className="opacity-70 whitespace-nowrap">あつめたかず {gachaOwnedCount}/{gachaPool.length}</span>
+            <div className="flex-grow h-2.5 bg-[var(--bg)] rounded-full border-2 border-[var(--text)] overflow-hidden">
+              <div className="h-full bg-[var(--primary)] rounded-full transition-all" style={{ width: `${Math.floor((gachaOwnedCount / gachaPool.length) * 100)}%` }} />
             </div>
-          );
-        })}
-      </div>
+          </div>
+          {gachaOwnedCount >= gachaPool.length ? (
+            <div className="font-black text-[var(--primary)] py-3">🎉 ガチャコンプリート！おめでとう！</div>
+          ) : (
+            <MotionButton className="bg-[var(--primary)] text-[var(--panel)] w-full py-4 text-lg border-[3px] border-[var(--text)]" onClick={spinGacha}>
+              🥚 ガチャをまわす（<Coins size={18} /> {GACHA_COST}）
+            </MotionButton>
+          )}
+          <div className="flex gap-2 text-[9px] font-bold">
+            {Object.entries(RARITY_INFO).map(([k, v]) => (
+              <span key={k} className="text-white px-2 py-0.5 rounded-full" style={{ background: v.color }}>{v.label}{k === 'N' ? ' でやすい' : k === 'UR' ? ' ちょうレア' : ''}</span>
+            ))}
+          </div>
+          <div className="w-full grid grid-cols-4 gap-2 mt-1">
+            {gachaPool.map(({ category, item }) => {
+              const owned = (stats.inventory[category] || []).includes(item.id);
+              const r = getRarity(item);
+              return (
+                <div key={item.id} className={`relative flex flex-col items-center p-1.5 rounded-xl border-2 ${owned ? 'bg-[var(--bg)] border-[var(--text)]' : 'bg-[var(--panel)] border-gray-200'}`}>
+                  <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black text-white px-1.5 rounded-full" style={{ background: RARITY_INFO[r].color }}>{RARITY_INFO[r].label}</span>
+                  <div className={`text-2xl ${owned ? '' : 'grayscale opacity-40'}`}>{owned ? item.char : '❓'}</div>
+                  <div className="text-[8px] font-bold text-[var(--text)] text-center leading-tight truncate w-full">{owned ? item.name : '？？？'}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] flex-grow p-3 overflow-y-auto grid grid-cols-3 gap-3 content-start shadow-sm">
+          {SHOP_ITEMS[tab].map(item => {
+            const isOwned = stats.inventory[tab].includes(item.id);
+            const isEquipped = tab === 'themes' ? stats.theme === item.id : stats.equipped[tab.slice(0, -1)] === item.id;
+            const rarity = getRarity(item);
+            const isLocked = !isOwned && item.lv && level < item.lv;
+            const isGachaOnly = item.gacha && !isOwned;
+            return (
+              <div key={item.id} onClick={() => handleItemClick(item, tab)} className={`relative flex flex-col items-center p-2 rounded-xl border-[3px] cursor-pointer transition-transform active:scale-95 ${isEquipped ? 'bg-[var(--accent)] border-[var(--text)]' : isOwned ? 'bg-[var(--bg)] border-[var(--text)] opacity-80' : 'bg-[var(--panel)] border-gray-200 grayscale hover:grayscale-0'}`}>
+                {rarity !== 'N' && <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black text-white px-1.5 py-px rounded-full z-10" style={{ background: RARITY_INFO[rarity].color }}>{RARITY_INFO[rarity].label}</span>}
+                <div className="text-3xl mb-1 h-10 flex items-center justify-center">
+                  {tab === 'themes'
+                    ? (item.c ? <div className="flex gap-0.5">{item.c.map((col, i) => <span key={i} className="w-4 h-4 rounded-full border-2 border-[var(--text)]" style={{ background: col }} />)}</div> : <PaintBucket size={28} className={isEquipped ? 'text-[var(--text)]' : 'text-gray-400'} />)
+                    : isGachaOnly ? '❓' : isLocked ? '🔒' : item.char}
+                </div>
+                <div className="text-[9px] font-bold text-[var(--text)] text-center leading-tight h-6 overflow-hidden">{isGachaOnly ? '？？？' : item.name}</div>
+                <div className="mt-1 w-full text-center">
+                  {isOwned
+                    ? <span className="text-[10px] font-bold bg-[var(--text)] text-[var(--panel)] px-2 py-0.5 rounded-full">{isEquipped ? 'そうび中' : 'もってる'}</span>
+                    : isGachaOnly
+                      ? <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--bg)] border border-[var(--text)] px-1.5 py-0.5 rounded-full">🥚ガチャ</span>
+                      : isLocked
+                        ? <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--bg)] border border-[var(--text)] px-1.5 py-0.5 rounded-full">🔒Lv.{item.lv}</span>
+                        : <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--accent)] border border-[var(--text)] px-1.5 py-0.5 rounded-full flex items-center justify-center gap-0.5"><Coins size={10} />{item.price}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <MotionButton className="bg-[var(--text)] text-[var(--panel)] w-full py-4 mt-4 shrink-0 border-[3px] border-[var(--text)]" onClick={() => setView('home')}>もどる</MotionButton>
     </div>
   );
@@ -3672,6 +3976,18 @@ export default function App() {
     if (stats.theme === 'choco') themeVars = `--bg: #fdf8f5; --primary: #92400e; --secondary: #d97706; --accent: #fde68a; --text: #451a03; --panel: #ffffff;`;
     if (stats.theme === 'retro') themeVars = `--bg: #f5eedc; --primary: #c25953; --secondary: #6a7f72; --accent: #e0b469; --text: #3d312d; --panel: #faf6ee;`;
     if (stats.theme === 'monochrome') themeVars = `--bg: #f8f9fa; --primary: #000000; --secondary: #666666; --accent: #d4d4d4; --text: #1a1a1a; --panel: #ffffff;`;
+    if (stats.theme === 'lavender') themeVars = `--bg: #f5f3ff; --primary: #7c3aed; --secondary: #a78bfa; --accent: #ddd6fe; --text: #4c1d95; --panel: #ffffff;`;
+    if (stats.theme === 'candy') themeVars = `--bg: #fff0f6; --primary: #ec4899; --secondary: #60a5fa; --accent: #a5f3fc; --text: #9d174d; --panel: #ffffff;`;
+    if (stats.theme === 'soda') themeVars = `--bg: #eff6ff; --primary: #2563eb; --secondary: #22d3ee; --accent: #bfdbfe; --text: #1e3a8a; --panel: #ffffff;`;
+    if (stats.theme === 'matcha') themeVars = `--bg: #f7fee7; --primary: #4d7c0f; --secondary: #84cc16; --accent: #d9f99d; --text: #365314; --panel: #ffffff;`;
+    if (stats.theme === 'ruby') themeVars = `--bg: #fff1f2; --primary: #be123c; --secondary: #fb7185; --accent: #fecdd3; --text: #881337; --panel: #ffffff;`;
+    if (stats.theme === 'hero') themeVars = `--bg: #f8fafc; --primary: #dc2626; --secondary: #2563eb; --accent: #fde047; --text: #111827; --panel: #ffffff;`;
+    if (stats.theme === 'aurora') themeVars = `--bg: #042f2e; --primary: #34d399; --secondary: #818cf8; --accent: #115e59; --text: #ccfbf1; --panel: #134e4a;`;
+    if (stats.theme === 'hanabi') themeVars = `--bg: #1e1b4b; --primary: #f472b6; --secondary: #facc15; --accent: #6d28d9; --text: #ede9fe; --panel: #312e81;`;
+    if (stats.theme === 'midnight') themeVars = `--bg: #020617; --primary: #38bdf8; --secondary: #818cf8; --accent: #1e293b; --text: #e0f2fe; --panel: #0f172a;`;
+    if (stats.theme === 'ninja') themeVars = `--bg: #18181b; --primary: #ef4444; --secondary: #a1a1aa; --accent: #3f3f46; --text: #f4f4f5; --panel: #27272a;`;
+    if (stats.theme === 'royal') themeVars = `--bg: #faf5ff; --primary: #7e22ce; --secondary: #eab308; --accent: #e9d5ff; --text: #581c87; --panel: #ffffff;`;
+    if (stats.theme === 'rainbow') themeVars = `--bg: #fdf4ff; --primary: #e11d48; --secondary: #0ea5e9; --accent: #fde047; --text: #3b0764; --panel: #ffffff;`;
 
     return (
       <style>{`
@@ -3684,6 +4000,10 @@ export default function App() {
         ruby { ruby-align: center; }
         ruby rt { font-size: 0.5em; font-weight: 500; letter-spacing: 0; }
         .ruby-text { line-height: 1.8; }
+        .avatar-fx { animation: fxTwinkle 1.8s ease-in-out infinite; }
+        .avatar-fx-delay { animation: fxTwinkle 1.8s ease-in-out 0.6s infinite; }
+        .avatar-fx-delay2 { animation: fxTwinkle 1.8s ease-in-out 1.2s infinite; }
+        @keyframes fxTwinkle { 0%, 100% { opacity: 0.25; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1.2); } }
       `}</style>
     );
   };
