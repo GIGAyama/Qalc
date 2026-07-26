@@ -500,10 +500,10 @@ const generateDynamicProblems = () => {
 
   const tashizan2keta = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 90) + 10;
-    let b = Math.floor(Math.random() * 89) + 10;
-    if (a + b > 99) { b = 99 - a; }
-    if (b <= 0) b = 1;
+    // 「2けた＋2けた」のドリルなので、くり上がりで99をこえるときは a のほうを小さくする
+    let a = Math.floor(Math.random() * 80) + 10;
+    let b = Math.floor(Math.random() * 80) + 10;
+    if (a + b > 99) a = 99 - b;
     tashizan2keta.push(`${a}+${b}|${a + b}`);
   }
   problems["2年_2けたのたし算"] = tashizan2keta;
@@ -1110,7 +1110,8 @@ const generateDynamicProblems = () => {
       arr.sort((a, b) => a - b);
       daihyo6.push(`${arr.join(', ')} の 中央値(メジアン)は？|${arr[2]}`);
     } else {
-      let mode = Math.floor(Math.random() * 10) + 1;
+      // 最頻値。0や負の数が混ざらないよう、mode は 6 以上から選ぶ
+      let mode = Math.floor(Math.random() * 10) + 6;
       let other1 = mode + Math.floor(Math.random() * 5) + 1;
       let other2 = mode - Math.floor(Math.random() * 5) - 1;
       let arr = [mode, mode, mode, other1, other2];
@@ -1146,6 +1147,388 @@ const generateDynamicProblems = () => {
     }
   }
   problems["6年_ことば（比例・反比例のけいさん）"] = hirei6;
+
+  // ==========================================================
+  // 追加コース: 小学校算数のうち、これまでカバーできていなかった単元
+  // （時こくと時間・2けた×2けた・□を使った式・仮分数と帯分数・
+  //   通分・倍数と約数・分数と小数・単位量あたり・割合の3用法 など）
+  // ==========================================================
+  const num = (v) => parseFloat(Number(v).toPrecision(12)).toString();
+  const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+  const shuffled = (arr, n = 100) => arr.sort(() => Math.random() - 0.5).slice(0, n);
+  // 分数の答え。約分できるときは約分前・約分後のどちらも正解にする
+  const fracAns = (n, d) => {
+    if (n % d === 0) return String(n / d);
+    const g = gcd(n, d);
+    return g > 1 ? `${n}/${d}|${n / g}/${d / g}` : `${n}/${d}`;
+  };
+
+  // --- 1年: おおきさくらべ（任意単位でくらべる） ---
+  const kurabe1 = [];
+  for (let a = 2; a <= 12; a++) {
+    for (let b = 1; b < a; b++) {
+      kurabe1.push(`えんぴつは クリップ ${a}こぶん、ペンは クリップ ${b}こぶん。えんぴつは なんこぶん ながい？|${a - b}`);
+      kurabe1.push(`あかい コップ ${a}はいぶんと、あおい コップ ${b}はいぶんの 水。あわせて なんはいぶん？|${a + b}`);
+      kurabe1.push(`つくえの よこは ますが ${a}こぶん、ほんの よこは ますが ${b}こぶん。ちがいは なんこぶん？|${a - b}`);
+    }
+  }
+  problems["1年_ことば（おおきさくらべ）"] = shuffled(kurabe1);
+
+  // --- 2年: 時こくと時間 ---
+  const jikoku2 = [];
+  for (let h = 1; h <= 11; h++) {
+    for (let m = 0; m <= 50; m += 10) {
+      for (const d of [10, 20, 30]) {
+        if (m + d < 60) {
+          jikoku2.push(`${h}時${m}分の ${d}分後は ${h}時なん分？|${m + d}`);
+          jikoku2.push(`${h}時${m}分から ${h}時${m + d}分までは なん分？|${d}`);
+          jikoku2.push(`${h}時${m + d}分の ${d}分前は ${h}時なん分？|${m}`);
+        } else {
+          jikoku2.push(`${h}時${m}分の ${d}分後は ${h + 1}時なん分？|${m + d - 60}`);
+        }
+      }
+    }
+    jikoku2.push(`${h}時から ${h + 1}時までは なん分？|60`);
+  }
+  for (let m = 5; m <= 55; m += 5) {
+    jikoku2.push(`1時間${m}分は なん分？|${60 + m}`);
+    jikoku2.push(`${60 + m}分は 1時間なん分？|${m}`);
+  }
+  for (let h = 8; h <= 11; h++) {
+    for (let h2 = 1; h2 <= 5; h2++) jikoku2.push(`午前${h}時から 午後${h2}時までは なん時間？|${12 - h + h2}`);
+  }
+  jikoku2.push('1日は なん時間？|24', '午前は なん時間？|12', '午後は なん時間？|12', '1時間は なん分？|60', '2時間は なん分？|120', '半日は なん時間？|12');
+  problems["2年_時こくと時間"] = shuffled(jikoku2);
+
+  // --- 2年: 1000までの数のしくみ ---
+  const shikumi2 = [];
+  for (let a = 1; a <= 9; a++) {
+    for (let b = 0; b <= 9; b++) {
+      for (let c = 0; c <= 8; c += 4) {
+        shikumi2.push(`100が ${a}こ、10が ${b}こ、1が ${c}こ。あわせて いくつ？|${a * 100 + b * 10 + c}`);
+      }
+    }
+    shikumi2.push(`${a}00は 100を いくつ あつめた 数？|${a}`);
+    shikumi2.push(`${a}0は 10を いくつ あつめた 数？|${a}`);
+    shikumi2.push(`10を ${a * 10}こ あつめた 数は？|${a * 100}`);
+  }
+  for (let n = 100; n <= 890; n += 30) {
+    shikumi2.push(`${n}より 10 大きい 数は？|${n + 10}`);
+    shikumi2.push(`${n}より 10 小さい 数は？|${n - 10}`);
+    shikumi2.push(`${n}より 100 大きい 数は？|${n + 100}`);
+  }
+  shikumi2.push('1000は 100を いくつ あつめた 数？|10', '1000は 10を いくつ あつめた 数？|100', '1000より 1 小さい 数は？|999');
+  problems["2年_数のしくみ（1000まで）"] = shuffled(shikumi2);
+
+  // --- 2年: かけ算のきまり（交換法則・1ふえるといくつふえる・0や10のかけ算） ---
+  const kukuKimari2 = [];
+  for (let a = 2; a <= 9; a++) {
+    for (let b = 2; b <= 9; b++) {
+      kukuKimari2.push(`${a}×${b}と 答えが おなじに なるのは ${b}×□。□は いくつ？|${a}`);
+      if (b < 9) kukuKimari2.push(`${a}×${b + 1}は ${a}×${b}より いくつ 大きい？|${a}`);
+      kukuKimari2.push(`${a}を ${b}こ たした 数は いくつ？|${a * b}`);
+    }
+  }
+  for (let a = 1; a <= 9; a++) {
+    kukuKimari2.push(`${a}×0は いくつ？|0`, `0×${a}は いくつ？|0`, `${a}×10は いくつ？|${a * 10}`, `10×${a}は いくつ？|${a * 10}`, `${a}×1は いくつ？|${a}`);
+  }
+  problems["2年_ことば（かけ算のきまり）"] = shuffled(kukuKimari2);
+
+  // --- 3年: かけ算のひっ算（2けた×2けた・3けた×2けた） ---
+  const kakezan2x2 = [];
+  for (let i = 0; i < 100; i++) {
+    const a = rnd(11, 99); const b = rnd(11, 99);
+    kakezan2x2.push(`${a}×${b}|${a * b}`);
+  }
+  problems["3年_かけ算（2けた×2けた）"] = kakezan2x2;
+
+  const kakezan3x2 = [];
+  for (let i = 0; i < 100; i++) {
+    const a = rnd(100, 999); const b = rnd(11, 99);
+    kakezan3x2.push(`${a}×${b}|${a * b}`);
+  }
+  problems["3年_かけ算（3けた×2けた）"] = kakezan3x2;
+
+  // --- 3年: 3けたのたし算・ひき算のひっ算 ---
+  const hissan3 = [];
+  for (let i = 0; i < 100; i++) {
+    if (i % 2 === 0) {
+      const a = rnd(105, 880); const b = rnd(105, 999 - a);
+      hissan3.push(`${a}+${b}|${a + b}`);
+    } else {
+      const a = rnd(210, 999); const b = rnd(105, a - 100);
+      hissan3.push(`${a}-${b}|${a - b}`);
+    }
+  }
+  problems["3年_3けたのたし算・ひき算"] = hissan3;
+
+  // --- 3年: □を使った式（逆算の考え方） ---
+  const shiki3 = [];
+  for (let b = 2; b <= 20; b++) {
+    for (let ans = 2; ans <= 20; ans += 3) {
+      shiki3.push(`□+${b}=${ans + b}。□は いくつ？|${ans}`);
+      shiki3.push(`${b}+□=${ans + b}。□は いくつ？|${ans}`);
+      shiki3.push(`□-${b}=${ans}。□は いくつ？|${ans + b}`);
+      shiki3.push(`${ans + b}-□=${ans}。□は いくつ？|${b}`);
+    }
+  }
+  for (let b = 2; b <= 9; b++) {
+    for (let ans = 2; ans <= 9; ans++) {
+      shiki3.push(`□×${b}=${ans * b}。□は いくつ？|${ans}`);
+      shiki3.push(`${b}×□=${ans * b}。□は いくつ？|${ans}`);
+      shiki3.push(`□÷${b}=${ans}。□は いくつ？|${ans * b}`);
+      shiki3.push(`${ans * b}÷□=${ans}。□は いくつ？|${b}`);
+    }
+  }
+  problems["3年_□を使った式"] = shuffled(shiki3);
+
+  // --- 3年: 小数と分数のかんけい（0.1と1/10） ---
+  const shosuBunsu3 = [];
+  for (let a = 1; a <= 9; a++) {
+    shosuBunsu3.push(`0.${a}は 0.1が いくつ分？|${a}`);
+    shosuBunsu3.push(`0.1を ${a}こ あつめた 数は？|0.${a}`);
+    shosuBunsu3.push(`0.${a}を 分数で かくと □/10。□は いくつ？|${a}`);
+    shosuBunsu3.push(`${a}/10を 小数で かくと？|0.${a}`);
+    shosuBunsu3.push(`1より 0.${a} 大きい 数は？|1.${a}`);
+  }
+  for (let a = 1; a <= 9; a++) {
+    for (let b = 1; b <= 9; b++) {
+      if (a + b < 10) shosuBunsu3.push(`0.1が ${a}こと 0.1が ${b}こ。あわせて いくつ？|0.${a + b}`);
+    }
+  }
+  shosuBunsu3.push('1は 0.1を いくつ あつめた 数？|10', '10/10を 整数で かくと？|1', '1は 1/10が いくつ分？|10');
+  problems["3年_小数と分数"] = shuffled(shosuBunsu3);
+
+  // --- 4年: 小数のたし算・ひき算（1/100の位まで） ---
+  const shosuTashiHiki4 = [];
+  for (let i = 0; i < 100; i++) {
+    const aI = rnd(30, 900); const bI = rnd(15, 500);
+    if (i % 2 === 0) {
+      shosuTashiHiki4.push(`${num(aI / 100)} + ${num(bI / 100)}|${num((aI + bI) / 100)}`);
+    } else {
+      const hi = Math.max(aI, bI) + 1; const lo = Math.min(aI, bI);
+      shosuTashiHiki4.push(`${num(hi / 100)} - ${num(lo / 100)}|${num((hi - lo) / 100)}`);
+    }
+  }
+  problems["4年_小数のたし算・ひき算"] = shosuTashiHiki4;
+
+  // --- 4年: 仮分数と帯分数 ---
+  const kabun4 = [];
+  for (let d = 2; d <= 9; d++) {
+    for (let q = 1; q <= 4; q++) {
+      for (let r = 1; r < d; r++) {
+        const n = q * d + r;
+        kabun4.push(`${n}/${d}を 帯分数に すると □と${r}/${d}。□は いくつ？|${q}`);
+        kabun4.push(`${n}/${d}を 帯分数に すると ${q}と□/${d}。□は いくつ？|${r}`);
+        kabun4.push(`${q}と${r}/${d}を 仮分数に すると □/${d}。□は いくつ？|${n}`);
+      }
+    }
+    for (let k = 1; k <= 4; k++) kabun4.push(`${k * d}/${d}を 整数に すると？|${k}`);
+  }
+  problems["4年_仮分数と帯分数"] = shuffled(kabun4);
+
+  // --- 4年: がい数を使った見つもり ---
+  const gaisan4 = [];
+  for (let i = 0; i < 100; i++) {
+    const t = i % 3;
+    if (t === 0) {
+      const a = rnd(11, 98) * 100 + rnd(1, 99); const b = rnd(11, 98) * 100 + rnd(1, 99);
+      const ra = Math.round(a / 100) * 100; const rb = Math.round(b / 100) * 100;
+      gaisan4.push(`${a}+${b} を 百の位までの がい数に して 見つもると？|${ra + rb}`);
+    } else if (t === 1) {
+      let a = rnd(21, 98) * 100 + rnd(1, 99); let b = rnd(11, 20) * 100 + rnd(1, 99);
+      const ra = Math.round(a / 100) * 100; const rb = Math.round(b / 100) * 100;
+      gaisan4.push(`${a}-${b} を 百の位までの がい数に して 見つもると？|${ra - rb}`);
+    } else {
+      const a = rnd(11, 89) * 10 + rnd(1, 9); const b = rnd(11, 89) * 10 + rnd(1, 9);
+      const ra = Math.round(a / 100) * 100; const rb = Math.round(b / 100) * 100;
+      gaisan4.push(`${a}×${b} を 上から1けたの がい数に して 見つもると？|${ra * rb}`);
+    }
+  }
+  problems["4年_がい数の見つもり"] = gaisan4;
+
+  // --- 4年: 垂直・平行と四角形 ---
+  const shikaku4 = [
+    '長方形の 4つの 角は それぞれ なんど？|90', '正方形の 4つの 角は それぞれ なんど？|90',
+    '平行四辺形で 平行な 辺は なん組？|2', '台形で 平行な 辺は なん組？|1',
+    'ひし形の 辺は なん本？|4', 'ひし形の 4つの 辺の 長さは ぜんぶ 同じ。1辺が 7cmの とき まわりは なんcm？|28',
+    '四角形の たいかく線は なん本？|2', '長方形の たいかく線の 長さは 同じ。1本が 10cmの とき もう1本は なんcm？|10',
+    '平行四辺形の となり合う 角を たすと なんど？|180', '垂直に まじわる 2本の 直線が つくる 角は なんど？|90'
+  ];
+  for (let x = 20; x <= 160; x += 10) {
+    shikaku4.push(`平行四辺形の 1つの 角が ${x}どのとき、向かい合う 角は なんど？|${x}`);
+    shikaku4.push(`平行四辺形の 1つの 角が ${x}どのとき、となりの 角は なんど？|${180 - x}`);
+  }
+  for (let a = 3; a <= 20; a++) {
+    shikaku4.push(`1辺が ${a}cmの ひし形の まわりの 長さは なんcm？|${a * 4}`);
+    shikaku4.push(`たて ${a}cm、よこ ${a + 3}cmの 長方形の まわりの 長さは なんcm？|${(a + a + 3) * 2}`);
+  }
+  problems["4年_ことば（垂直・平行と四角形）"] = shuffled(shikaku4);
+
+  // --- 4年: 変わり方（ともなって変わる2つの数量） ---
+  const kawari4 = [];
+  for (let s = 10; s <= 30; s++) {
+    for (let a = 1; a < s; a += 4) kawari4.push(`□と○を たすと ${s}に なります。□が ${a}のとき ○は いくつ？|${s - a}`);
+  }
+  for (let a = 2; a <= 20; a++) {
+    kawari4.push(`1辺が ${a}cmの 正三角形の まわりの 長さは なんcm？|${a * 3}`);
+    kawari4.push(`1辺が ${a}cmの 正方形の まわりの 長さは なんcm？|${a * 4}`);
+  }
+  for (let p = 20; p <= 120; p += 10) {
+    for (let n = 2; n <= 6; n++) kawari4.push(`1本 ${p}円の えんぴつ ${n}本の 代金は なん円？|${p * n}`);
+  }
+  for (let a = 5; a <= 25; a++) {
+    kawari4.push(`午前9時の 気温は ${a}度、正午は ${a + 6}度。上がった 気温は なん度？|6`);
+  }
+  problems["4年_ことば（変わり方）"] = shuffled(kawari4);
+
+  // --- 5年: 通分 ---
+  const tsuubun5 = [];
+  for (let a = 2; a <= 9; a++) {
+    for (let b = a + 1; b <= 12; b++) {
+      const l = (a * b) / gcd(a, b);
+      if (l > 60) continue;
+      tsuubun5.push(`1/${a}と 1/${b}を 通分すると 分母は いくつ？|${l}`);
+      tsuubun5.push(`1/${a}を 分母が ${l}の 分数に すると □/${l}。□は いくつ？|${l / a}`);
+      tsuubun5.push(`1/${b}を 分母が ${l}の 分数に すると □/${l}。□は いくつ？|${l / b}`);
+      tsuubun5.push(`1/${a}と 1/${b}、大きい ほうは？|1/${a}`);
+    }
+  }
+  problems["5年_通分"] = shuffled(tsuubun5);
+
+  // --- 5年: 倍数と約数（偶数・奇数をふくむ） ---
+  const baisuu5 = [];
+  for (let a = 2; a <= 12; a++) {
+    for (let k = 2; k <= 6; k++) baisuu5.push(`${a}の 倍数を 小さい ほうから ${k}ばんめは？|${a * k}`);
+    baisuu5.push(`${a}の いちばん 小さい 倍数は？|${a}`);
+  }
+  for (let n = 6; n <= 60; n++) {
+    const divs = [];
+    for (let d = 1; d <= n; d++) if (n % d === 0) divs.push(d);
+    if (divs.length >= 4) {
+      baisuu5.push(`${n}の 約数は ぜんぶで なんこ？|${divs.length}`);
+      baisuu5.push(`${n}の 約数の うち、${n}の つぎに 大きいのは？|${divs[divs.length - 2]}`);
+      baisuu5.push(`${n}の 約数の うち、1の つぎに 小さいのは？|${divs[1]}`);
+    }
+  }
+  for (let n = 10; n <= 100; n += 2) baisuu5.push(`1から ${n}までに 偶数は なんこ ある？|${n / 2}`);
+  for (let n = 11; n <= 99; n += 2) baisuu5.push(`1から ${n}までに 奇数は なんこ ある？|${(n + 1) / 2}`);
+  problems["5年_倍数と約数"] = shuffled(baisuu5);
+
+  // --- 5年: 分数と小数（わり算と分数・小数への変換） ---
+  const bunsuShosu5 = [];
+  const DEC_FRAC = [[0.5, 1, 2], [0.25, 1, 4], [0.75, 3, 4], [0.2, 1, 5], [0.4, 2, 5], [0.6, 3, 5], [0.8, 4, 5], [0.125, 1, 8], [0.375, 3, 8], [0.625, 5, 8], [0.875, 7, 8], [0.05, 1, 20], [0.1, 1, 10], [0.3, 3, 10], [0.7, 7, 10], [0.9, 9, 10]];
+  for (const [dec, n, d] of DEC_FRAC) {
+    bunsuShosu5.push(`${n}/${d}を 小数に すると？|${dec}`);
+    bunsuShosu5.push(`${dec}を 分数に すると □/${d}。□は いくつ？|${n}`);
+  }
+  for (let a = 1; a <= 9; a++) {
+    for (let b = 2; b <= 9; b++) {
+      if (a < b) bunsuShosu5.push(`${a}÷${b}を 分数で あらわすと？|${fracAns(a, b)}`);
+    }
+  }
+  for (let d = 2; d <= 9; d++) {
+    for (let n = 1; n < d; n++) {
+      const v = n / d;
+      if (Number.isInteger(v * 1000)) bunsuShosu5.push(`${n}/${d}を 小数に すると？|${num(v)}`);
+    }
+  }
+  problems["5年_分数と小数"] = shuffled(bunsuShosu5);
+
+  // --- 5年: 単位量あたりの大きさ ---
+  const tanniAtari5 = [];
+  for (let i = 0; i < 100; i++) {
+    const t = i % 4;
+    if (t === 0) { const n = rnd(2, 9); const per = rnd(20, 150); tanniAtari5.push(`${n}こで ${n * per}円の おかし。1こ なん円？|${per}`); }
+    else if (t === 1) { const l = rnd(2, 9); const km = rnd(8, 18); tanniAtari5.push(`ガソリン ${l}Lで ${l * km}km 走る 車。1Lで なんkm 走る？|${km}`); }
+    else if (t === 2) { const a = rnd(2, 9); const d = rnd(20, 300); tanniAtari5.push(`面積 ${a}k㎡に ${a * d}人が すんでいます。人口みつどは 1k㎡あたり なん人？|${d}`); }
+    else { const n = rnd(2, 9); const per = rnd(3, 30); tanniAtari5.push(`1mの ねだんが ${per}円の リボン。${n}mでは なん円？|${n * per}`); }
+  }
+  problems["5年_単位量あたりの大きさ"] = tanniAtari5;
+
+  // --- 5年: 割合（くらべる量・もとにする量） ---
+  const PCTS = [5, 10, 20, 25, 40, 50, 60, 75, 80];
+  const wariai5 = [];
+  for (let i = 0; i < 100; i++) {
+    const t = i % 4;
+    const p = PCTS[rnd(0, PCTS.length - 1)];
+    if (t === 0) { const base = rnd(1, 30) * 100; wariai5.push(`${base}円の ${p}%は なん円？|${(base * p) / 100}`); }
+    else if (t === 1) { const base = rnd(1, 10) * 20; wariai5.push(`${base}人の ${p}%は なん人？|${(base * p) / 100}`); }
+    else if (t === 2) { const base = rnd(1, 10) * 20; wariai5.push(`${(base * p) / 100}は ${base}の なん%？|${p}`); }
+    else { const base = rnd(1, 20) * 100; wariai5.push(`ある 数の ${p}%が ${(base * p) / 100}です。もとにする 数は いくつ？|${base}`); }
+  }
+  problems["5年_割合（くらべる量・もとにする量）"] = wariai5;
+
+  // --- 5年: 歩合（割・分・厘） ---
+  const buai5 = [];
+  for (let w = 1; w <= 9; w++) {
+    buai5.push(`${w}割は なん%？|${w * 10}`);
+    buai5.push(`${w * 10}%は なん割？|${w}`);
+    for (let b = 1; b <= 9; b++) {
+      buai5.push(`${w}割${b}分は なん%？|${w * 10 + b}`);
+      buai5.push(`${w * 10 + b}%は ${w}割なん分？|${b}`);
+    }
+  }
+  for (let base = 100; base <= 2000; base += 100) {
+    for (let w = 1; w <= 9; w += 2) buai5.push(`${base}円の ${w}割は なん円？|${(base * w) / 10}`);
+  }
+  buai5.push('1分は なん%？|1', '10割は なん%？|100', '1割は 小数で あらわすと？|0.1', '1分は 小数で あらわすと？|0.01');
+  problems["5年_ことば（歩合）"] = shuffled(buai5);
+
+  // --- 5年: 台形・ひし形の面積 ---
+  const menseki5b = [];
+  for (let i = 0; i < 100; i++) {
+    if (i % 2 === 0) {
+      const a = rnd(2, 14); const b = a + rnd(1, 8); let h = rnd(2, 14);
+      if (((a + b) * h) % 2 !== 0) h += 1;
+      menseki5b.push(`上底 ${a}cm、下底 ${b}cm、高さ ${h}cmの 台形の 面積は なん㎠？|${((a + b) * h) / 2}`);
+    } else {
+      let p = rnd(2, 20); const q = rnd(2, 20);
+      if ((p * q) % 2 !== 0) p += 1;
+      menseki5b.push(`たいかく線が ${p}cmと ${q}cmの ひし形の 面積は なん㎠？|${(p * q) / 2}`);
+    }
+  }
+  problems["5年_ことば（台形・ひし形の面積）"] = menseki5b;
+
+  // --- 5年: 正多角形と円 ---
+  const seitakakkei5 = [];
+  const KANSUJI = ['', '', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
+  for (let n = 3; n <= 12; n++) {
+    const name = `正${KANSUJI[n]}角形`;
+    if (360 % n === 0) seitakakkei5.push(`${name}を 円の 中心から わけたとき、中心の 角 1つは なんど？|${360 / n}`);
+    if (((n - 2) * 180) % n === 0) seitakakkei5.push(`${name}の 1つの 角は なんど？|${((n - 2) * 180) / n}`);
+    seitakakkei5.push(`${name}の 辺は なん本？|${n}`);
+    seitakakkei5.push(`${name}の 内角の和は なんど？|${(n - 2) * 180}`);
+    for (let a = 2; a <= 12; a++) seitakakkei5.push(`1辺が ${a}cmの ${name}の まわりの 長さは なんcm？|${n * a}`);
+  }
+  problems["5年_ことば（正多角形と円）"] = shuffled(seitakakkei5);
+
+  // --- 6年: 分数と小数のまじった計算 ---
+  const konsei6 = [];
+  for (const [dec, n, d] of DEC_FRAC) {
+    if (d > 10) continue;
+    for (let dd = 2; dd <= 6; dd++) {
+      for (let nn = 1; nn < dd; nn++) {
+        konsei6.push(`${dec} × ${nn}/${dd}|${fracAns(n * nn, d * dd)}`);
+        konsei6.push(`${nn}/${dd} × ${dec}|${fracAns(n * nn, d * dd)}`);
+        konsei6.push(`${nn}/${dd} ÷ ${dec}|${fracAns(nn * d, dd * n)}`);
+      }
+    }
+  }
+  problems["6年_分数と小数のまじった計算"] = shuffled(konsei6);
+
+  // --- 6年: 比を簡単にする ---
+  const hiKantan6 = [];
+  for (let a = 2; a <= 24; a++) {
+    for (let b = 2; b <= 24; b++) {
+      const g = gcd(a, b);
+      if (g > 1 && a !== b) {
+        hiKantan6.push(`${a}:${b}を いちばん 簡単な 整数の 比に すると □:${b / g}。□は いくつ？|${a / g}`);
+        hiKantan6.push(`${a}:${b}を いちばん 簡単な 整数の 比に すると ${a / g}:□。□は いくつ？|${b / g}`);
+      }
+    }
+  }
+  problems["6年_比を簡単にする"] = shuffled(hiKantan6);
 
   // チャレンジ_四則混合: 静的な6問に加え、計算の順序（×÷が先・カッコが先）を
   // 意識させる問題を決定的に生成して拡充する
@@ -1591,24 +1974,33 @@ const COURSE_DISPLAY_ORDER = [
   '1年_10といくつ', '1年_3つのかず', '1年_くりあがり', '1年_ひきざん（くりさがり）',
   '1年_おおきいかずのけいさん', '1年_なん十のけいさん（100まで）', '1年_とけいクイズ',
   '1年_ことば（あわせて・のこりは）', '1年_ことば（ちがい）', '1年_ことば（3つのかず）',
-  '1年_ことば（じゅんじょ）', '1年_ことば（かずのならび）', '1年_ことば（おおきい・ちいさい）', '1年_ことば（かたちづくり）',
+  '1年_ことば（じゅんじょ）', '1年_ことば（かずのならび）', '1年_ことば（おおきい・ちいさい）',
+  '1年_ことば（おおきさくらべ）', '1年_ことば（かたちづくり）',
   '2年_なん十の計算', '2年_2けたのたし算', '2年_2けたのひき算', '2年_3けた・4けたの計算',
+  '2年_数のしくみ（1000まで）',
   '2年_一の段の九九', '2年_二の段の九九', '2年_三の段の九九', '2年_四の段の九九', '2年_五の段の九九',
   '2年_六の段の九九', '2年_七の段の九九', '2年_八の段の九九', '2年_九の段の九九',
-  '2年_九九', '2年_九九あなうめ', '2年_ことば（かけ算）', '2年_分数', '2年_ことば（たんい）',
+  '2年_九九', '2年_九九あなうめ', '2年_ことば（かけ算）', '2年_ことば（かけ算のきまり）', '2年_分数', '2年_ことば（たんい）',
+  '2年_時こくと時間',
   '2年_ことば（ながさのけいさん）', '2年_ことば（かさのけいさん）', '2年_ことば（おおきい・ちいさい）', '2年_ことば（かたち）',
   '3年_わり算', '3年_あまりは？', '3年_大きいわり算', '3年_何十のかけ算',
-  '3年_かけ算（2けた×1けた）', '3年_かけ算（3けた×1けた）', '3年_暗算（2けたのたし算）', '3年_暗算（2けたのひき算）',
-  '3年_大きい数の計算', '3年_小数たし算', '3年_小数ひき算', '3年_分数たし算', '3年_分数ひき算',
+  '3年_かけ算（2けた×1けた）', '3年_かけ算（3けた×1けた）', '3年_かけ算（2けた×2けた）', '3年_かけ算（3けた×2けた）',
+  '3年_暗算（2けたのたし算）', '3年_暗算（2けたのひき算）', '3年_3けたのたし算・ひき算',
+  '3年_大きい数の計算', '3年_小数たし算', '3年_小数ひき算', '3年_分数たし算', '3年_分数ひき算', '3年_小数と分数',
+  '3年_□を使った式',
   '3年_時間（秒と分）', '3年_ことば（わり算）', '3年_ことば（あまりのあるわり算）', '3年_ことば（円と球）', '3年_ことば（長さと重さのたんい）',
   '4年_大きな数（億・兆）', '4年_わり算（1けたでわる）', '4年_わり算（2けたでわる）', '4年_計算のきまり',
-  '4年_がい数（四捨五入）', '4年_小数×整数', '4年_小数÷整数', '4年_ことば（小数のしくみ）',
-  '4年_分数たし算（1より大きい）', '4年_分数ひき算（1より大きい）',
-  '4年_ことば（角の大きさ）', '4年_ことば（面積のたんい）', '4年_ことば（面積のけいさん）',
-  '5年_小数と10・100の計算', '5年_小数のかけわり', '5年_3.14のけいさん', '5年_公倍数・公約数',
-  '5年_約分', '5年_分数たしひき', '5年_割合パッ！（小数→％）', '5年_ことば（百分率）', '5年_ことば（平均）',
-  '5年_ことば（図形の角）', '5年_ことば（図形の面積）', '5年_ことば（体積のけいさん）',
-  '6年_文字と式', '6年_分数かけわり', '6年_円の計算', '6年_比のけいさん', '6年_速さ・時間・道のり',
+  '4年_がい数（四捨五入）', '4年_がい数の見つもり', '4年_小数×整数', '4年_小数÷整数', '4年_小数のたし算・ひき算', '4年_ことば（小数のしくみ）',
+  '4年_分数たし算（1より大きい）', '4年_分数ひき算（1より大きい）', '4年_仮分数と帯分数',
+  '4年_ことば（角の大きさ）', '4年_ことば（垂直・平行と四角形）', '4年_ことば（面積のたんい）', '4年_ことば（面積のけいさん）',
+  '4年_ことば（変わり方）',
+  '5年_小数と10・100の計算', '5年_小数のかけわり', '5年_3.14のけいさん', '5年_倍数と約数', '5年_公倍数・公約数',
+  '5年_約分', '5年_通分', '5年_分数たしひき', '5年_分数と小数',
+  '5年_割合パッ！（小数→％）', '5年_ことば（百分率）', '5年_割合（くらべる量・もとにする量）', '5年_ことば（歩合）',
+  '5年_単位量あたりの大きさ', '5年_ことば（平均）',
+  '5年_ことば（図形の角）', '5年_ことば（正多角形と円）', '5年_ことば（図形の面積）', '5年_ことば（台形・ひし形の面積）', '5年_ことば（体積のけいさん）',
+  '6年_文字と式', '6年_分数かけわり', '6年_分数と小数のまじった計算', '6年_円の計算',
+  '6年_比のけいさん', '6年_比を簡単にする', '6年_速さ・時間・道のり',
   '6年_場合の数', '6年_ことば（対称な図形）', '6年_ことば（拡大図と縮図）', '6年_ことば（立体の体積）',
   '6年_ことば（比例・反比例のけいさん）', '6年_ことば（データの代表値）',
   'チャレンジ_四則混合'
