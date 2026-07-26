@@ -4001,7 +4001,8 @@ export default function App() {
     return {
       stage: r.stage, bossHp: r.bossHp, bossMaxHp: r.bossMaxHp,
       teamHp: r.teamHp, teamHpMax: r.teamHpMax, defeated: r.defeated,
-      telegraphAt: r.pendingAdvanceAt ? 0 : r.nextAttackAt - RAID_CONSTANTS.TELEGRAPH_MS,
+      // ためこみ予兆は2トラックのうち先に来るほうに合わせる
+      telegraphAt: r.pendingAdvanceAt ? 0 : Math.min(r.nextAttackAt, r.nextDamageAt) - RAID_CONSTANTS.TELEGRAPH_MS,
       cheerUntil: r.cheerUntil || 0,
       enraged: !!r.enraged, shieldUntil: r.shieldUntil || 0,
       bombEndsAt: r.bombEndsAt || 0, bombHits: r.bombHits || 0, bombNeeded: r.bombNeeded || 0,
@@ -4014,6 +4015,16 @@ export default function App() {
     raidRef.current.lastBeatAt = Date.now();
     broadcast({ type: 'raid_state', data: snap });
     applyRaidSnapshot(snap);
+  };
+
+  // 開始時・ボス切替時の攻撃スケジュール初期化。
+  // 2トラックが同時に発火すると演出が重なるので、ダメージ攻撃を少しうしろにずらしておく
+  const hostResetAttackSchedule = (from) => {
+    const r = raidRef.current;
+    r.nextAttackAt = from + RAID_CONSTANTS.GRACE_MS;
+    r.nextDamageAt = from + RAID_CONSTANTS.GRACE_MS + RAID_CONSTANTS.TRACK_START_OFFSET_MS;
+    r.burstLeft = 0;
+    r.damageBurstLeft = 0;
   };
 
   // ゲーム開始時にホストが呼ぶ。初期スナップショットを返し、game_start に同梱される
@@ -4030,10 +4041,13 @@ export default function App() {
       stage: 1, playerCount, bossHp: maxHp, bossMaxHp: maxHp,
       teamHp: RAID_CONSTANTS.TEAM_HP_MAX, teamHpMax: RAID_CONSTANTS.TEAM_HP_MAX,
       defeated: 0, contributions,
-      nextAttackAt: now + RAID_CONSTANTS.GRACE_MS, pendingAdvanceAt: 0, cheerUntil: 0, lastBeatAt: now,
-      // 強化ボス用: げきおこ / バリア / 時限爆弾 / れんぞくこうげき の状態
-      enraged: false, shieldUntil: 0, bombEndsAt: 0, bombHits: 0, bombNeeded: 0, burstLeft: 0,
+      pendingAdvanceAt: 0, cheerUntil: 0, lastBeatAt: now,
+      // 攻撃スケジュール: 妨害トラック(nextAttackAt) と ダメージトラック(nextDamageAt) を別々に回す
+      nextAttackAt: 0, nextDamageAt: 0, burstLeft: 0, damageBurstLeft: 0,
+      // 強化ボス用: げきおこ / バリア / 時限爆弾 の状態
+      enraged: false, shieldUntil: 0, bombEndsAt: 0, bombHits: 0, bombNeeded: 0,
     };
+    hostResetAttackSchedule(now);
     const snap = raidSnapshot();
     // 1体目も登場カットインを出す
     setRaidState({ ...snap, activeDebuffs: [], lastAttack: null, lastEvent: { kind: 'boss_enter', stage: 1, at: now } });
@@ -4062,7 +4076,10 @@ export default function App() {
     if (!r || r.enraged || r.bossHp <= 0) return;
     if (r.bossHp > r.bossMaxHp * RAID_CONSTANTS.ENRAGE_THRESHOLD) return;
     r.enraged = true;
-    r.nextAttackAt = Math.min(r.nextAttackAt, Date.now() + 3200); // 突入直後に一度たたみかける
+    // 突入直後に一度たたみかける(ダメージ→妨害の順で重ならないようにずらす)
+    const rageAt = Date.now();
+    r.nextDamageAt = Math.min(r.nextDamageAt, rageAt + 2400);
+    r.nextAttackAt = Math.min(r.nextAttackAt, rageAt + 3600);
     emitRaidEvent({ kind: 'boss_enrage', stage: r.stage });
   };
 
@@ -4086,7 +4103,7 @@ export default function App() {
       if (r.bossHp <= 0) {
         r.defeated += 1;
         r.pendingAdvanceAt = Date.now() + RAID_CONSTANTS.DEFEAT_LOCK_MS;
-        r.bombEndsAt = 0; r.shieldUntil = 0; r.burstLeft = 0;
+        r.bombEndsAt = 0; r.shieldUntil = 0; r.burstLeft = 0; r.damageBurstLeft = 0;
         emitRaidEvent({ kind: 'boss_defeated', stage: r.stage });
       } else {
         hostCheckEnrage();
@@ -4113,9 +4130,9 @@ export default function App() {
     r.bossMaxHp = bossMaxHp(r.stage, r.playerCount);
     r.bossHp = r.bossMaxHp;
     r.teamHp = Math.min(r.teamHpMax, r.teamHp + RAID_CONSTANTS.STAGE_CLEAR_HEAL);
-    r.nextAttackAt = Date.now() + RAID_CONSTANTS.GRACE_MS;
+    hostResetAttackSchedule(Date.now());
     // ボスごとの強化ステートをリセット
-    r.enraged = false; r.shieldUntil = 0; r.bombEndsAt = 0; r.bombHits = 0; r.bombNeeded = 0; r.burstLeft = 0;
+    r.enraged = false; r.shieldUntil = 0; r.bombEndsAt = 0; r.bombHits = 0; r.bombNeeded = 0;
     emitRaidEvent({ kind: 'boss_enter', stage: r.stage });
     broadcastRaidState();
   };
@@ -4132,11 +4149,18 @@ export default function App() {
     }
   };
 
-  const hostFireAttack = () => {
+  // track = 'damage'(チームHPを削る技) / 'disrupt'(問題や入力をじゃまする技)。
+  // トラックごとに独立したタイマーで撃つので、片方の頻度がもう片方を押しのけることはない
+  const hostFireAttack = (track) => {
     const r = raidRef.current;
     const info = bossForStage(r.stage);
     const ids = Object.keys(peerStateRef.current.participants);
-    const atk = pickBossAttack(info.bossIndex, r.stage, ids, { enraged: r.enraged });
+    const nowAtk = Date.now();
+    // すでに効いている継続技は上書きしない(バリアの塗り替え・爆弾の進捗リセットを防ぐ)
+    const exclude = [];
+    if (r.bombEndsAt > nowAtk) exclude.push('bomb');
+    if (r.shieldUntil > nowAtk) exclude.push('shield');
+    const atk = pickBossAttack(info.bossIndex, r.stage, ids, { enraged: r.enraged, track, exclude });
 
     if (atk.kind === 'hp') {
       hostDamageTeam(atk.damage);
@@ -4156,16 +4180,16 @@ export default function App() {
       r.bombNeeded = atk.needHits;
     }
 
-    // れんぞくこうげき: burstLeft は「このターンでこの先まだ撃つ本数」。
+    // れんぞくこうげき: 残り本数は「このターンでこの先まだ撃つ本数」。トラックごとに別で数える。
     // 残っていれば短い間隔で続けて撃ち、撃ち切ったら通常間隔に戻して次のターンぶんを抽選する
-    const nowAtk = Date.now();
-    if (r.burstLeft > 0) {
-      r.burstLeft -= 1;
-      r.nextAttackAt = nowAtk + (r.burstLeft > 0 ? RAID_CONSTANTS.BURST_GAP_MS : attackIntervalMs(r.stage, r.enraged));
-    } else {
-      r.burstLeft = Math.max(0, rollBurstCount(r.stage, r.enraged) - 1);
-      r.nextAttackAt = nowAtk + (r.burstLeft > 0 ? RAID_CONSTANTS.BURST_GAP_MS : attackIntervalMs(r.stage, r.enraged));
-    }
+    const burstKey = track === 'damage' ? 'damageBurstLeft' : 'burstLeft';
+    const nextKey = track === 'damage' ? 'nextDamageAt' : 'nextAttackAt';
+    if (r[burstKey] > 0) r[burstKey] -= 1;
+    else r[burstKey] = Math.max(0, rollBurstCount(r.stage, r.enraged) - 1);
+    r[nextKey] = nowAtk + (r[burstKey] > 0 ? RAID_CONSTANTS.BURST_GAP_MS : attackIntervalMs(r.stage, r.enraged, track));
+    // もう片方のトラックが同時に来ていたら、演出が重ならないよう少しうしろへずらす
+    const otherKey = track === 'damage' ? 'nextAttackAt' : 'nextDamageAt';
+    r[otherKey] = Math.max(r[otherKey], nowAtk + RAID_CONSTANTS.TRACK_MIN_GAP_MS);
 
     broadcast({ type: 'raid_boss_attack', data: atk });
     applyRaidBossAttack(atk);
@@ -4187,7 +4211,15 @@ export default function App() {
         broadcastRaidState();
       }
       if (r.pendingAdvanceAt && now >= r.pendingAdvanceAt) hostAdvanceBoss();
-      else if (!r.pendingAdvanceAt && now >= r.nextAttackAt) hostFireAttack();
+      else if (!r.pendingAdvanceAt) {
+        // 2トラックが同じtickで来たら、先に予定されていたほうを撃つ(もう片方は発射時にずらされる)
+        const damageDue = now >= r.nextDamageAt;
+        const disruptDue = now >= r.nextAttackAt;
+        if (damageDue || disruptDue) {
+          const damageFirst = damageDue && (!disruptDue || r.nextDamageAt <= r.nextAttackAt);
+          hostFireAttack(damageFirst ? 'damage' : 'disrupt');
+        }
+      }
       if (now - r.lastBeatAt >= RAID_CONSTANTS.HEARTBEAT_MS) broadcastRaidState();
     }, 400);
     return () => clearInterval(id);
