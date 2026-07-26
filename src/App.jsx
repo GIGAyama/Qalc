@@ -17,8 +17,9 @@ import {
 } from './BossBattle.jsx';
 import {
   TERRITORY_CONSTANTS, TEAMS, otherTeam, createTerritoryCells, isSelectable, autoPickTarget,
-  computeScores, resolveCaptures,
-  TerritoryScoreBar, TerritoryBoard, TerritoryEventOverlay, TerritoryResultPanel
+  computeScores, resolveCaptures, addCharge, applyBlast, specialCharges, rollSpecial, rollLucky, pickNearTarget, SPECIALS,
+  TerritoryScoreBar, TerritoryBoard, TerritoryEventOverlay, TerritoryResultPanel,
+  TerritorySpecialButton, TerritoryRushBadge, TerritoryLastSpurtFx
 } from './TerritoryBattle.jsx';
 
 // ふりがなヘルパー: <R k="かん" g="じ" /> → <ruby>漢<rt>かん</rt></ruby><ruby>字<rt>じ</rt></ruby>
@@ -77,6 +78,26 @@ class AudioController {
       case 'guard': // バリア展開
         osc.type = 'sine'; osc.frequency.setValueAtTime(660, t); osc.frequency.linearRampToValueAtTime(990, t + 0.25);
         gain.gain.setValueAtTime(0.08, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35); osc.start(t); osc.stop(t + 0.35); break;
+      // --- じんとりバトル用 ---
+      case 'splat': // インクがマスにはじける音
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(520, t); osc.frequency.exponentialRampToValueAtTime(160, t + 0.18);
+        gain.gain.setValueAtTime(0.11, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22); osc.start(t); osc.stop(t + 0.22);
+        { const n = this.ctx.createOscillator(); n.connect(gain); n.type = 'square'; n.frequency.setValueAtTime(1100, t); n.frequency.exponentialRampToValueAtTime(300, t + 0.12); n.start(t); n.stop(t + 0.12); }
+        this.vibrate([25, 20, 35]); break;
+      case 'special': // スペシャル発動
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(180, t); osc.frequency.exponentialRampToValueAtTime(1400, t + 0.5);
+        gain.gain.setValueAtTime(0.05, t); gain.gain.linearRampToValueAtTime(0.16, t + 0.4); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+        osc.start(t); osc.stop(t + 0.8);
+        { const s2 = this.ctx.createOscillator(); s2.connect(gain); s2.type = 'square'; s2.frequency.setValueAtTime(440, t + 0.4); s2.frequency.setValueAtTime(660, t + 0.55); s2.frequency.setValueAtTime(880, t + 0.68); s2.start(t + 0.4); s2.stop(t + 0.8); }
+        this.vibrate([40, 30, 40, 30, 140]); break;
+      case 'lucky': // ラッキーマス
+        osc.type = 'sine'; [880, 1174, 1568, 2093].forEach((f, i) => osc.frequency.setValueAtTime(f, t + i * 0.07));
+        gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45); osc.start(t); osc.stop(t + 0.45);
+        this.vibrate([20, 30, 20, 30, 60]); break;
+      case 'tick': // 終了まえのカウントダウン
+        osc.type = 'square'; osc.frequency.setValueAtTime(param > 0 ? 1320 : 880, t);
+        gain.gain.setValueAtTime(0.09, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14); osc.start(t); osc.stop(t + 0.14);
+        this.vibrate(30); break;
     }
   }
   playBGM(type) {
@@ -2315,8 +2336,11 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
           {/* じんとり: ルール説明とチーム分けUI */}
           {configMode === 'TERRITORY' && (
             <div className="mb-4">
-              <div className="bg-[var(--bg)] border-2 border-dashed border-[var(--text)] rounded-xl p-3 text-xs font-bold text-[var(--text)] opacity-90 mb-3 leading-relaxed">
-                🚩 2チームに<R c="分" r="わ" />かれて、7×7の ばんめんを ぬりあうチーム<R c="戦" r="せん" />！<R c="正" r="せい" /><R c="解" r="かい" />すると ねらったマスに ぬれるよ。★マスは ポイントが<R c="大" r="おお" />きい！
+              <div className="bg-[var(--bg)] border-2 border-dashed border-[var(--text)] rounded-xl p-3 text-xs font-bold text-[var(--text)] opacity-90 mb-3 leading-relaxed flex flex-col gap-1">
+                <span>🚩 2チームに<R c="分" r="わ" />かれて、7×7の ばんめんを ぬりあうチーム<R c="戦" r="せん" />！<R c="正" r="せい" /><R c="解" r="かい" />すると ねらったマスに ぬれるよ。</span>
+                <span>🌊 マスをぬると となりにも インクがはねて <span className="text-[var(--primary)]">れんさ</span>が おきる！★マスは ポイントが<R c="大" r="おお" />きい</span>
+                <span>💥 <span className="text-[var(--primary)]">スペシャル</span>… ゲージが たまると スーパーチャクチ・スプラッシュライン・インクラッシュ が うてる</span>
+                <span>🎁 <span className="text-[var(--primary)]">？マス</span>… とるとラッキー！ ⏰ のこり30<R c="秒" r="びょう" />は <span className="text-red-500">ラストスパートで ぬり2ばい</span>（さいごまで ぎゃくてんできる！）</span>
               </div>
               <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-70">チームわけ（なまえをタップで いれかえ）</label>
               <div className="grid grid-cols-2 gap-2">
@@ -2919,7 +2943,7 @@ const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correc
 });
 
 // --- ゲーム画面 ---
-const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, collectTerritoryResult }) => {
+const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, sendTerrSpecial, collectTerritoryResult }) => {
   const isMultiplayer = peerState && peerState.role;
   const isRaid = state.gameMode === 'BOSS_RAID';
   const isTerritory = state.gameMode === 'TERRITORY';
@@ -2965,11 +2989,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const terrTargetRef = useRef(terrTarget);
   useEffect(() => { terrTargetRef.current = terrTarget; }, [terrTarget]);
 
-  // ねらいが未選択・ぬり終わった・うばわれ済みになったら、いちばんぬりやすいマスへ自動でねらい直す
+  // ねらいが未選択・ぬり終わった・うばわれ済みになったら、まずは「となりのマス」へ自動でねらい直す
   useEffect(() => {
     if (!isTerritory || !terrState?.cells || !myTeam) return;
     if (terrTarget != null && isSelectable(terrState.cells, terrTarget, myTeam)) return;
-    const next = autoPickTarget(terrState.cells, myTeam);
+    const next = pickNearTarget(terrState.cells, myTeam, terrTarget);
     setTerrTarget(next);
     if (next != null) sendTerrTarget?.(next);
   }, [isTerritory, terrState, myTeam, terrTarget, sendTerrTarget]);
@@ -2980,18 +3004,74 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     sendTerrTarget?.(idx);
   }, [sendTerrTarget]);
 
-  // じんとりイベントへのローカル反応(マス確保・うばい・盤面うまりの効果音)
-  const lastTerrEventAtRef = useRef(0);
+  // --- じんとり: スペシャル / インクラッシュ / ラストスパート ---
+  const [specialGauge, setSpecialGauge] = useState(0);
+  const specialGaugeRef = useRef(0);
+  const [specialKind, setSpecialKind] = useState(() => rollSpecial());
+  const [rushUntil, setRushUntil] = useState(0);
+  const rushUntilRef = useRef(0);
+  const lastSpurtRef = useRef(false);
+  const [lastSpurt, setLastSpurt] = useState(false);
+
+  const startRush = useCallback(() => {
+    const until = Date.now() + TERRITORY_CONSTANTS.RUSH_MS;
+    rushUntilRef.current = until;
+    setRushUntil(until);
+  }, []);
+
+  const fireTerrSpecial = useCallback((kind) => {
+    if (specialGaugeRef.current < TERRITORY_CONSTANTS.SPECIAL_MAX) return;
+    audioCtrl.playSE('click');
+    specialGaugeRef.current = 0;
+    setSpecialGauge(0);
+    setSpecialKind(rollSpecial()); // つぎのスペシャルは何が出るかおたのしみ
+    if (kind === 'rush') startRush();
+    sendTerrSpecial?.(kind, terrTargetRef.current);
+  }, [sendTerrSpecial, startRush]);
+
+  const handleSpurtCue = useCallback((cue) => {
+    if (cue === 'spurt') { audioCtrl.playSE('roar'); audioCtrl.vibrate([80, 60, 80]); }
+    else if (cue === 'tick') audioCtrl.playSE('tick', 1);
+  }, []);
+  const handleSpurtChange = useCallback((active) => { lastSpurtRef.current = active; setLastSpurt(active); }, []);
+
+  // じんとりイベントへのローカル反応(効果音・ラッキーマスのごほうび受け取り)
+  const terrSeenEvents = useRef(new Set());
   useEffect(() => {
-    const ev = terrState?.lastEvent;
-    if (!isTerritory || !ev || ev.at === lastTerrEventAtRef.current) return;
-    lastTerrEventAtRef.current = ev.at;
-    if (ev.kind === 'capture') {
-      if (ev.team === myTeam) audioCtrl.playSE('coin');
-      else if (ev.steal) audioCtrl.playSE('wrong');
-    }
-    if (ev.kind === 'board_full') { audioCtrl.playSE('combo', 8); }
-  }, [isTerritory, terrState?.lastEvent, myTeam]);
+    if (!isTerritory) return;
+    (terrState?.events || []).forEach(ev => {
+      if (terrSeenEvents.current.has(ev.id)) return;
+      terrSeenEvents.current.add(ev.id);
+      switch (ev.kind) {
+        case 'capture':
+          if (ev.team === myTeam) audioCtrl.playSE('coin');
+          else if (ev.steal) audioCtrl.playSE('wrong');
+          break;
+        case 'chain':
+          audioCtrl.playSE('combo', 8);
+          if (ev.team === myTeam) triggerConfetti({ particleCount: 45, spread: 80, origin: { y: 0.4 }, colors: [TEAMS[ev.team].color, '#ffffff'], zIndex: 9999 });
+          break;
+        case 'lucky':
+          audioCtrl.playSE('lucky');
+          // ？マスをとった本人へのごほうび(スペシャル満タン / ラッシュ)はこの端末で反映する
+          if (ev.to && ev.to === myId) {
+            if (ev.effect === 'special') { specialGaugeRef.current = TERRITORY_CONSTANTS.SPECIAL_MAX; setSpecialGauge(TERRITORY_CONSTANTS.SPECIAL_MAX); }
+            if (ev.effect === 'rush') startRush();
+          }
+          break;
+        case 'special':
+          audioCtrl.playSE('special');
+          break;
+        case 'lead':
+          audioCtrl.playSE('roar'); audioCtrl.vibrate([60, 40, 60]);
+          break;
+        case 'board_full':
+          audioCtrl.playSE('combo', 10);
+          break;
+        default: break;
+      }
+    });
+  }, [isTerritory, terrState?.events, myTeam, myId, startRush]);
 
   // レイドイベントへのローカル反応(効果音・立て直し時のコンボリセット)
   const lastEventAtRef = useRef(0);
@@ -3097,7 +3177,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       const s = terrStateRef.current?.scores || { red: 0, blue: 0 };
       const won = myTeam && s[myTeam] > s[otherTeam(myTeam)];
       const draw = myTeam && s[myTeam] === s[otherTeam(myTeam)];
-      baseExp = scoreRef.current * 25 + (won ? 400 : draw ? 250 : 150);
+      // ぬり回数はフィーバー/ラッシュ/ラストスパートで増えるため、1ぬりあたりの係数は控えめにする
+      baseExp = scoreRef.current * 18 + (won ? 400 : draw ? 250 : 150);
       if (won) newStats.territoryWins = (newStats.territoryWins || 0) + 1;
     }
 
@@ -3143,12 +3224,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     setView('result');
   }, [stats, state.gameMode, state.problemSet, state.courseNames, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult, collectTerritoryResult, myTeam]);
 
-  // じんとり: 盤面が全部うまったら時間切れを待たずに終了する(バナー演出のあとで全員が finishGame する)
-  useEffect(() => {
-    if (!isTerritory || !terrState?.boardFull) return;
-    const id = setTimeout(() => finishGame(), TERRITORY_CONSTANTS.END_BANNER_MS);
-    return () => clearTimeout(id);
-  }, [isTerritory, terrState?.boardFull, finishGame]);
+  // じんとり: 盤面がうまっても試合はつづく(ここからは全マスのうばいあい)。終了はつねに制限時間ちょうど
 
   const pauseAndExit = useCallback(() => {
     const snapshot = {
@@ -3180,7 +3256,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     const isCorrect = q.a.some(correctStr => normalizeStr(correctStr) === normalizedAns);
 
     if (isCorrect) {
-      const newC = combo + 1; audioCtrl.playSE('correct'); if (newC > 1) audioCtrl.playSE('combo', newC);
+      // じんとりでは正解音を「インクをぬる音」に差しかえて、ぬった手ごたえを出す
+      const newC = combo + 1; audioCtrl.playSE(isTerritory ? 'splat' : 'correct'); if (newC > 1) audioCtrl.playSE('combo', newC);
       if (newC % 10 === 0) triggerConfetti({ particleCount: 50, spread: 60, origin: { y: 0.8 }, zIndex: 9999 });
       if (isRaid) {
         // 正解=ボスへの攻撃。score は与ダメージ累計として既存のスコア同期をそのまま使う
@@ -3191,10 +3268,19 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         sendRaidAttack?.(dmg, newC);
         setCheerGauge(g => Math.min(RAID_CONSTANTS.GAUGE_MAX, g + (newC >= 5 ? 2 : 1)));
       } else if (isTerritory) {
-        // 正解=ねらっているマスへのぬり。フィーバー(5コンボ以上)中は2ぬり。score はぬり回数の累計
-        const amount = newC >= 5 ? TERRITORY_CONSTANTS.FEVER_CHARGE : 1;
+        // 正解=ねらっているマスへのぬり。フィーバー(5コンボ)×ラッシュ(3ばい)×ラストスパート(2ばい)で一気に増える
+        const base = newC >= 5 ? TERRITORY_CONSTANTS.FEVER_CHARGE : 1;
+        const rushMult = rushUntilRef.current > Date.now() ? TERRITORY_CONSTANTS.RUSH_MULT : 1;
+        const spurtMult = lastSpurtRef.current ? TERRITORY_CONSTANTS.LAST_SPURT_MULT : 1;
+        const amount = Math.min(12, base * rushMult * spurtMult);
         setScore(s => s + amount);
         sendTerrCharge?.(terrTargetRef.current, amount, newC);
+        // スペシャルゲージ。満タンになった瞬間だけ知らせる
+        const prevG = specialGaugeRef.current;
+        const nextG = Math.min(TERRITORY_CONSTANTS.SPECIAL_MAX, prevG + (newC >= 5 ? TERRITORY_CONSTANTS.SPECIAL_FEVER_GAIN : 1));
+        specialGaugeRef.current = nextG;
+        setSpecialGauge(nextG);
+        if (prevG < TERRITORY_CONSTANTS.SPECIAL_MAX && nextG >= TERRITORY_CONSTANTS.SPECIAL_MAX) { audioCtrl.playSE('coin'); audioCtrl.vibrate([40, 40, 80]); }
       } else {
         setScore(s => s + 100 + (combo * 10));
       }
@@ -3281,7 +3367,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       {isRaid && <BossPanel raidState={raidState} compact={showMemo} />}
 
       {/* じんとり: ランキングの代わりにチームスコアバーを表示 */}
-      {isTerritory && <TerritoryScoreBar terrState={terrState} myTeam={myTeam} />}
+      {isTerritory && <TerritoryScoreBar terrState={terrState} myTeam={myTeam} lastSpurt={lastSpurt} />}
 
       {/* ランキング表示（メインレイアウトの外に配置） */}
       {!isRaid && !isTerritory && isMultiplayer && top5.length > 0 && (
@@ -3302,11 +3388,12 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
         {/* じんとり: 盤面を問題エリアと並べて常時表示する(モバイルは上段・PCは左カラム)。手書きメモ使用中はモバイルのみ盤面をたたむ */}
         {isTerritory && (
-          <div className={`shrink-0 w-full md:h-full md:order-first border-b-2 md:border-b-0 md:border-r-2 border-[var(--text)] bg-[var(--panel)] p-2 flex-col items-center justify-center ${showMemo ? 'hidden md:flex md:w-[240px]' : 'flex md:w-[340px]'}`}>
-            <div className="h-[24vh] md:h-auto md:w-full md:flex-grow md:min-h-0 flex items-center justify-center w-full">
-              <TerritoryBoard terrState={terrState} myTeam={myTeam} myId={myId} targetIdx={terrTarget} onSelect={selectTerrTarget} />
+          <div className={`shrink-0 w-full md:h-full md:order-first border-b-2 md:border-b-0 md:border-r-2 border-[var(--text)] bg-[var(--panel)] p-2 flex-col items-center justify-center relative ${showMemo ? 'hidden md:flex md:w-[240px]' : 'flex md:w-[340px]'}`}>
+            <div className="h-[27vh] md:h-auto md:w-full md:flex-grow md:min-h-0 flex items-center justify-center w-full">
+              <TerritoryBoard terrState={terrState} myTeam={myTeam} myId={myId} targetIdx={terrTarget} onSelect={selectTerrTarget} lastSpurt={lastSpurt} />
             </div>
-            <p className="shrink-0 text-[10px] font-bold text-[var(--text)] opacity-60 mt-1 text-center">タップで ねらうマスを えらぼう（<R c="数" r="すう" /><R c="字" r="じ" />＝あと<R c="何" r="なん" /><R c="回" r="かい" />で ぬれるか）</p>
+            <TerritoryRushBadge until={rushUntil} />
+            <p className="shrink-0 text-[10px] font-bold text-[var(--text)] opacity-60 mt-1 text-center">タップで ねらうマスを えらぼう（<R c="数" r="すう" /><R c="字" r="じ" />＝あと<R c="何" r="なん" /><R c="回" r="かい" />で ぬれる／？＝ラッキーマス）</p>
           </div>
         )}
 
@@ -3338,6 +3425,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             {isRaid && <ProblemDebuffOverlay debuffs={myDebuffs} />}
             {/* おうえんボタン: 正解でゲージが貯まり、満タンで仲間の回復+デバフ解除+ダメージ2倍 */}
             {isRaid && <SupportButton gauge={cheerGauge} onFire={fireSupport} />}
+            {/* スペシャルボタン: 正解でゲージが貯まり、満タンでねらったマスに必殺技を発動 */}
+            {isTerritory && <TerritorySpecialButton gauge={specialGauge} kind={specialKind} onFire={fireTerrSpecial} />}
           </div>
 
           <motion.div animate={cardAnim} className={`bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] relative z-30 shrink-0 ${isTerritory ? 'h-16 mb-2 md:h-24 md:mb-4' : 'h-24 mb-4'}`}>
@@ -3375,8 +3464,13 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       {/* ボスバトルの画面ふち演出(被弾フラッシュ・技名カットイン・げきおこ・時限爆弾) */}
       {isRaid && <RaidScreenFx raidState={raidState} debuffs={myDebuffs} />}
 
-      {/* じんとりの全画面イベント演出(うばい・ボーナスマス確保・盤面うまり) */}
-      {isTerritory && <TerritoryEventOverlay lastEvent={terrState?.lastEvent} />}
+      {/* じんとりの全画面イベント演出(うばい・れんさ・ラッキーマス・スペシャル・ぎゃくてん・盤面うまり) */}
+      {isTerritory && <TerritoryEventOverlay events={terrState?.events} />}
+
+      {/* じんとりのラストスパート演出(のこり30秒で ぬり2ばい / のこり5秒のカウントダウン) */}
+      {isTerritory && state.timeLimitSec > 0 && (
+        <TerritoryLastSpurtFx startTime={startTime} timeLimitSec={state.timeLimitSec} onCue={handleSpurtCue} onSpurtChange={handleSpurtChange} />
+      )}
 
       <AnimatePresence>
         {quitDialog && (
@@ -4080,8 +4174,15 @@ export default function App() {
     setTerrState(prev => ({ ...(prev || {}), ...snap }));
   }, []);
 
+  // イベントは短時間に何個も飛ぶ(ぬり→れんさ→ラッキー→ぎゃくてん)ため、キューに積んで演出側で順に見せる
+  const terrEvSeq = useRef(0);
   const applyTerrEvent = useCallback((data) => {
-    setTerrState(prev => (prev ? { ...prev, lastEvent: { ...data, at: Date.now() } } : prev));
+    const ev = { ...data, at: Date.now(), id: `${Date.now()}-${terrEvSeq.current++}` };
+    setTerrState(prev => {
+      if (!prev) return prev;
+      if ((prev.events || []).some(e => e.id === ev.id)) return prev; // StrictModeの二重実行よけ
+      return { ...prev, lastEvent: ev, events: [...(prev.events || []), ev].slice(-6) };
+    });
   }, []);
 
   // --- ここからホスト専用ロジック ---
@@ -4109,47 +4210,96 @@ export default function App() {
     const cells = createTerritoryCells();
     const contributions = {};
     Object.entries(teamsMap).forEach(([id, m]) => {
-      contributions[id] = { name: m.name, team: m.team, charges: 0, captures: 0, steals: 0, maxCombo: 0 };
+      contributions[id] = { name: m.name, team: m.team, charges: 0, captures: 0, steals: 0, specials: 0, luckies: 0, maxCombo: 0 };
     });
     terrRef.current = {
       cells, scores: computeScores(cells), targets: {}, contributions,
       teams: teamsMap, boardFull: false, lastBeatAt: Date.now(),
     };
     const snap = { ...terrSnapshot(), teams: teamsMap };
-    setTerrState({ ...snap, lastEvent: null });
+    setTerrState({ ...snap, lastEvent: null, events: [] });
     return snap;
+  };
+
+  const emitTerrEvent = (ev) => {
+    broadcast({ type: 'terr_event', data: ev });
+    applyTerrEvent(ev);
+  };
+
+  // 盤面にぬりを足したあとの確定処理(ホスト専用)
+  //   確保の確定 → ？マス(ラッキー)の抽選 → 貢献度加算 → スコア更新 → イベント発行(うばい/れんさ/ぎゃくてん/うまり)
+  const hostSettleBoard = (peerId, c) => {
+    const t = terrRef.current;
+    const prevLeader = t.scores.red > t.scores.blue ? 'red' : t.scores.blue > t.scores.red ? 'blue' : null;
+    let captured = resolveCaptures(t.cells);
+    if (captured.length === 0) return;
+
+    // ？マス(ラッキーマス): とったチームへのごほうび。blast だけ盤面に効き、他はとった本人の端末で効く
+    captured.filter(cap => cap.lucky).forEach(cap => {
+      const effect = rollLucky();
+      const mine = !!c && cap.team === c.team;
+      if (effect === 'blast') {
+        applyBlast(t.cells, cap.idx, cap.team);
+        captured = captured.concat(resolveCaptures(t.cells));
+      }
+      if (mine) c.luckies = (c.luckies || 0) + 1;
+      emitTerrEvent({ kind: 'lucky', effect, team: cap.team, cellIdx: cap.idx, to: mine ? peerId : null });
+    });
+
+    if (c) captured.forEach(cap => { if (cap.team === c.team) { c.captures += 1; if (cap.steal) c.steals += 1; } });
+    t.scores = computeScores(t.cells);
+
+    // いちばん目立つ確保(うばい > 高価値)だけをイベントとして流す
+    const notable = [...captured].sort((a, b) => (b.steal - a.steal) || (b.value - a.value))[0];
+    if (notable && (notable.steal || notable.value >= 2)) {
+      emitTerrEvent({ kind: 'capture', name: c?.name || '', team: notable.team, cellIdx: notable.idx, steal: notable.steal, value: notable.value });
+    }
+    // インクがはねてマスが連鎖でぬれたとき
+    if (captured.length >= 3) emitTerrEvent({ kind: 'chain', team: captured[0].team, count: captured.length });
+
+    const leader = t.scores.red > t.scores.blue ? 'red' : t.scores.blue > t.scores.red ? 'blue' : null;
+    if (leader && prevLeader && leader !== prevLeader) emitTerrEvent({ kind: 'lead', team: leader });
+
+    // 盤面がうまっても試合はつづく(ここからは うばいあいの時間。制限時間まで ぎゃくてんのチャンスがある)
+    if (!t.boardFull && t.cells.every(cell => cell.owner)) {
+      t.boardFull = true;
+      emitTerrEvent({ kind: 'board_full' });
+    }
   };
 
   // 正解によるぬりを盤面へ適用する。ねらいが無効(ぬり済みなど)なら自動でぬりやすいマスへ振り替える
   const hostApplyCharge = (peerId, cellIdx, amount, combo) => {
     const t = terrRef.current;
-    if (!t || t.boardFull || !(amount > 0)) return;
+    if (!t || !(amount > 0)) return;
     const c = t.contributions[peerId];
     if (!c) return; // チーム未登録(開始後参加)のぬりは無効
-    c.charges += amount;
+    const amt = Math.max(1, Math.min(12, Math.round(amount))); // フィーバー×ラストスパート×ラッシュの上限
+    c.charges += amt;
     c.maxCombo = Math.max(c.maxCombo, combo || 0);
 
     let idx = cellIdx;
-    if (idx == null || !t.cells[idx] || !isSelectable(t.cells, idx, c.team)) idx = autoPickTarget(t.cells, c.team);
+    if (idx == null || !t.cells[idx] || !isSelectable(t.cells, idx, c.team)) idx = pickNearTarget(t.cells, c.team, t.targets[peerId]);
     if (idx == null) return;
-    t.cells[idx].charge[c.team] += amount;
+    addCharge(t.cells, idx, c.team, amt);
+    hostSettleBoard(peerId, c);
+    broadcastTerrState();
+  };
 
-    const captured = resolveCaptures(t.cells);
-    if (captured.length > 0) {
-      captured.forEach(cap => {
-        if (cap.team === c.team) { c.captures += 1; if (cap.steal) c.steals += 1; }
-      });
-      t.scores = computeScores(t.cells);
-      // いちばん目立つ確保(うばい > 高価値)をイベントとして流す
-      const notable = [...captured].sort((a, b) => (b.steal - a.steal) || (b.value - a.value))[0];
-      const ev = { kind: 'capture', name: c.name, team: notable.team, cellIdx: notable.idx, steal: notable.steal, value: notable.value };
-      broadcast({ type: 'terr_event', data: ev });
-      applyTerrEvent(ev);
-      if (t.cells.every(cell => cell.owner)) {
-        t.boardFull = true;
-        const endEv = { kind: 'board_full' };
-        broadcast({ type: 'terr_event', data: endEv });
-        applyTerrEvent(endEv);
+  // スペシャル発動。drop/line は盤面へ大量のぬりを落とし、rush は発動した本人の端末でバフになる
+  const hostApplySpecial = (peerId, kind, cellIdx) => {
+    const t = terrRef.current;
+    if (!t || !SPECIALS[kind]) return;
+    const c = t.contributions[peerId];
+    if (!c) return;
+    c.specials = (c.specials || 0) + 1;
+    emitTerrEvent({ kind: 'special', effect: kind, name: c.name, team: c.team });
+
+    if (kind !== 'rush') {
+      let idx = cellIdx;
+      if (idx == null || !t.cells[idx]) idx = autoPickTarget(t.cells, c.team);
+      if (idx != null) {
+        specialCharges(idx, kind).forEach(({ idx: target, amount }) => addCharge(t.cells, target, c.team, amount));
+        hostSettleBoard(peerId, c);
       }
     }
     broadcastTerrState();
@@ -4183,6 +4333,12 @@ export default function App() {
     const p = peerStateRef.current;
     if (p.role === 'host') hostSetTarget(p.hostId, cellIdx);
     else if (p.conn) p.conn.send({ type: 'terr_target', data: { cellIdx } });
+  }, []);
+
+  const sendTerrSpecial = useCallback((kind, cellIdx) => {
+    const p = peerStateRef.current;
+    if (p.role === 'host') hostApplySpecial(p.hostId, kind, cellIdx);
+    else if (p.conn) p.conn.send({ type: 'terr_special', data: { kind, cellIdx } });
   }, []);
 
   // 結果画面用(ホストのみ実体を持つ)
@@ -4249,6 +4405,8 @@ export default function App() {
           hostApplyCharge(conn.peer, rawData.data.cellIdx, rawData.data.amount, rawData.data.combo);
         } else if (rawData.type === 'terr_target') {
           hostSetTarget(conn.peer, rawData.data.cellIdx);
+        } else if (rawData.type === 'terr_special') {
+          hostApplySpecial(conn.peer, rawData.data.kind, rawData.data.cellIdx);
         }
       });
       conn.on('close', () => { setPeerState(p => ({ ...p, connections: p.connections.filter(c => c.peer !== conn.peer) })); });
@@ -4285,7 +4443,7 @@ export default function App() {
           setRaidState(rawData.data.raid
             ? { ...rawData.data.raid, activeDebuffs: [], lastAttack: null, lastEvent: { kind: 'boss_enter', stage: rawData.data.raid.stage || 1, at: Date.now() } }
             : null);
-          setTerrState(rawData.data.territory ? { ...rawData.data.territory, lastEvent: null } : null);
+          setTerrState(rawData.data.territory ? { ...rawData.data.territory, lastEvent: null, events: [] } : null);
           setView('game');
         } else if (rawData.type === 'game_finish') {
           if (rawData.data && rawData.data.raidResult) setState(prev => ({ ...prev, raidResult: rawData.data.raidResult }));
@@ -4429,7 +4587,7 @@ export default function App() {
           {view === 'clientJoin' && <PageWrapper key="clientJoin"><ClientJoinView initClient={initClient} urlHostId={urlHostId} setView={setView} /></PageWrapper>}
           {view === 'clientWait' && <PageWrapper key="clientWait"><ClientWaitView peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
 
-          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} collectTerritoryResult={collectTerritoryResult} /></PageWrapper>}
+          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} sendTerrSpecial={sendTerrSpecial} collectTerritoryResult={collectTerritoryResult} /></PageWrapper>}
           {view === 'result' && <PageWrapper key="result"><ResultView state={state} setView={setView} peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
           {view === 'manager' && <PageWrapper key="manager"><ManagerView setView={setView} /></PageWrapper>}
           {view === 'import' && <PageWrapper key="import"><ImportView setView={setView} /></PageWrapper>}
