@@ -2052,6 +2052,18 @@ const useExternalScripts = () => {
   return loaded;
 };
 
+// --- P2P通信のユーティリティ ---
+// 切断済みの接続へ送ると PeerJS がエラーを出すため、開いている接続にだけ送る
+const safeSend = (conn, data) => {
+  try { if (conn && conn.open) conn.send(data); } catch (e) { /* すでに切れている接続は無視 */ }
+};
+const sendToAll = (connections, data) => (connections || []).forEach(c => safeSend(c, data));
+
+// 退出検知(ハートビート)。PeerJS の close は相手が黙って消えたとき数十秒〜届かないことがあるため、
+// ホストから定期的に ping を投げ、一定時間 pong が返らないメンバーは「抜けた」とみなす。
+const PEER_PING_MS = 5000;
+const PEER_TIMEOUT_MS = 30000;
+
 // ==========================================
 // 4. アプリケーション Views
 // ==========================================
@@ -2242,7 +2254,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
       const cur = p.participants[id];
       if (!cur) return p;
       const newP = { ...p, participants: { ...p.participants, [id]: { ...cur, team: cur.team === 'blue' ? 'red' : 'blue' } } };
-      newP.connections.forEach(c => c.send({ type: 'participants_update', data: newP.participants }));
+      sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
       return newP;
     });
   };
@@ -2258,6 +2270,12 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
     probs = [...probs].sort(() => Math.random() - 0.5);
     if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
 
+    // 開始直前にもう一度「いま つながっている人」だけにしぼる。
+    // すでに抜けている端末をメンバー数やチーム分けに数えてしまわないようにするため。
+    const liveIds = new Set(peerState.connections.filter(c => c.open).map(c => c.peer));
+    const liveParticipants = {};
+    Object.entries(peerState.participants).forEach(([id, m]) => { if (id === peerState.hostId || liveIds.has(id)) liveParticipants[id] = m; });
+
     const gameConfig = {
       timeLimitSec: (configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') ? time * 60 : 0,
       problemSet: probs.map(p => ({ q: p.q, a: String(p.a).split('|') })),
@@ -2267,8 +2285,8 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
 
     // ボスバトル: ホスト権威のレイド状態を初期化し、初期スナップショットを全員に配る
     if (configMode === 'BOSS_RAID') {
-      const playerCount = peerState.connections.length + 1; // メンバー + ホスト
-      gameConfig.raid = initRaid(playerCount);
+      const playerCount = liveIds.size + 1; // メンバー + ホスト
+      gameConfig.raid = initRaid(playerCount, liveParticipants);
     }
 
     // じんとり: チーム分けを確定し(未割当は人数の少ない側へ)、ホスト権威の盤面を初期化する
@@ -2276,7 +2294,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
     if (configMode === 'TERRITORY') {
       teamsMap = { [peerState.hostId]: { name: 'リーダー', team: hostTeam } };
       let red = hostTeam === 'red' ? 1 : 0; let blue = 1 - red;
-      Object.entries(peerState.participants).forEach(([id, m]) => {
+      Object.entries(liveParticipants).forEach(([id, m]) => {
         if (id === peerState.hostId) return;
         let team = m.team === 'red' || m.team === 'blue' ? m.team : (red <= blue ? 'red' : 'blue');
         if (team === 'red') red++; else blue++;
@@ -2286,15 +2304,16 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
       gameConfig.territory = initTerritory(teamsMap);
     }
 
-    // ホスト自身を参加者リストに追加し、全参加者のスコアをリセット
+    // ホスト自身を参加者リストに追加し、全参加者のスコアをリセット(抜けた人はここで除かれる)
     setPeerState(p => {
       const resetParticipants = {};
       Object.entries(p.participants).forEach(([id, participant]) => {
+        if (id !== p.hostId && !liveIds.has(id)) return; // すでに抜けている端末は参加者から外す
         resetParticipants[id] = { ...participant, score: 0, combo: 0, ...(teamsMap && teamsMap[id] ? { team: teamsMap[id].team } : {}) };
       });
       resetParticipants[p.hostId] = { id: p.hostId, name: 'リーダー', score: 0, combo: 0, ...(teamsMap ? { team: hostTeam } : {}) };
-      const newP = { ...p, participants: resetParticipants };
-      newP.connections.forEach(c => c.send({ type: 'participants_update', data: newP.participants }));
+      const newP = { ...p, participants: resetParticipants, connections: p.connections.filter(c => c.open) };
+      sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
       return newP;
     });
 
@@ -3129,13 +3148,13 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   // スコアの定期送信
   useEffect(() => {
     if (peerState && peerState.role === 'client' && peerState.conn) {
-      peerState.conn.send({ type: 'score_update', data: { score, combo } });
+      safeSend(peerState.conn, { type: 'score_update', data: { score, combo } });
     } else if (peerState && peerState.role === 'host' && setPeerState) {
       // ホストのスコアを参加者リストに反映し、全クライアントにブロードキャスト
       setPeerState(p => {
         if (!p.hostId || !p.participants[p.hostId]) return p;
         const newP = { ...p, participants: { ...p.participants, [p.hostId]: { ...p.participants[p.hostId], score, combo } } };
-        newP.connections.forEach(c => c.send({ type: 'participants_update', data: newP.participants }));
+        sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
         return newP;
       });
     }
@@ -3215,10 +3234,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
     // 終了通知
     if (peerState && peerState.role === 'client' && peerState.conn) {
-      peerState.conn.send({ type: 'game_finish', data: { finalScore: baseExp } });
+      safeSend(peerState.conn, { type: 'game_finish', data: { finalScore: baseExp } });
     } else if (peerState && peerState.role === 'host') {
       // ホストが終了した場合、全クライアントにも終了を通知
-      peerState.connections.forEach(c => c.send({ type: 'game_finish', data: raidResult ? { raidResult } : territoryResult ? { territoryResult } : undefined }));
+      sendToAll(peerState.connections, { type: 'game_finish', data: raidResult ? { raidResult } : territoryResult ? { territoryResult } : undefined });
     }
 
     setView('result');
@@ -3909,6 +3928,10 @@ export default function App() {
   const [peerState, setPeerState] = useState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {} });
   const peerStateRef = useRef(peerState);
   useEffect(() => { peerStateRef.current = peerState; }, [peerState]);
+  // ルームに入りなおすたびに増える通し番号。退出後に古い接続のイベントで画面が動かないようにするための世代管理
+  const peerSessionRef = useRef(0);
+  // ホストがメンバーごとに「最後に反応があった時刻」を持ち、無反応が続いたら抜けたとみなす
+  const memberSeenRef = useRef({});
 
   // 【ボスバトル(BOSS_RAID)の状態】
   // raidRef がホスト権威の真実(HP・攻撃スケジュール・貢献度)、raidState は全端末共通の描画用スナップショット。
@@ -3969,14 +3992,14 @@ export default function App() {
   };
 
   // ゲーム開始時にホストが呼ぶ。初期スナップショットを返し、game_start に同梱される
-  const initRaid = (playerCount) => {
+  const initRaid = (playerCount, roster) => {
     const now = Date.now();
     preloadBossSprites(); // ドット絵の初回表示がちらつかないよう先読み
     const maxHp = bossMaxHp(1, playerCount);
     // 0ダメージの子も結果画面に載るよう、開始時点の参加者全員を貢献度テーブルへ登録しておく
     const contributions = {};
     const p = peerStateRef.current;
-    Object.entries(p.participants).forEach(([id, part]) => { contributions[id] = { name: part.name, damage: 0, supports: 0, maxCombo: 0 }; });
+    Object.entries(roster || p.participants).forEach(([id, part]) => { contributions[id] = { name: part.name, damage: 0, supports: 0, maxCombo: 0 }; });
     if (p.hostId) contributions[p.hostId] = { name: 'リーダー', damage: 0, supports: 0, maxCombo: 0 };
     raidRef.current = {
       stage: 1, playerCount, bossHp: maxHp, bossMaxHp: maxHp,
@@ -4149,13 +4172,13 @@ export default function App() {
   const sendRaidAttack = useCallback((damage, combo) => {
     const p = peerStateRef.current;
     if (p.role === 'host') hostApplyDamage(p.hostId, damage, combo);
-    else if (p.conn) p.conn.send({ type: 'raid_attack', data: { damage, combo } });
+    else if (p.conn) safeSend(p.conn, { type: 'raid_attack', data: { damage, combo } });
   }, []);
 
   const sendRaidSupport = useCallback(() => {
     const p = peerStateRef.current;
     if (p.role === 'host') hostApplySupport(p.hostId);
-    else if (p.conn) p.conn.send({ type: 'raid_support', data: {} });
+    else if (p.conn) safeSend(p.conn, { type: 'raid_support', data: {} });
   }, []);
 
   // 結果画面用(ホストのみ実体を持つ)
@@ -4326,19 +4349,19 @@ export default function App() {
   const sendTerrCharge = useCallback((cellIdx, amount, combo) => {
     const p = peerStateRef.current;
     if (p.role === 'host') hostApplyCharge(p.hostId, cellIdx, amount, combo);
-    else if (p.conn) p.conn.send({ type: 'terr_charge', data: { cellIdx, amount, combo } });
+    else if (p.conn) safeSend(p.conn, { type: 'terr_charge', data: { cellIdx, amount, combo } });
   }, []);
 
   const sendTerrTarget = useCallback((cellIdx) => {
     const p = peerStateRef.current;
     if (p.role === 'host') hostSetTarget(p.hostId, cellIdx);
-    else if (p.conn) p.conn.send({ type: 'terr_target', data: { cellIdx } });
+    else if (p.conn) safeSend(p.conn, { type: 'terr_target', data: { cellIdx } });
   }, []);
 
   const sendTerrSpecial = useCallback((kind, cellIdx) => {
     const p = peerStateRef.current;
     if (p.role === 'host') hostApplySpecial(p.hostId, kind, cellIdx);
-    else if (p.conn) p.conn.send({ type: 'terr_special', data: { kind, cellIdx } });
+    else if (p.conn) safeSend(p.conn, { type: 'terr_special', data: { kind, cellIdx } });
   }, []);
 
   // 結果画面用(ホストのみ実体を持つ)
@@ -4363,22 +4386,97 @@ export default function App() {
     }
   }, []);
 
+  // 【ホスト専用】メンバーが抜けたときの後片付け。
+  // 参加者リスト・接続・じんとりのねらい表示から取りのぞき、残りの全員へ最新の参加者リストを配る。
+  const hostRemoveMember = useCallback((peerId, notify) => {
+    const cur = peerStateRef.current;
+    if (cur.role !== 'host' || !peerId || peerId === cur.hostId) return;
+    const known = !!cur.participants[peerId] || cur.connections.some(c => c.peer === peerId);
+    if (!known) return;
+    const name = cur.participants[peerId]?.name;
+
+    delete memberSeenRef.current[peerId];
+    if (terrRef.current && terrRef.current.targets) delete terrRef.current.targets[peerId];
+
+    // 相手の端末が生きている場合(通信不良で切ったときなど)は、へやから外れたことを伝えてから切断する
+    const gone = cur.connections.find(c => c.peer === peerId);
+    if (gone) { safeSend(gone, { type: 'room_closed', data: { reason: 'removed' } }); setTimeout(() => { try { gone.close(); } catch (e) {} }, 200); }
+
+    setPeerState(p => {
+      if (!p.participants[peerId] && !p.connections.some(c => c.peer === peerId)) return p;
+      const participants = { ...p.participants };
+      delete participants[peerId];
+      const newP = { ...p, participants, connections: p.connections.filter(c => c.peer !== peerId) };
+      sendToAll(newP.connections, { type: 'participants_update', data: participants });
+      return newP;
+    });
+
+    if (notify && name) showToast('warning', `${name} さんが たいしゅつしました`);
+  }, []);
+
+  // 【ホスト専用】ハートビート。ping に一定時間こたえないメンバーは抜けたとみなして片付ける。
+  // (PeerJS の close は相手が黙って消えたときに届かないことがあるため)
+  useEffect(() => {
+    if (peerState.role !== 'host') return;
+    let lastTick = Date.now();
+    const id = setInterval(() => {
+      const now = Date.now();
+      const gap = now - lastTick; lastTick = now;
+      const p = peerStateRef.current;
+      if (p.role !== 'host') return;
+
+      p.connections.forEach(c => { if (!memberSeenRef.current[c.peer]) memberSeenRef.current[c.peer] = now; });
+
+      if (gap > PEER_TIMEOUT_MS) {
+        // 自分のタブが止まっていた(バックグラウンドなど)。誤判定しないよう猶予を配りなおす
+        Object.keys(memberSeenRef.current).forEach(pid => { memberSeenRef.current[pid] = now; });
+      } else {
+        p.connections.forEach(c => {
+          if (!c.open || now - (memberSeenRef.current[c.peer] || now) > PEER_TIMEOUT_MS) hostRemoveMember(c.peer, true);
+        });
+        // 接続がひとつも残っていない参加者(切断だけ先に検知された場合)も片付ける
+        Object.keys(p.participants).forEach(pid => {
+          if (pid !== p.hostId && !p.connections.some(c => c.peer === pid)) hostRemoveMember(pid, true);
+        });
+      }
+
+      sendToAll(p.connections, { type: 'ping' });
+    }, PEER_PING_MS);
+    return () => clearInterval(id);
+  }, [peerState.role, hostRemoveMember]);
+
   // 【ホスト(リーダー)の初期化処理】
   const initHost = () => {
     if (!window.Peer) return showToast('error', '通信準備中です。少し待ってから再度お試しください。');
     const roomId = Math.floor(100000 + Math.random() * 900000).toString();
     const peer = new window.Peer(roomId);
+    const session = ++peerSessionRef.current;
+    const alive = () => peerSessionRef.current === session; // 退出後に古い接続からのイベントで動かないようにする
 
     peer.on('open', (id) => {
+      if (!alive()) return;
+      memberSeenRef.current = {};
       setPeerState(p => ({ ...p, role: 'host', peer, hostId: id, participants: {}, connections: [] }));
       setView('hostRoom');
       showToast('success', 'あたらしいへやを作成しました！');
     });
 
     peer.on('connection', (conn) => {
-      conn.on('open', () => { setPeerState(p => ({ ...p, connections: [...p.connections, conn] })); });
+      if (!alive()) return safeSend(conn, { type: 'room_closed' });
+      conn.on('open', () => {
+        if (!alive()) return;
+        memberSeenRef.current[conn.peer] = Date.now();
+        setPeerState(p => ({ ...p, connections: [...p.connections.filter(c => c.peer !== conn.peer), conn] }));
+      });
       conn.on('data', (rawData) => {
-        if (rawData.type === 'join') {
+        if (!alive()) return;
+        memberSeenRef.current[conn.peer] = Date.now(); // 何か届いた＝生きている
+        if (rawData.type === 'pong') {
+          return;
+        } else if (rawData.type === 'leave') {
+          // メンバーが「退出」をおした。参加者リストからすぐに外す
+          hostRemoveMember(conn.peer, true);
+        } else if (rawData.type === 'join') {
           setPeerState(p => {
             // じんとり用に参加時点でチームを自動割当(人数の少ない側へ)。他モードでは使われないだけで無害
             const hostTeam = p.hostTeam || 'red';
@@ -4386,7 +4484,7 @@ export default function App() {
             Object.entries(p.participants).forEach(([id, m]) => { if (id === p.hostId) return; if (m.team === 'blue') blue++; else red++; });
             const team = red <= blue ? 'red' : 'blue';
             const newP = { ...p, participants: { ...p.participants, [conn.peer]: { id: conn.peer, name: rawData.name, score: 0, combo: 0, team } } };
-            newP.connections.forEach(c => c.send({ type: 'participants_update', data: newP.participants }));
+            sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
             return newP;
           });
           showToast('success', `${rawData.name} さんが参加しました`);
@@ -4394,7 +4492,7 @@ export default function App() {
           setPeerState(p => {
             if (!p.participants[conn.peer]) return p;
             const newP = { ...p, participants: { ...p.participants, [conn.peer]: { ...p.participants[conn.peer], score: rawData.data.score, combo: rawData.data.combo } } };
-            newP.connections.forEach(c => c.send({ type: 'participants_update', data: newP.participants }));
+            sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
             return newP;
           });
         } else if (rawData.type === 'raid_attack') {
@@ -4409,34 +4507,49 @@ export default function App() {
           hostApplySpecial(conn.peer, rawData.data.kind, rawData.data.cellIdx);
         }
       });
-      conn.on('close', () => { setPeerState(p => ({ ...p, connections: p.connections.filter(c => c.peer !== conn.peer) })); });
+      // 接続が切れたら参加者リストからも外す(以前は connections からしか消しておらず、
+      // 抜けたはずのメンバーがへや・ランキング・チーム分けに残りつづけていた)
+      conn.on('close', () => { if (alive()) hostRemoveMember(conn.peer, true); });
+      conn.on('error', () => { if (alive() && !conn.open) hostRemoveMember(conn.peer, true); });
     });
 
     peer.on('error', (err) => {
+      if (!alive()) return;
       showToast('error', '接続エラーが発生しました。もう一度お試しください。');
     });
   };
 
   // 【ホストからのブロードキャスト送信】（refを使って最新のconnectionsを参照）
   const broadcast = useCallback((data) => {
-    peerStateRef.current.connections.forEach(conn => conn.send(data));
+    sendToAll(peerStateRef.current.connections, data);
   }, []);
 
   // 【クライアント(児童)の初期化処理】
   const initClient = (playerName, hId) => {
     if (!window.Peer) return showToast('error', '通信準備中です。');
     const peer = new window.Peer();
+    const session = ++peerSessionRef.current;
+    // 退出したあとに(切断が完了するまでの間などに)届いたメッセージで画面が動きださないようにする
+    const alive = () => peerSessionRef.current === session;
 
     peer.on('open', () => {
+      if (!alive()) return;
       const conn = peer.connect(hId);
       conn.on('open', () => {
+        if (!alive()) return;
         conn.send({ type: 'join', name: playerName });
         setPeerState(p => ({ ...p, role: 'client', peer, conn, myName: playerName }));
         setView('clientWait');
         showToast('success', 'リーダーのルームに入りました！');
       });
       conn.on('data', (rawData) => {
-        if (rawData.type === 'game_start') {
+        if (!alive()) return; // すでにルームを抜けている端末は、以降いっさい反応しない
+        if (rawData.type === 'ping') {
+          safeSend(conn, { type: 'pong' }); // 生きていることをリーダーへ返す
+        } else if (rawData.type === 'room_closed') {
+          // リーダーがへやをとじた/自分がへやから外された。この端末はここで完全に切りはなす
+          teardownPeer({ type: 'warning', msg: rawData.data?.reason === 'removed' ? 'へやからはなれました' : 'リーダーがへやをとじました' });
+        } else if (rawData.type === 'game_start') {
           setState(prev => ({ ...prev, raidResult: null, territoryResult: null, ...rawData.data }));
           // ボスバトル/じんとりなら初期スナップショットから表示を立ち上げる
           if (rawData.data.raid) preloadBossSprites();
@@ -4463,22 +4576,34 @@ export default function App() {
           applyTerrEvent(rawData.data);
         }
       });
-      conn.on('error', () => showToast('error', 'リーダーとの接続が切れました'));
+      conn.on('error', () => { if (alive()) showToast('error', 'リーダーとの接続が切れました'); });
       conn.on('close', () => {
-        showToast('warning', 'リーダーとの接続が切れました');
+        if (alive()) showToast('warning', 'リーダーとの接続が切れました');
       });
     });
 
     peer.on('error', (err) => {
+      if (!alive()) return;
       showToast('error', 'ルームが見つかりませんでした。番号を確認してください。');
     });
   };
 
-  const leaveRoom = () => {
-    audioCtrl.playSE('click');
-    if (peerState.peer && !peerState.peer.destroyed) {
-      peerState.peer.destroy();
-    }
+  // 【ルームの後片付け】
+  // 退出をあいてに伝えてから通信を切り、ローカルの状態をリセットしてホームへもどる。
+  // 世代番号(peerSessionRef)を進めるので、切断が完了するまでの間に届いたメッセージでは
+  // もう画面が動かない(＝抜けたはずの端末でゲームが始まってしまうことがない)。
+  const teardownPeer = useCallback((notice) => {
+    const p = peerStateRef.current;
+    peerSessionRef.current += 1;
+
+    if (p.role === 'client' && p.conn) safeSend(p.conn, { type: 'leave' }); // リーダーに「抜けます」と伝える
+    if (p.role === 'host') sendToAll(p.connections, { type: 'room_closed', data: { reason: 'host' } });
+
+    // 退出のメッセージを送りきってから切断する
+    const peer = p.peer;
+    if (peer && !peer.destroyed) setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 300);
+
+    memberSeenRef.current = {};
     setPeerState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {} });
     raidRef.current = null;
     setRaidState(null);
@@ -4486,8 +4611,26 @@ export default function App() {
     setTerrState(null);
     setUrlHostId(null);
     setView('home');
-    showToast('success', 'ルームから退出しました');
-  };
+    if (notice) showToast(notice.type, notice.msg);
+  }, []);
+
+  const leaveRoom = useCallback(() => {
+    audioCtrl.playSE('click');
+    teardownPeer({ type: 'success', msg: 'ルームから退出しました' });
+  }, [teardownPeer]);
+
+  // タブを閉じた/リロードしたときも、できるだけ退出をあいてへ伝えておく
+  // (届かなかった場合はホスト側のハートビートが拾う)
+  useEffect(() => {
+    if (!peerState.role) return;
+    const notifyLeave = () => {
+      const p = peerStateRef.current;
+      if (p.role === 'client' && p.conn) safeSend(p.conn, { type: 'leave' });
+      if (p.role === 'host') sendToAll(p.connections, { type: 'room_closed', data: { reason: 'host' } });
+    };
+    window.addEventListener('beforeunload', notifyLeave);
+    return () => window.removeEventListener('beforeunload', notifyLeave);
+  }, [peerState.role]);
 
   const handleHomeClick = () => {
     audioCtrl.playSE('click');
