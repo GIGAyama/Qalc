@@ -13,7 +13,8 @@ import {
   RAID_CONSTANTS, bossForStage, bossMaxHp, calcRaidDamage, attackIntervalMs, pickBossAttack,
   makeShuffledLayout, useRaidDebuffs, raidInputLocked, raidDamageMods, raidProblemTransform,
   rollBurstCount, preloadBossSprites, useRaidShake,
-  BossPanel, SupportButton, ProblemDebuffOverlay, FreezeOverlay, RaidEventOverlay, RaidScreenFx, RaidResultPanel
+  BossPanel, SupportButton, ProblemDebuffOverlay, FreezeOverlay, RaidEventOverlay, RaidScreenFx, RaidResultPanel,
+  BossAvatar
 } from './BossBattle.jsx';
 import {
   TERRITORY_CONSTANTS, TEAMS, otherTeam, createTerritoryCells, isSelectable, autoPickTarget,
@@ -2352,6 +2353,26 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
               </button>
             ))}
           </div>
+
+          {/* ボスバトル: ルール説明(じんとりと同じく、みんなであそぶ限定モードなので受付画面で遊び方を見せる) */}
+          {configMode === 'BOSS_RAID' && (
+            <div className="mb-4">
+              {/* 最初にたたかうボスがバトル前にあおってくる(はじまる前から気分をあげる) */}
+              <div className="flex items-center gap-2 mb-2">
+                <BossAvatar bossIndex={0} className="w-16 h-16 shrink-0" />
+                <div className="font-black text-sm text-[var(--text)] leading-snug">
+                  みんなで <span className="text-[var(--primary)]"><R c="力" r="ちから" /></span>を あわせて、<br className="hidden sm:block" />ボスを たおそう！
+                </div>
+              </div>
+              <div className="bg-[var(--bg)] border-2 border-dashed border-[var(--text)] rounded-xl p-3 text-xs font-bold text-[var(--text)] opacity-90 mb-3 leading-relaxed flex flex-col gap-1">
+                <span>👑 <R c="全" r="ぜん" /><R c="員" r="いん" />で 1<R c="体" r="たい" />のボスに ちょうせんする <R c="協" r="きょう" /><R c="力" r="りょく" />モード！<R c="正" r="せい" /><R c="解" r="かい" />すると ボスにダメージ、コンボが つづくほど <span className="text-[var(--primary)]">大ダメージ</span></span>
+                <span>💗 <R c="体" r="たい" /><R c="力" r="りょく" />は みんなで1つ。ボスの こうげきで へって 0になると たてなおし（ボスも かいふくしてしまう）</span>
+                <span>✨ <span className="text-[var(--primary)]">おうえん</span>… ゲージが たまると はつどう！ 8<R c="秒" r="びょう" />かん <R c="全" r="ぜん" /><R c="員" r="いん" />のダメージ2ばい＋<R c="体" r="たい" /><R c="力" r="りょく" />かいふく</span>
+                <span>⚡ ボスは <R c="問" r="もん" /><R c="題" r="だい" />かくし・テンキーシャッフル・こおり などで じゃまをしてくる。<span className="text-red-500">💣バクダン</span>は みんなの<R c="正" r="せい" /><R c="解" r="かい" />で かいじょ！</span>
+                <span>🔥 ボスの<R c="体" r="たい" /><R c="力" r="りょく" />が へると <span className="text-red-500">げきおこ</span>で こうげきが はげしくなる。たおすと つぎのボスが とうじょう！</span>
+              </div>
+            </div>
+          )}
 
           {/* じんとり: ルール説明とチーム分けUI */}
           {configMode === 'TERRITORY' && (
