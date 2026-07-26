@@ -11,8 +11,9 @@ import {
 import { LearningToolPanel, getAvailableTools } from './LearningTools.jsx';
 import {
   RAID_CONSTANTS, bossForStage, bossMaxHp, calcRaidDamage, attackIntervalMs, pickBossAttack,
-  makeShuffledLayout, useRaidDebuffs, raidInputLocked,
-  BossPanel, SupportButton, ProblemDebuffOverlay, FreezeOverlay, RaidEventOverlay, RaidResultPanel
+  makeShuffledLayout, useRaidDebuffs, raidInputLocked, raidDamageMods, raidProblemTransform,
+  rollBurstCount, preloadBossSprites, useRaidShake,
+  BossPanel, SupportButton, ProblemDebuffOverlay, FreezeOverlay, RaidEventOverlay, RaidScreenFx, RaidResultPanel
 } from './BossBattle.jsx';
 import {
   TERRITORY_CONSTANTS, TEAMS, otherTeam, createTerritoryCells, isSelectable, autoPickTarget,
@@ -59,6 +60,23 @@ class AudioController {
         osc.type = 'triangle'; osc.frequency.setValueAtTime(440, t); osc.frequency.setValueAtTime(554.37, t + 0.1); osc.frequency.setValueAtTime(659.25, t + 0.2); osc.frequency.setValueAtTime(880, t + 0.3); gain.gain.setValueAtTime(0.1, t); gain.gain.linearRampToValueAtTime(0.001, t + 1.0); osc.start(t); osc.stop(t + 1.0); break;
       case 'coin':
         osc.type = 'sine'; osc.frequency.setValueAtTime(1200, t); osc.frequency.setValueAtTime(1600, t + 0.1); gain.gain.setValueAtTime(0.1, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.3); osc.start(t); osc.stop(t + 0.3); break;
+      // --- ボスバトル用 ---
+      case 'roar': // ボスの咆哮(登場・げきおこ)
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(90, t); osc.frequency.exponentialRampToValueAtTime(45, t + 0.8);
+        gain.gain.setValueAtTime(0.14, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.9); osc.start(t); osc.stop(t + 0.9);
+        { const sub = this.ctx.createOscillator(); sub.connect(gain); sub.type = 'square'; sub.frequency.setValueAtTime(140, t); sub.frequency.exponentialRampToValueAtTime(60, t + 0.7); sub.start(t); sub.stop(t + 0.7); }
+        this.vibrate([60, 40, 120]); break;
+      case 'charge': // 攻撃をためている音(テレグラフ)
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(220, t); osc.frequency.exponentialRampToValueAtTime(880, t + 0.55);
+        gain.gain.setValueAtTime(0.02, t); gain.gain.linearRampToValueAtTime(0.09, t + 0.5); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+        osc.start(t); osc.stop(t + 0.6); this.vibrate([15, 40, 15, 40, 15]); break;
+      case 'boom': // ボスの攻撃が当たった音
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(320, t); osc.frequency.exponentialRampToValueAtTime(50, t + 0.35);
+        gain.gain.setValueAtTime(0.16, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4); osc.start(t); osc.stop(t + 0.4);
+        this.vibrate([120, 40, 80]); break;
+      case 'guard': // バリア展開
+        osc.type = 'sine'; osc.frequency.setValueAtTime(660, t); osc.frequency.linearRampToValueAtTime(990, t + 0.25);
+        gain.gain.setValueAtTime(0.08, t); gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35); osc.start(t); osc.stop(t + 0.35); break;
     }
   }
   playBGM(type) {
@@ -2981,10 +2999,15 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     const ev = raidState?.lastEvent;
     if (!isRaid || !ev || ev.at === lastEventAtRef.current) return;
     lastEventAtRef.current = ev.at;
-    if (ev.kind === 'boss_defeated') { audioCtrl.playSE('combo', 10); audioCtrl.playSE('coin'); triggerConfetti({ particleCount: 80, spread: 90, origin: { y: 0.4 }, zIndex: 9999 }); }
-    if (ev.kind === 'team_down') { audioCtrl.playSE('wrong'); setCombo(0); }
+    if (ev.kind === 'boss_defeated') { audioCtrl.playSE('combo', 10); audioCtrl.playSE('coin'); triggerConfetti({ particleCount: 110, spread: 110, origin: { y: 0.4 }, zIndex: 9999 }); }
+    if (ev.kind === 'team_down') { audioCtrl.playSE('boom'); setCombo(0); }
     if (ev.kind === 'support') { audioCtrl.playSE('coin'); }
-    if (ev.kind === 'boss_enter') { audioCtrl.playSE('combo', 3); }
+    if (ev.kind === 'boss_enter') { audioCtrl.playSE('roar'); }
+    if (ev.kind === 'boss_enrage') { audioCtrl.playSE('roar'); audioCtrl.vibrate([80, 60, 80, 60, 160]); }
+    if (ev.kind === 'boss_shield') { audioCtrl.playSE('guard'); }
+    if (ev.kind === 'boss_drain') { audioCtrl.playSE('boom'); }
+    if (ev.kind === 'bomb_blast') { audioCtrl.playSE('boom'); setCombo(0); }
+    if (ev.kind === 'bomb_defused') { audioCtrl.playSE('coin'); triggerConfetti({ particleCount: 40, spread: 70, origin: { y: 0.5 }, zIndex: 9999 }); }
   }, [isRaid, raidState?.lastEvent]);
 
   // ボスの攻撃が自分に当たった瞬間の効果音
@@ -2993,8 +3016,26 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     const atk = raidState?.lastAttack;
     if (!isRaid || !atk || atk.at === lastAttackAtRef.current) return;
     lastAttackAtRef.current = atk.at;
-    if (atk.targets === 'all' || (Array.isArray(atk.targets) && atk.targets.includes(myId))) audioCtrl.playSE('wrong');
+    const hitsMe = atk.targets === 'all' || (Array.isArray(atk.targets) && atk.targets.includes(myId));
+    if (atk.kind === 'hp' || atk.kind === 'drain') audioCtrl.playSE('boom');
+    else if (hitsMe) audioCtrl.playSE('wrong');
   }, [isRaid, raidState?.lastAttack]);
+
+  // 「ためている…！」の予兆に合わせてチャージ音を鳴らす(1回の予兆につき1度だけ)
+  const lastTelegraphRef = useRef(0);
+  useEffect(() => {
+    if (!isRaid || !raidState?.telegraphAt) return;
+    const at = raidState.telegraphAt;
+    if (at === lastTelegraphRef.current) return;
+    const delay = at - Date.now();
+    if (delay < -400) return;
+    lastTelegraphRef.current = at;
+    const id = setTimeout(() => audioCtrl.playSE('charge'), Math.max(0, delay));
+    return () => clearTimeout(id);
+  }, [isRaid, raidState?.telegraphAt]);
+
+  // ボスの攻撃・撃破に合わせた画面ゆれ
+  const raidShake = useRaidShake(raidState, isRaid);
 
   const fireSupport = useCallback(() => {
     audioCtrl.playSE('coin');
@@ -3144,7 +3185,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       if (isRaid) {
         // 正解=ボスへの攻撃。score は与ダメージ累計として既存のスコア同期をそのまま使う
         const cheerActive = (raidStateRef.current?.cheerUntil || 0) > Date.now();
-        const dmg = calcRaidDamage(newC, cheerActive);
+        // のろい(与ダメージ半減) / ボスのバリア(半減) を反映する
+        const dmg = calcRaidDamage(newC, cheerActive, raidDamageMods(raidStateRef.current, myId));
         setScore(s => s + dmg);
         sendRaidAttack?.(dmg, newC);
         setCheerGauge(g => Math.min(RAID_CONSTANTS.GAUGE_MAX, g + (newC >= 5 ? 2 : 1)));
@@ -3218,7 +3260,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   else if (textLen >= 8) { fontSizeClass = "text-4xl md:text-6xl"; }
 
   return (
-    <div className="absolute inset-0 w-full h-[100dvh] flex flex-col z-10 overflow-hidden bg-[var(--bg)] pb-[env(safe-area-inset-bottom)]">
+    <div
+      className="absolute inset-0 w-full h-[100dvh] flex flex-col z-10 overflow-hidden bg-[var(--bg)] pb-[env(safe-area-inset-bottom)]"
+      style={raidShake}
+    >
       {/* フィーバー演出: 毎フレーム合成が走る全画面アニメーションは、手書きパッドを開いている間は無効化して描画性能を優先する */}
       {fever && !showMemo && (
         <motion.div
@@ -3283,7 +3328,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             </div>
             <AnimatePresence mode="wait">
               <motion.div key={qIndex} initial={{ opacity: 0, x: 50, scale: 0.8 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: -50, scale: 0.8 }} transition={{ type: "spring", stiffness: 300, damping: 25 }} className={`${fontSizeClass} font-black text-[var(--text)] text-center drop-shadow-sm w-full break-words px-2 leading-tight`}>
-                <MathText text={q.q} />
+                {/* ボスの「かがみ文字」デバフ中は問題文だけを左右反転させる(motion側のtransformと衝突しないよう内側のdivで掛ける) */}
+                <div className="w-full" style={isRaid ? { transform: raidProblemTransform(myDebuffs), transition: 'transform 0.35s' } : undefined}>
+                  <MathText text={q.q} />
+                </div>
               </motion.div>
             </AnimatePresence>
             {/* ボスの妨害デバフ(問題隠し・くらやみ)を問題の上に重ねる */}
@@ -3321,8 +3369,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
       <LearningToolPanel open={showTools} onClose={() => { audioCtrl.playSE('click'); setShowTools(false); }} courseName={state.courseName} qText={q.q} onFx={() => audioCtrl.playSE('click')} />
 
-      {/* ボスバトルの全画面イベント演出(撃破・新ボス登場・たてなおし・おうえん) */}
+      {/* ボスバトルの全画面イベント演出(撃破・新ボス登場・たてなおし・おうえん・げきおこ・バクダン) */}
       {isRaid && <RaidEventOverlay lastEvent={raidState?.lastEvent} />}
+
+      {/* ボスバトルの画面ふち演出(被弾フラッシュ・技名カットイン・げきおこ・時限爆弾) */}
+      {isRaid && <RaidScreenFx raidState={raidState} debuffs={myDebuffs} />}
 
       {/* じんとりの全画面イベント演出(うばい・ボーナスマス確保・盤面うまり) */}
       {isTerritory && <TerritoryEventOverlay lastEvent={terrState?.lastEvent} />}
@@ -3781,7 +3832,8 @@ export default function App() {
     setRaidState(prev => {
       if (!prev) return prev;
       const kept = (prev.activeDebuffs || []).filter(d => d.expiresAt > at);
-      const withNew = data.durationMs > 0 ? [...kept, { ...data, at, expiresAt: at + data.durationMs }] : kept;
+      // shield/drain/hp はボス側の効果なのでプレイヤーのデバフ一覧には積まない(debuff フラグで判定)
+      const withNew = (data.debuff && data.durationMs > 0) ? [...kept, { ...data, at, expiresAt: at + data.durationMs }] : kept;
       return { ...prev, activeDebuffs: withNew, lastAttack: { ...data, at } };
     });
   }, []);
@@ -3792,6 +3844,11 @@ export default function App() {
       if (!prev) return prev;
       const next = { ...prev, lastEvent: { ...data, at } };
       if (data.kind === 'support') next.activeDebuffs = []; // おうえんで全デバフ解除
+      // 時限爆弾は解除/爆発したらカウントダウン表示を即座に消す
+      if (data.kind === 'bomb_defused' || data.kind === 'bomb_blast') {
+        next.activeDebuffs = (prev.activeDebuffs || []).filter(d => d.kind !== 'bomb');
+        next.bombEndsAt = 0;
+      }
       return next;
     });
   }, []);
@@ -3804,6 +3861,8 @@ export default function App() {
       teamHp: r.teamHp, teamHpMax: r.teamHpMax, defeated: r.defeated,
       telegraphAt: r.pendingAdvanceAt ? 0 : r.nextAttackAt - RAID_CONSTANTS.TELEGRAPH_MS,
       cheerUntil: r.cheerUntil || 0,
+      enraged: !!r.enraged, shieldUntil: r.shieldUntil || 0,
+      bombEndsAt: r.bombEndsAt || 0, bombHits: r.bombHits || 0, bombNeeded: r.bombNeeded || 0,
     };
   };
 
@@ -3818,6 +3877,7 @@ export default function App() {
   // ゲーム開始時にホストが呼ぶ。初期スナップショットを返し、game_start に同梱される
   const initRaid = (playerCount) => {
     const now = Date.now();
+    preloadBossSprites(); // ドット絵の初回表示がちらつかないよう先読み
     const maxHp = bossMaxHp(1, playerCount);
     // 0ダメージの子も結果画面に載るよう、開始時点の参加者全員を貢献度テーブルへ登録しておく
     const contributions = {};
@@ -3829,9 +3889,12 @@ export default function App() {
       teamHp: RAID_CONSTANTS.TEAM_HP_MAX, teamHpMax: RAID_CONSTANTS.TEAM_HP_MAX,
       defeated: 0, contributions,
       nextAttackAt: now + RAID_CONSTANTS.GRACE_MS, pendingAdvanceAt: 0, cheerUntil: 0, lastBeatAt: now,
+      // 強化ボス用: げきおこ / バリア / 時限爆弾 / れんぞくこうげき の状態
+      enraged: false, shieldUntil: 0, bombEndsAt: 0, bombHits: 0, bombNeeded: 0, burstLeft: 0,
     };
     const snap = raidSnapshot();
-    setRaidState({ ...snap, activeDebuffs: [], lastAttack: null, lastEvent: null });
+    // 1体目も登場カットインを出す
+    setRaidState({ ...snap, activeDebuffs: [], lastAttack: null, lastEvent: { kind: 'boss_enter', stage: 1, at: now } });
     return snap;
   };
 
@@ -3845,6 +3908,22 @@ export default function App() {
     return r.contributions[peerId];
   };
 
+  // ボス側のイベントを全員へ流すヘルパー
+  const emitRaidEvent = (ev) => {
+    broadcast({ type: 'raid_event', data: ev });
+    applyRaidEvent(ev);
+  };
+
+  // HPが一定割合を切ったら「げきおこ」フェーズへ。攻撃間隔が縮み、攻撃力も上がる
+  const hostCheckEnrage = () => {
+    const r = raidRef.current;
+    if (!r || r.enraged || r.bossHp <= 0) return;
+    if (r.bossHp > r.bossMaxHp * RAID_CONSTANTS.ENRAGE_THRESHOLD) return;
+    r.enraged = true;
+    r.nextAttackAt = Math.min(r.nextAttackAt, Date.now() + 3200); // 突入直後に一度たたみかける
+    emitRaidEvent({ kind: 'boss_enrage', stage: r.stage });
+  };
+
   const hostApplyDamage = (peerId, damage, combo) => {
     const r = raidRef.current;
     if (!r || !(damage > 0)) return;
@@ -3853,13 +3932,22 @@ export default function App() {
     c.maxCombo = Math.max(c.maxCombo, combo || 0);
     // 撃破演出中(次ボス待ち)に届いた攻撃は貢献度のみ有効
     if (!r.pendingAdvanceAt && r.bossHp > 0) {
+      // 時限爆弾: 制限時間内にチームで規定数の正解を積めば解除できる
+      if (r.bombEndsAt > Date.now()) {
+        r.bombHits += 1;
+        if (r.bombHits >= r.bombNeeded) {
+          r.bombEndsAt = 0; r.bombHits = 0; r.bombNeeded = 0;
+          emitRaidEvent({ kind: 'bomb_defused' });
+        }
+      }
       r.bossHp = Math.max(0, r.bossHp - damage);
       if (r.bossHp <= 0) {
         r.defeated += 1;
         r.pendingAdvanceAt = Date.now() + RAID_CONSTANTS.DEFEAT_LOCK_MS;
-        const ev = { kind: 'boss_defeated', stage: r.stage };
-        broadcast({ type: 'raid_event', data: ev });
-        applyRaidEvent(ev);
+        r.bombEndsAt = 0; r.shieldUntil = 0; r.burstLeft = 0;
+        emitRaidEvent({ kind: 'boss_defeated', stage: r.stage });
+      } else {
+        hostCheckEnrage();
       }
     }
     broadcastRaidState();
@@ -3872,9 +3960,7 @@ export default function App() {
     c.supports += 1;
     r.teamHp = Math.min(r.teamHpMax, r.teamHp + RAID_CONSTANTS.CHEER_HEAL);
     r.cheerUntil = Date.now() + RAID_CONSTANTS.CHEER_DURATION_MS;
-    const ev = { kind: 'support', name: c.name };
-    broadcast({ type: 'raid_event', data: ev });
-    applyRaidEvent(ev);
+    emitRaidEvent({ kind: 'support', name: c.name });
     broadcastRaidState();
   };
 
@@ -3886,29 +3972,59 @@ export default function App() {
     r.bossHp = r.bossMaxHp;
     r.teamHp = Math.min(r.teamHpMax, r.teamHp + RAID_CONSTANTS.STAGE_CLEAR_HEAL);
     r.nextAttackAt = Date.now() + RAID_CONSTANTS.GRACE_MS;
-    const ev = { kind: 'boss_enter', stage: r.stage };
-    broadcast({ type: 'raid_event', data: ev });
-    applyRaidEvent(ev);
+    // ボスごとの強化ステートをリセット
+    r.enraged = false; r.shieldUntil = 0; r.bombEndsAt = 0; r.bombHits = 0; r.bombNeeded = 0; r.burstLeft = 0;
+    emitRaidEvent({ kind: 'boss_enter', stage: r.stage });
     broadcastRaidState();
+  };
+
+  // チームHPを減らす。0を割ったら全滅ではなく「たてなおし」でゲームを続行させる
+  const hostDamageTeam = (amount) => {
+    const r = raidRef.current;
+    r.teamHp -= amount;
+    if (r.teamHp <= 0) {
+      // 全滅にはしない: ボスがHPを回復し、チームは立て直しペナルティ(コンボリセット)で継続する
+      r.teamHp = RAID_CONSTANTS.TEAM_DOWN_RECOVER_HP;
+      r.bossHp = Math.min(r.bossMaxHp, r.bossHp + Math.round(r.bossMaxHp * RAID_CONSTANTS.TEAM_DOWN_BOSS_HEAL_RATE));
+      emitRaidEvent({ kind: 'team_down' });
+    }
   };
 
   const hostFireAttack = () => {
     const r = raidRef.current;
     const info = bossForStage(r.stage);
     const ids = Object.keys(peerStateRef.current.participants);
-    const atk = pickBossAttack(info.bossIndex, r.stage, ids);
+    const atk = pickBossAttack(info.bossIndex, r.stage, ids, { enraged: r.enraged });
+
     if (atk.kind === 'hp') {
-      r.teamHp -= atk.damage;
-      if (r.teamHp <= 0) {
-        // 全滅にはしない: ボスがHPを回復し、チームは立て直しペナルティ(コンボリセット)で継続する
-        r.teamHp = RAID_CONSTANTS.TEAM_DOWN_RECOVER_HP;
-        r.bossHp = Math.min(r.bossMaxHp, r.bossHp + Math.round(r.bossMaxHp * RAID_CONSTANTS.TEAM_DOWN_BOSS_HEAL_RATE));
-        const ev = { kind: 'team_down' };
-        broadcast({ type: 'raid_event', data: ev });
-        applyRaidEvent(ev);
-      }
+      hostDamageTeam(atk.damage);
+    } else if (atk.kind === 'drain') {
+      // きゅうしゅう: チームHPを削り、その分ボスが回復する
+      hostDamageTeam(atk.damage);
+      r.bossHp = Math.min(r.bossMaxHp, r.bossHp + atk.damage * 2);
+      emitRaidEvent({ kind: 'boss_drain', amount: atk.damage });
+    } else if (atk.kind === 'shield') {
+      // バリア: 一定時間ダメージが半減する(与ダメ計算は各端末の calcRaidDamage 側で反映)
+      r.shieldUntil = Date.now() + atk.durationMs;
+      emitRaidEvent({ kind: 'boss_shield' });
+    } else if (atk.kind === 'bomb') {
+      // 時限爆弾: 制限時間内にチームで規定数の正解を積めないと大ダメージ
+      r.bombEndsAt = Date.now() + atk.durationMs;
+      r.bombHits = 0;
+      r.bombNeeded = atk.needHits;
     }
-    r.nextAttackAt = Date.now() + attackIntervalMs(r.stage);
+
+    // れんぞくこうげき: burstLeft は「このターンでこの先まだ撃つ本数」。
+    // 残っていれば短い間隔で続けて撃ち、撃ち切ったら通常間隔に戻して次のターンぶんを抽選する
+    const nowAtk = Date.now();
+    if (r.burstLeft > 0) {
+      r.burstLeft -= 1;
+      r.nextAttackAt = nowAtk + (r.burstLeft > 0 ? RAID_CONSTANTS.BURST_GAP_MS : attackIntervalMs(r.stage, r.enraged));
+    } else {
+      r.burstLeft = Math.max(0, rollBurstCount(r.stage, r.enraged) - 1);
+      r.nextAttackAt = nowAtk + (r.burstLeft > 0 ? RAID_CONSTANTS.BURST_GAP_MS : attackIntervalMs(r.stage, r.enraged));
+    }
+
     broadcast({ type: 'raid_boss_attack', data: atk });
     applyRaidBossAttack(atk);
     broadcastRaidState();
@@ -3921,10 +4037,17 @@ export default function App() {
       const r = raidRef.current;
       if (!r) return;
       const now = Date.now();
+      // 時限爆弾の時間切れ判定はボスの行動より先に処理する
+      if (r.bombEndsAt && now >= r.bombEndsAt) {
+        r.bombEndsAt = 0; r.bombHits = 0; r.bombNeeded = 0;
+        hostDamageTeam(RAID_CONSTANTS.BOMB_DAMAGE);
+        emitRaidEvent({ kind: 'bomb_blast' });
+        broadcastRaidState();
+      }
       if (r.pendingAdvanceAt && now >= r.pendingAdvanceAt) hostAdvanceBoss();
       else if (!r.pendingAdvanceAt && now >= r.nextAttackAt) hostFireAttack();
       if (now - r.lastBeatAt >= RAID_CONSTANTS.HEARTBEAT_MS) broadcastRaidState();
-    }, 500);
+    }, 400);
     return () => clearInterval(id);
   }, [view, state.gameMode, peerState.role]);
 
@@ -4158,7 +4281,10 @@ export default function App() {
         if (rawData.type === 'game_start') {
           setState(prev => ({ ...prev, raidResult: null, territoryResult: null, ...rawData.data }));
           // ボスバトル/じんとりなら初期スナップショットから表示を立ち上げる
-          setRaidState(rawData.data.raid ? { ...rawData.data.raid, activeDebuffs: [], lastAttack: null, lastEvent: null } : null);
+          if (rawData.data.raid) preloadBossSprites();
+          setRaidState(rawData.data.raid
+            ? { ...rawData.data.raid, activeDebuffs: [], lastAttack: null, lastEvent: { kind: 'boss_enter', stage: rawData.data.raid.stage || 1, at: Date.now() } }
+            : null);
           setTerrState(rawData.data.territory ? { ...rawData.data.territory, lastEvent: null } : null);
           setView('game');
         } else if (rawData.type === 'game_finish') {
