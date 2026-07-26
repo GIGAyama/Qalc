@@ -9,6 +9,7 @@ import {
   LayoutDashboard, Lightbulb
 } from 'lucide-react';
 import { LearningToolPanel, getAvailableTools } from './LearningTools.jsx';
+import { BACK_PRIORITY, useBackHandler, useHistoryBackGuard, EdgeSwipeBack } from './BackNavigation.jsx';
 import {
   RAID_CONSTANTS, bossForStage, bossMaxHp, calcRaidDamage, attackIntervalMs, pickBossAttack,
   makeShuffledLayout, useRaidDebuffs, raidInputLocked, raidDamageMods, raidProblemTransform,
@@ -2921,6 +2922,13 @@ const ShopView = ({ setView, stats, setStats }) => {
   const spinningRef = useRef(false);
   const { level } = getLevelInfo(stats.totalExp);
 
+  // 「戻る」でひらいているダイアログをとじる(ガチャは演出中だけそのまま待つ)
+  useBackHandler(!!confirmItem, () => { audioCtrl.playSE('click'); setConfirmItem(null); return true; }, BACK_PRIORITY.overlay);
+  useBackHandler(!!gachaResult, () => {
+    if (!gachaResult.revealed) return true; // たまごが開くまでは何もしない
+    audioCtrl.playSE('click'); setGachaResult(null); return true;
+  }, BACK_PRIORITY.overlay);
+
   const gachaPool = getGachaPool();
   const gachaOwnedCount = gachaPool.filter(e => (stats.inventory[e.category] || []).includes(e.item.id)).length;
   const totalItems = Object.values(SHOP_ITEMS).reduce((a, arr) => a + arr.length, 0);
@@ -3404,6 +3412,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const wrongCountRef = useRef(resumeSnapshot?.wrongCount || 0);
   const isResumedSessionRef = useRef(!!resumeSnapshot);
   const [quitDialog, setQuitDialog] = useState(false);
+
+  // 「戻る」: どうぐ → メモ → やめる確認ダイアログ の順にとじる。
+  // ゲーム中はいきなりホームへもどさず、かならず確認ダイアログを出す(とちゅうの記録を守るため)。
+  useBackHandler(showTools, () => { audioCtrl.playSE('click'); setShowTools(false); return true; }, BACK_PRIORITY.overlay);
+  useBackHandler(quitDialog, () => { audioCtrl.playSE('click'); setQuitDialog(false); return true; }, BACK_PRIORITY.overlay);
+  useBackHandler(showMemo, () => { audioCtrl.playSE('click'); setShowMemo(false); return true; }, BACK_PRIORITY.panel);
+  useBackHandler(true, () => { audioCtrl.playSE('click'); setQuitDialog(true); return true; }, BACK_PRIORITY.view);
+
   const participantsList = isMultiplayer ? Object.entries(peerState.participants || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => b.score - a.score) : [];
   const top5 = participantsList.slice(0, 5);
 
@@ -3906,7 +3922,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         </div>
 
         {/* min-h-0/min-w-0: canvas の固有サイズが flex の min-content 経由でレイアウトを押し広げないようにする */}
-        <div className={`w-full md:flex-grow relative transition-all duration-300 h-[500px] md:h-full flex-shrink-0 md:flex-shrink min-h-0 min-w-0 p-4 md:p-6 flex flex-col gap-2 ${showMemo ? 'opacity-100 flex' : 'hidden opacity-0'}`}>
+        {/* data-back-swipe-ignore: 手書きメモの上でのなぞり書きを「戻る」スワイプとまちがえないようにする */}
+        <div data-back-swipe-ignore className={`w-full md:flex-grow relative transition-all duration-300 h-[500px] md:h-full flex-shrink-0 md:flex-shrink min-h-0 min-w-0 p-4 md:p-6 flex flex-col gap-2 ${showMemo ? 'opacity-100 flex' : 'hidden opacity-0'}`}>
           <div className="flex-grow relative min-h-0 min-w-0">
             <HandWritingCanvas ref={canvasRef} />
           </div>
@@ -4159,6 +4176,10 @@ const ManagerView = ({ setView }) => {
   const grades = ['すべて', '1年', '2年', '3年', '4年', '5年', '6年', 'その他'];
   const loadGroups = () => setGroups(StorageAPI.getProblemGroups());
   useEffect(() => { loadGroups(); }, []);
+
+  // 「戻る」: 削除の確認 → コース編集 → (App側でコース一覧からホームへ) の順にもどる
+  useBackHandler(confirmDelete, () => { audioCtrl.playSE('click'); setConfirmDelete(false); return true; }, BACK_PRIORITY.overlay);
+  useBackHandler(editTarget !== null, () => { audioCtrl.playSE('click'); setEditTarget(null); return true; }, BACK_PRIORITY.view);
 
   const filteredGroups = groups.filter(g => { if (selectedGrade === 'すべて') return true; if (selectedGrade === 'その他') return !/^[1-6]年/.test(g.name); return g.name.startsWith(selectedGrade); });
 
@@ -5114,6 +5135,44 @@ export default function App() {
     }
   };
 
+  // ==========================================
+  // スマホ・タブレットの「戻る」操作
+  // 端末の戻るボタン(画面下のナビゲーションバー)と、画面のはしからのスワイプの
+  // どちらでも、1つ前の階層の画面にもどれるようにする。
+  // ダミーの履歴を1つ積んでおくので、ブラウザが前のページへ動いたりアプリが終了したりしない。
+  // ==========================================
+  useHistoryBackGuard();
+
+  // ルームからぬけるときは、まちがえて全員のへやを閉じてしまわないように一度たしかめる
+  const [leaveConfirm, setLeaveConfirm] = useState(false);
+  // ルームが先に閉じた(リーダーが解散した等)ときは、たしかめの表示も引っこめる
+  useEffect(() => { if (!peerState.role) setLeaveConfirm(false); }, [peerState.role]);
+  useBackHandler(leaveConfirm, () => { audioCtrl.playSE('click'); setLeaveConfirm(false); return true; }, BACK_PRIORITY.overlay);
+
+  // 画面ごとの「1つ前の階層」。true をかえすと、そこで「戻る」は処理ずみになる。
+  useBackHandler(true, () => {
+    switch (view) {
+      case 'singleConfig':
+      case 'shop':
+      case 'manager':
+        audioCtrl.playSE('click'); setView('home'); return true;
+      case 'import':
+        audioCtrl.playSE('click'); setView('manager'); return true;
+      case 'clientJoin':
+        audioCtrl.playSE('click'); setUrlHostId(null); setView('home'); return true;
+      case 'hostRoom':
+      case 'clientWait':
+        audioCtrl.playSE('click'); setLeaveConfirm(true); return true;
+      case 'result':
+        audioCtrl.playSE('click');
+        if (peerState.role) setLeaveConfirm(true); else setView('home');
+        return true;
+      // game は GameView 側で「やめますか？」を出す。home はここがいちばん上なので何もしない。
+      default:
+        return true;
+    }
+  }, BACK_PRIORITY.app);
+
   useEffect(() => {
     if (!isMuted) { if (view === 'game') audioCtrl.playBGM('game'); else if (view === 'result') { audioCtrl.stopBGM(); } else audioCtrl.playBGM('home'); }
     else audioCtrl.stopBGM();
@@ -5220,6 +5279,30 @@ export default function App() {
           </p>
         </footer>
       )}
+
+      {/* ルームからぬけるまえのたしかめ(「戻る」でうっかり全員のへやを閉じないように) */}
+      <AnimatePresence>
+        {leaveConfirm && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+              <Users size={48} className="text-[var(--primary)] mb-3" />
+              <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text">へやから<R c="出" r="で" />ますか？</h3>
+              <p className="text-sm text-[var(--text)] opacity-70 mb-5 ruby-text">
+                {peerState.role === 'host'
+                  ? <>リーダーが<R c="出" r="で" />ると、みんなのへやも<R c="終" r="お" />わります</>
+                  : <>ホーム<R c="画" r="が" /><R c="面" r="めん" />にもどります</>}
+              </p>
+              <div className="flex w-full gap-3">
+                <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => setLeaveConfirm(false)}>やめる</MotionButton>
+                <MotionButton className="bg-[var(--primary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 flex-1 ruby-text" onClick={() => { setLeaveConfirm(false); leaveRoom(); }}><R c="出" r="で" />る</MotionButton>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 画面のはしから中央へのスワイプで「戻る」。ホームはいちばん上の階層なので出さない */}
+      <EdgeSwipeBack enabled={view !== 'home'} />
 
       {/* カスタム通知コンポーネントを配置 */}
       <CustomToast />
