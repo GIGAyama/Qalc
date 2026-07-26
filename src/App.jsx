@@ -19,7 +19,8 @@ import {
   TERRITORY_CONSTANTS, TEAMS, otherTeam, createTerritoryCells, isSelectable, autoPickTarget,
   computeScores, resolveCaptures, addCharge, applyBlast, specialCharges, rollSpecial, rollLucky, pickNearTarget, SPECIALS,
   TerritoryScoreBar, TerritoryBoard, TerritoryEventOverlay, TerritoryResultPanel,
-  TerritorySpecialButton, TerritoryRushBadge, TerritoryLastSpurtFx
+  TerritorySpecialButton, TerritoryRushBadge, TerritoryLastSpurtFx,
+  TerritoryCharacter, useTerritoryMood, preloadTerritoryCharacters, TERRITORY_CHARACTER_NAME
 } from './TerritoryBattle.jsx';
 
 // ふりがなヘルパー: <R k="かん" g="じ" /> → <ruby>漢<rt>かん</rt></ruby><ruby>字<rt>じ</rt></ruby>
@@ -2355,6 +2356,13 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
           {/* じんとり: ルール説明とチーム分けUI */}
           {configMode === 'TERRITORY' && (
             <div className="mb-4">
+              {/* あいぼうの「ペンキー」がバトル前にあいさつする(はじまる前から気分をあげる) */}
+              <div className="flex items-center gap-2 mb-2">
+                <TerritoryCharacter mood="fight" bubble={false} className="w-16 shrink-0" />
+                <div className="font-black text-sm text-[var(--text)] leading-snug">
+                  あいぼうの <span className="text-[var(--primary)]">{TERRITORY_CHARACTER_NAME}</span> と いっしょに、<br className="hidden sm:block" />ばんめんを ぬりつぶそう！
+                </div>
+              </div>
               <div className="bg-[var(--bg)] border-2 border-dashed border-[var(--text)] rounded-xl p-3 text-xs font-bold text-[var(--text)] opacity-90 mb-3 leading-relaxed flex flex-col gap-1">
                 <span>🚩 2チームに<R c="分" r="わ" />かれて、7×7の ばんめんを ぬりあうチーム<R c="戦" r="せん" />！<R c="正" r="せい" /><R c="解" r="かい" />すると ねらったマスに ぬれるよ。</span>
                 <span>🌊 マスをぬると となりにも インクがはねて <span className="text-[var(--primary)]">れんさ</span>が おきる！★マスは ポイントが<R c="大" r="おお" />きい</span>
@@ -3032,6 +3040,18 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const lastSpurtRef = useRef(false);
   const [lastSpurt, setLastSpurt] = useState(false);
 
+  // --- じんとり: おうえんキャラクター「ペンキー」のきもち ---
+  // まちがえた時こく(missAt)・盤面イベント・コンボ・のこり時間から、表情とセリフが決まる
+  const [terrMissAt, setTerrMissAt] = useState(0);
+  const { mood: terrMood, line: terrLine } = useTerritoryMood({
+    terrState: isTerritory ? terrState : null,
+    myTeam,
+    combo,
+    lastSpurt,
+    rushActive: rushUntil > Date.now(),
+    missAt: terrMissAt,
+  });
+
   const startRush = useCallback(() => {
     const until = Date.now() + TERRITORY_CONSTANTS.RUSH_MS;
     rushUntilRef.current = until;
@@ -3319,6 +3339,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       else { setQIndex(i => (i + 1) % state.problemSet.length); }
     } else {
       audioCtrl.playSE('wrong'); setCombo(0); wrongCountRef.current += 1;
+      if (isTerritory) setTerrMissAt(Date.now()); // ペンキーが「ドンマイ！」と はげましてくれる
       setCardAnim({ x: [-15, 15, -10, 10, 0], boxShadow: ["0 8px 0 var(--text)", "0 0 20px var(--primary)", "0 8px 0 var(--text)"], transition: { duration: 0.4 } });
       setAns(''); mistakesRef.current.push({ q: q.q, a: q.a.join('|') });
       if (state.gameMode === 'SUDDEN_DEATH') setTimeout(finishGame, 500);
@@ -3408,10 +3429,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         {/* じんとり: 盤面を問題エリアと並べて常時表示する(モバイルは上段・PCは左カラム)。手書きメモ使用中はモバイルのみ盤面をたたむ */}
         {isTerritory && (
           <div className={`shrink-0 w-full md:h-full md:order-first border-b-2 md:border-b-0 md:border-r-2 border-[var(--text)] bg-[var(--panel)] p-2 flex-col items-center justify-center relative ${showMemo ? 'hidden md:flex md:w-[240px]' : 'flex md:w-[340px]'}`}>
-            <div className="h-[27vh] md:h-auto md:w-full md:flex-grow md:min-h-0 flex items-center justify-center w-full">
+            <div className="h-[27vh] md:h-auto md:w-full md:flex-grow md:min-h-0 flex items-center justify-center gap-1 w-full">
               <TerritoryBoard terrState={terrState} myTeam={myTeam} myId={myId} targetIdx={terrTarget} onSelect={selectTerrTarget} lastSpurt={lastSpurt} />
+              {/* おうえんキャラクター(モバイル): 盤面は 27vh の正方形なので、あまった横のすきまに ならべて置く */}
+              <TerritoryCharacter mood={terrMood} line={terrLine} team={myTeam} bubbleClassName="max-w-[104px] text-[8px]" className="w-20 shrink-0 md:hidden" />
             </div>
             <TerritoryRushBadge until={rushUntil} />
+            {/* おうえんキャラクター(PC): 盤面の下にゆったり出す */}
+            <TerritoryCharacter mood={terrMood} line={terrLine} team={myTeam} bubbleClassName="max-w-[230px] text-[11px]" className="hidden md:flex w-32 shrink-0 mt-1" />
             <p className="shrink-0 text-[10px] font-bold text-[var(--text)] opacity-60 mt-1 text-center">タップで ねらうマスを えらぼう（<R c="数" r="すう" /><R c="字" r="じ" />＝あと<R c="何" r="なん" /><R c="回" r="かい" />で ぬれる／？＝ラッキーマス）</p>
           </div>
         )}
@@ -4230,6 +4255,7 @@ export default function App() {
 
   // ゲーム開始時にホストが呼ぶ。初期スナップショット(チーム表つき)を返し、game_start に同梱される
   const initTerritory = (teamsMap) => {
+    preloadTerritoryCharacters(); // ペンキーの表情4まいを先読みしておく
     const cells = createTerritoryCells();
     const contributions = {};
     Object.entries(teamsMap).forEach(([id, m]) => {
@@ -4553,6 +4579,7 @@ export default function App() {
           setState(prev => ({ ...prev, raidResult: null, territoryResult: null, ...rawData.data }));
           // ボスバトル/じんとりなら初期スナップショットから表示を立ち上げる
           if (rawData.data.raid) preloadBossSprites();
+          if (rawData.data.territory) preloadTerritoryCharacters();
           setRaidState(rawData.data.raid
             ? { ...rawData.data.raid, activeDebuffs: [], lastAttack: null, lastEvent: { kind: 'boss_enter', stage: rawData.data.raid.stage || 1, at: Date.now() } }
             : null);

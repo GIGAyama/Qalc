@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trophy, Flag } from 'lucide-react';
 
@@ -247,6 +247,175 @@ export const resolveCaptures = (cells) => {
 // ==========================================
 // バトルUIコンポーネント
 // ==========================================
+
+// ==========================================
+// おうえんキャラクター「ペンキー」
+//   じんとりバトルの相棒。回答・盤面イベント・のこり時間に合わせて4まいの絵を出しわけ、
+//   いま何がおきているのかを ことばと表情で伝える(小さい子でも戦況がわかるように)。
+//   画像は public/characters/ に置き、ボスのドット絵と同じく URL 直参照で読む。
+// ==========================================
+
+const CHARACTER_DIR = `${import.meta.env.BASE_URL}characters/`;
+
+export const TERRITORY_CHARACTER_NAME = 'ペンキー';
+
+// きもち(mood)ごとの絵とゆれ方。4まいとも同じ大きさの正方形にそろえてあるので入れかえてもズレない
+const CHARACTER_MOODS = {
+  idle: {
+    file: 'painter-idle.png',
+    anim: { y: [0, -5, 0] },
+    transition: { duration: 2.4, repeat: Infinity, ease: 'easeInOut' },
+  },
+  fight: {
+    file: 'painter-fight.png',
+    anim: { rotate: [-3.5, 3.5, -3.5], scale: [1, 1.06, 1] },
+    transition: { duration: 0.6, repeat: Infinity, ease: 'easeInOut' },
+  },
+  win: {
+    file: 'painter-win.png',
+    anim: { y: [0, -12, 0], rotate: [-6, 6, -6] },
+    transition: { duration: 0.7, repeat: Infinity, ease: 'easeInOut' },
+  },
+  sad: {
+    file: 'painter-sad.png',
+    anim: { y: [0, 3, 0], rotate: [-1.5, 1.5, -1.5] },
+    transition: { duration: 2, repeat: Infinity, ease: 'easeInOut' },
+  },
+};
+
+export const territoryCharacterUrl = (mood) => CHARACTER_DIR + (CHARACTER_MOODS[mood] || CHARACTER_MOODS.idle).file;
+
+// 表情が切りかわる瞬間に白ぬけしないよう、4まいまとめて先読みする
+export const preloadTerritoryCharacters = () => {
+  if (typeof window === 'undefined') return;
+  Object.values(CHARACTER_MOODS).forEach(m => { const img = new window.Image(); img.src = CHARACTER_DIR + m.file; });
+};
+
+// セリフ。漢字はつかわず、1・2年生でも読めるみじかい応援にする
+const CHARACTER_LINES = {
+  capture: ['ナイスぬり！', 'いいね その ちょうし！', 'ぬれた ぬれた！'],
+  steal: ['よこどり せいこう！', 'うばいかえした！'],
+  lostCell: ['うばわれた…！', 'とりかえそう！'],
+  chain: ['れんさ さいこう！', 'いっきに ぬれた！'],
+  lucky: ['ラッキーマス ゲット！', 'なにが でるかな？'],
+  special: ['スペシャル いくよー！', 'どっかーん！'],
+  lead: ['リード したよ！'],
+  behind: ['おいこされた…！', 'まだ まけてない！'],
+  boardFull: ['ぜんぶ うまった！ ここから しょうぶ！'],
+  miss: ['ドンマイ！ つぎ いこう', 'あわてない あわてない'],
+};
+const pickLine = (key) => {
+  const list = CHARACTER_LINES[key];
+  return list[Math.floor(Math.random() * list.length)];
+};
+
+const CHARACTER_REACT_MS = 2200; // 反応を見せておく時間。すぎたら ふだんのきもちへもどる
+
+// 盤面イベント1件をキャラの反応(mood + セリフ)に変える。自分のチームに関係ないものは null
+const reactionForEvent = (ev, myTeam) => {
+  switch (ev.kind) {
+    case 'capture':
+      if (ev.team === myTeam) return { mood: 'win', line: pickLine(ev.steal ? 'steal' : 'capture') };
+      return ev.steal ? { mood: 'sad', line: pickLine('lostCell') } : null;
+    case 'chain':
+      return ev.team === myTeam ? { mood: 'win', line: pickLine('chain') } : null;
+    case 'lucky':
+      return ev.team === myTeam ? { mood: 'win', line: pickLine('lucky') } : null;
+    case 'special':
+      return ev.team === myTeam ? { mood: 'fight', line: pickLine('special') } : null;
+    case 'lead':
+      return ev.team === myTeam ? { mood: 'win', line: pickLine('lead') } : { mood: 'sad', line: pickLine('behind') };
+    case 'board_full':
+      return { mood: 'fight', line: pickLine('boardFull') };
+    default:
+      return null;
+  }
+};
+
+// キャラのきもちを決める。イベント直後はその反応を優先し、おちついたら いまの戦況を映す
+export const useTerritoryMood = ({ terrState, myTeam, combo = 0, lastSpurt = false, rushActive = false, missAt = 0 }) => {
+  const [reaction, setReaction] = useState(null);
+  const tokenRef = useRef(0);
+  const timerRef = useRef(null);
+  const seenRef = useRef(new Set());
+
+  // 新しい反応が来たら古いタイマーの後始末を待たずに差しかえる(token で自分のぶんだけ消す)
+  const fire = useCallback((r) => {
+    if (!r) return;
+    const token = ++tokenRef.current;
+    setReaction({ ...r, token });
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setReaction(cur => (cur && cur.token === token ? null : cur)), CHARACTER_REACT_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  // まちがえた瞬間は はげましにまわる
+  useEffect(() => { if (missAt) fire({ mood: 'sad', line: pickLine('miss') }); }, [missAt, fire]);
+
+  // 盤面イベント: まだ見ていないものだけを拾い、そのうち最後の1件に反応する
+  useEffect(() => {
+    let latest = null;
+    (terrState?.events || []).forEach(ev => {
+      if (seenRef.current.has(ev.id)) return;
+      seenRef.current.add(ev.id);
+      const r = reactionForEvent(ev, myTeam);
+      if (r) latest = r;
+    });
+    fire(latest);
+  }, [terrState?.events, myTeam, fire]);
+
+  if (reaction) return { mood: reaction.mood, line: reaction.line };
+
+  // 反応がないときの ふだんのきもち(戦況しだいで表情がかわる)
+  if (rushActive) return { mood: 'fight', line: 'ラッシュちゅう！ ぬりまくれ！' };
+  if (lastSpurt) return { mood: 'fight', line: 'ラストスパート！ ぬり2ばい！' };
+  if (combo >= 5) return { mood: 'fight', line: `${combo}コンボ！ フィーバーちゅう！` };
+  const scores = terrState?.scores;
+  if (scores && myTeam) {
+    const diff = scores[myTeam] - scores[otherTeam(myTeam)];
+    if (diff >= 4) return { mood: 'win', line: 'リードしてる！ このまま いこう' };
+    if (diff <= -4) return { mood: 'fight', line: 'まだ いける！ おいつこう！' };
+    return { mood: 'idle', line: 'せっせん！ 1もんずつ ぬろう' };
+  }
+  return { mood: 'idle', line: 'いっしょに ぬろう！' };
+};
+
+// キャラクター本体。ふきだし + 絵。大きさは親から className(w-…)でわたす。
+// ふきだしは絵よりも横にはみ出せるので、せまい場所に置くときは bubbleClassName で幅をしぼる
+export const TerritoryCharacter = ({ mood = 'idle', line, team, bubble = true, bubbleClassName = 'max-w-[150px] text-[10px]', className = '' }) => {
+  const m = CHARACTER_MOODS[mood] || CHARACTER_MOODS.idle;
+  const glow = TEAMS[team]?.color || 'var(--primary)';
+  return (
+    <div className={`relative flex flex-col items-center pointer-events-none select-none ${className}`}>
+      {bubble && (
+        <AnimatePresence mode="wait">
+          {line && (
+            <motion.div key={line}
+              initial={{ opacity: 0, y: 8, scale: 0.7 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ type: 'spring', bounce: 0.5, duration: 0.35 }}
+              className={`relative z-10 mb-1 bg-[var(--panel)] border-2 border-[var(--text)] rounded-xl px-2 py-1 text-center font-black leading-tight text-[var(--text)] shadow-[2px_2px_0_var(--text)] ${bubbleClassName}`}>
+              {line}
+              <span className="absolute left-1/2 -bottom-[8px] -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent border-t-[8px] border-t-[var(--text)]" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+      <div className="relative w-full aspect-square">
+        {/* チームカラーのやわらかい光。どのテーマ背景でもキャラが浮きたつ */}
+        <span className="absolute inset-[10%] rounded-full blur-md opacity-70" style={{ background: `radial-gradient(circle, ${glow}55, transparent 70%)` }} />
+        <AnimatePresence mode="wait">
+          <motion.div key={mood} className="absolute inset-0"
+            initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }} transition={{ duration: 0.2 }}>
+            <motion.img src={territoryCharacterUrl(mood)} alt={TERRITORY_CHARACTER_NAME} draggable={false}
+              className="w-full h-full object-contain"
+              style={{ filter: 'drop-shadow(0 3px 4px rgba(0,0,0,0.3))' }}
+              animate={m.anim} transition={m.transition} />
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+};
 
 // インクのしぶき(不定形なブロブ)。マスをぬった瞬間にはじける
 const SPLAT_SHAPES = [
@@ -684,6 +853,18 @@ export const TerritoryResultPanel = ({ territoryResult, myId }) => {
         className="font-black text-2xl mb-1 flex items-center gap-2 relative" style={{ color: winner ? TEAMS[winner].color : 'var(--text)' }}>
         {winner ? <><Trophy size={26} className="text-yellow-400" /> {TEAMS[winner].label}チームの かち！</> : <><Flag size={26} /> ひきわけ！</>}
       </motion.h3>
+
+      {/* ペンキーも いっしょに よろこぶ / くやしがる */}
+      <motion.div initial={{ scale: 0, y: 10 }} animate={{ scale: 1, y: 0 }} transition={{ type: 'spring', bounce: 0.5, delay: 0.2 }} className="relative">
+        <TerritoryCharacter
+          mood={!winner || !myTeam ? 'idle' : iWon ? 'win' : 'sad'}
+          line={!winner ? 'いい しょうぶ だったね！' : !myTeam ? 'おつかれさま！' : iWon ? 'やったー！ ぬりまくったね！' : 'くやしい…！ つぎは かとうね'}
+          team={myTeam}
+          bubbleClassName="max-w-[180px] md:max-w-[240px] text-[11px]"
+          className="w-32 md:w-40 mb-1"
+        />
+      </motion.div>
+
       {myTeam && (
         <p className="font-bold text-sm mb-3 text-[var(--text)] opacity-80 relative">
           {winner ? (iWon ? '🎉 あなたのチームが かった！' : 'ざんねん…つぎは かてる！') : 'いいしょうぶだった！'}
