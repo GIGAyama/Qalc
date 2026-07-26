@@ -30,13 +30,28 @@ export const RAID_CONSTANTS = {
   BOMB_DAMAGE: 28,             // 時限爆弾が不発に終わったときのチームHPダメージ
   BOMB_REQUIRED_HITS: 4,       // 時限爆弾の解除に必要なチーム全体の正解数
   DRAIN_AMOUNT: 14,            // きゅうしゅうでボスが回復し、チームが失うHP
+  // --- 攻撃トラック(ダメージ系 / 妨害系)のスケジュール ---
+  // ボスは「ダメージ攻撃」と「妨害攻撃」を別々のタイマーで撃つ。
+  // 1つの抽選テーブルを共有していたころは、ダメージ攻撃を増やすと妨害攻撃が減ってしまったが、
+  // トラックを分けたことで片方の頻度をもう片方に影響させずに調整できる。
+  DAMAGE_INTERVAL_RATE: 1.5,   // ダメージ攻撃の間隔倍率(旧・混合抽選時の約1.3〜2.7倍の頻度になる)
+  DISRUPT_INTERVAL_RATE: 1.3,  // 妨害攻撃の間隔倍率(どのボス・ステージでも旧・混合抽選時より頻度が下がらない値)
+  TRACK_MIN_GAP_MS: 900,       // 2トラックの攻撃が重なったとき、後発をずらす最小間隔
+  TRACK_START_OFFSET_MS: 3000, // 開始直後・ボス切替直後にダメージ攻撃をずらす時間
 };
 
 // プレイヤーに付くデバフ(activeDebuffs に積むもの)。shield/drain/hp はボス側の効果なので含めない
 export const PLAYER_DEBUFF_KINDS = ['ink', 'blackout', 'shuffle', 'freeze', 'mirror', 'curse', 'bomb'];
 
+// チームHPを削りにくる技(= ダメージ攻撃トラック)。これ以外はすべて妨害攻撃トラックになる。
+// bomb は失敗したときのダメージが大きいのでダメージ側に入れている
+export const DAMAGE_ATTACK_KINDS = ['hp', 'drain', 'bomb'];
+export const attackTrackOf = (kind) => (DAMAGE_ATTACK_KINDS.includes(kind) ? 'damage' : 'disrupt');
+
 // ボス定義:
-//   attacks は重み付き抽選。minStage を付けた技は、そのステージ以降でのみ抽選対象になる
+//   attacks は重み付き抽選。minStage を付けた技は、そのステージ以降でのみ抽選対象になる。
+//   重みはトラック(ダメージ系 / 妨害系)ごとに独立して働くので、
+//   同じトラック内での出やすさだけを表す(例: hp と drain の比率)
 //   kind = ink(問題かくし) / blackout(問題??化) / shuffle(テンキー混乱) / freeze(入力こおり)
 //        / hp(チームHP攻撃) / mirror(問題かがみ文字) / curse(与ダメージ半減)
 //        / bomb(時間内に◯回正解しないと大ダメージ) / drain(チームHPを吸ってボス回復) / shield(ボスにバリア)
@@ -121,10 +136,12 @@ export const calcRaidDamage = (combo, cheerActive, mods = {}) => {
   return Math.max(1, Math.round(dmg));
 };
 
-// 攻撃間隔: 旧 max(8000, 20000-2000(s-1)) から短縮。げきおこ中はさらに約6割
-export const attackIntervalMs = (stage, enraged = false) => {
+// 攻撃間隔: 旧 max(8000, 20000-2000(s-1)) から短縮。げきおこ中はさらに約6割。
+// track ごとに別のタイマーで使うため、基準間隔にトラックの倍率を掛けて返す
+export const attackIntervalMs = (stage, enraged = false, track = 'disrupt') => {
   const base = Math.max(5000, 15000 - 1500 * (stage - 1));
-  const jittered = base * (0.85 + Math.random() * 0.3);
+  const rate = track === 'damage' ? RAID_CONSTANTS.DAMAGE_INTERVAL_RATE : RAID_CONSTANTS.DISRUPT_INTERVAL_RATE;
+  const jittered = base * rate * (0.85 + Math.random() * 0.3);
   return Math.round(jittered * (enraged ? RAID_CONSTANTS.ENRAGE_INTERVAL_RATE : 1));
 };
 
@@ -139,12 +156,23 @@ export const rollBurstCount = (stage, enraged = false) => {
   return Math.min(3, n);
 };
 
-// ボスの攻撃を重み付き抽選する(ホスト専用)。targets は 'all' か peerId の配列
+// ボスの攻撃を重み付き抽選する(ホスト専用)。targets は 'all' か peerId の配列。
+// opts.track を渡すと、そのトラック(damage / disrupt)の技だけから抽選する。
+// opts.exclude は今かかっている技(バリア・時限爆弾)を上書きしないための除外リスト
 export const pickBossAttack = (bossIndex, stage, participantIds, opts = {}) => {
   const boss = BOSSES[bossIndex];
   const enraged = !!opts.enraged;
-  const pool = boss.attacks.filter(a => !a.minStage || stage >= a.minStage);
-  const table = pool.length > 0 ? pool : boss.attacks;
+  const exclude = opts.exclude || [];
+  const inStage = (a) => !a.minStage || stage >= a.minStage;
+  const inTrack = (a) => !opts.track || attackTrackOf(a.kind) === opts.track;
+  // 条件を満たす技が無くなったら、除外→ステージ の順に条件をゆるめてトラックだけは守る
+  const candidates = [
+    boss.attacks.filter(a => inTrack(a) && inStage(a) && !exclude.includes(a.kind)),
+    boss.attacks.filter(a => inTrack(a) && inStage(a)),
+    boss.attacks.filter(a => inTrack(a)),
+    boss.attacks,
+  ];
+  const table = candidates.find(list => list.length > 0);
   const total = table.reduce((s, a) => s + a.weight, 0);
   let roll = Math.random() * total;
   let atk = table[0];
