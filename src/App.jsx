@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calculator, Trash2, PenTool, Home, Rocket,
@@ -9,6 +9,8 @@ import {
   LayoutDashboard, Lightbulb
 } from 'lucide-react';
 import { LearningToolPanel, getAvailableTools } from './LearningTools.jsx';
+import { createStudySession, STUDY_ABORT_AWAY_MS } from './studySession.js';
+import { loadStudyRecords, summarize, topMissedItems } from './studyStats.js';
 import { BACK_PRIORITY, useBackHandler, useHistoryBackGuard, EdgeSwipeBack } from './BackNavigation.jsx';
 import {
   RAID_CONSTANTS, bossForStage, bossMaxHp, calcRaidDamage, attackIntervalMs, pickBossAttack,
@@ -2473,6 +2475,12 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
   });
   const maxExp = Math.max(...chartData.map(d => d.exp), 500);
 
+  // 学習ログ(study.v1)のふりかえり。読み出し専用で、ここから書きかえは行わない
+  const study = useMemo(() => {
+    const records = loadStudyRecords();
+    return { summary: summarize(records, 7), missed: topMissedItems(records, 3) };
+  }, []);
+
   const claimMission = (mId) => {
     let newStats = { ...stats }; const m = newStats.missions.list.find(x => x.id === mId);
     if (m && m.current >= m.target && !m.claimed) {
@@ -2600,6 +2608,43 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
         </div>
       </div>
 
+      {/* まなびのきろく: 学習ログ(study.v1)を読んで、自分のがんばりをふりかえる */}
+      {study.summary.sessions > 0 && (
+        <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-4">
+          <h4 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text">
+            <Trophy size={18} className="text-[var(--accent)]" /> まなびのきろく（<R c="直" r="ちょっ" /><R c="近" r="きん" />7<R c="日" r="にち" />）
+          </h4>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-[var(--bg)] rounded-xl border-2 border-[var(--text)] p-2 text-center">
+              <div className="text-2xl font-black text-[var(--text)]">{study.summary.sessions}</div>
+              <div className="text-[10px] font-bold text-[var(--text)] opacity-60 ruby-text"><R c="回" r="かい" />あそんだ</div>
+            </div>
+            <div className="bg-[var(--bg)] rounded-xl border-2 border-[var(--text)] p-2 text-center">
+              <div className="text-2xl font-black text-[var(--secondary)]">{study.summary.minutes}<span className="text-xs ml-0.5 ruby-text"><R c="分" r="ふん" /></span></div>
+              <div className="text-[10px] font-bold text-[var(--text)] opacity-60 ruby-text"><R c="集" r="しゅう" /><R c="中" r="ちゅう" />した<R c="時" r="じ" /><R c="間" r="かん" /></div>
+            </div>
+            <div className="bg-[var(--bg)] rounded-xl border-2 border-[var(--text)] p-2 text-center">
+              <div className="text-2xl font-black text-[var(--primary)]">
+                {study.summary.firstTryRate == null ? '—' : `${Math.round(study.summary.firstTryRate * 100)}%`}
+              </div>
+              <div className="text-[10px] font-bold text-[var(--text)] opacity-60 ruby-text">1<R c="回" r="かい" />めで<R c="正" r="せい" /><R c="解" r="かい" /></div>
+            </div>
+          </div>
+          {study.missed.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-bold text-[var(--text)] opacity-70 mb-1.5 ruby-text">もういちど やってみよう</p>
+              <div className="flex flex-wrap gap-1.5">
+                {study.missed.map(m => (
+                  <span key={m.q} className="text-sm font-black bg-[var(--bg)] border-2 border-[var(--text)] rounded-full px-3 py-1 text-[var(--text)]">
+                    {m.q}<span className="text-[10px] opacity-60 ml-1">×{m.misses}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="w-full flex gap-2">
         <MotionButton className="bg-[var(--panel)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => setView('shop')}><Store size={20} /> きせかえ</MotionButton>
         <MotionButton className="bg-[var(--panel)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1 ruby-text" onClick={() => setView('manager')}><Settings size={20} /> コース<R c="管" r="かん" /><R c="理" r="り" /></MotionButton>
@@ -2675,6 +2720,8 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
       timeLimitSec: (configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') ? time * 60 : 0,
       problemSet: probs.map(p => ({ q: p.q, a: String(p.a).split('|') })),
       courseName: joinCourseNames(selectedGroups),
+      // 学習ログの単元IDに使う。メンバー側の端末でも同じ単元として記録されるように配る
+      courseNames: [...selectedGroups],
       gameMode: configMode
     };
 
@@ -3413,6 +3460,44 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const isResumedSessionRef = useRef(!!resumeSnapshot);
   const [quitDialog, setQuitDialog] = useState(false);
 
+  // --- 学習ログ（study.v1）---
+  // 端末に保存するだけで、外部へは一切送信しない。氏名などの識別情報も持たない。
+  // 記録に失敗してもゲームは止めない（studyLog.js 側で握りつぶす）。
+  const studyRef = useRef(null);
+  useEffect(() => {
+    const session = createStudySession({
+      gameMode: state.gameMode,
+      courseName: state.courseName,
+      courseNames: state.courseNames,
+      multiplayer: !!isMultiplayer,
+      // タイムアタックは出題数が決まっている。中断からの復帰時は「のこりの分」が今回のレコードになる
+      plannedCount: state.gameMode === 'TIME_ATTACK'
+        ? Math.max(0, state.problemSet.length - (resumeSnapshot?.correctCount || 0))
+        : null,
+    });
+    studyRef.current = session;
+    session.present(state.problemSet[resumeSnapshot?.qIndex || 0]?.q);
+    return () => { session.dispose(); studyRef.current = null; };
+  }, []);
+
+  // タブを離れたまま5分もどらなかったら、離れた時刻で1レコードを締める（中断）。
+  // 待っていた5分を学習時間に含めないため、endedAtMs には「離れた時刻」を渡す
+  useEffect(() => {
+    let awayTimer = null;
+    const onVisibility = () => {
+      if (document.hidden) {
+        const hiddenAt = Date.now();
+        awayTimer = setTimeout(() => {
+          if (!gameEndedRef.current) studyRef.current?.save({ status: 'aborted', endedAtMs: hiddenAt, ext: { maxCombo: maxComboRef.current } });
+        }, STUDY_ABORT_AWAY_MS);
+      } else if (awayTimer) {
+        clearTimeout(awayTimer); awayTimer = null;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { document.removeEventListener('visibilitychange', onVisibility); if (awayTimer) clearTimeout(awayTimer); };
+  }, []);
+
   // 「戻る」: どうぐ → メモ → やめる確認ダイアログ の順にとじる。
   // ゲーム中はいきなりホームへもどさず、かならず確認ダイアログを出す(とちゅうの記録を守るため)。
   useBackHandler(showTools, () => { audioCtrl.playSE('click'); setShowTools(false); return true; }, BACK_PRIORITY.overlay);
@@ -3669,6 +3754,19 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
     StorageAPI.saveStats(newStats); setStats(newStats);
 
+    // 学習ログ（study.v1）。「ポイントもらって終わる」で切りあげたときは中断として残す。
+    // マルチプレイは妨害・盤面戦略があるため学力指標に使えないが、取り組み量として記録する
+    studyRef.current?.save({
+      status: quitEarly ? 'aborted' : 'completed',
+      ext: {
+        maxCombo: maxComboRef.current,
+        level: getLevelInfo(newStats.totalExp).level,
+        score: baseExp,
+        ...(state.gameMode === 'BOSS_RAID' ? { bossDefeated: defeatedRef.current, supports: mySupportsRef.current } : {}),
+        ...(state.gameMode === 'TERRITORY' ? { paints: scoreRef.current } : {}),
+      },
+    });
+
     // ボスバトル/じんとり: ホストが権威データから最終結果を確定し、結果画面と全クライアントに配る
     const raidResult = (state.gameMode === 'BOSS_RAID' && peerState && peerState.role === 'host' && collectRaidResult) ? collectRaidResult() : null;
     const territoryResult = (state.gameMode === 'TERRITORY' && peerState && peerState.role === 'host' && collectTerritoryResult) ? collectTerritoryResult() : null;
@@ -3711,21 +3809,32 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       mistakes: mistakesRef.current,
       savedAt: Date.now()
     };
+    // 学習ログ: 中断としてここまでを1レコードで締める。
+    // 復帰後は新しいレコードを始めるため、このレコードに追記はしない（§5.4）
+    studyRef.current?.save({
+      status: 'aborted',
+      ext: { maxCombo: maxComboRef.current, level: getLevelInfo(stats.totalExp).level, score: scoreRef.current },
+    });
+
     StorageAPI.saveResume(snapshot);
     if (setResumeData) setResumeData(snapshot);
     showToast('success', 'とちゅうから保存しました');
     setState(prev => ({ ...prev, resumeSnapshot: null }));
     setView('home');
-  }, [state.problemSet, state.timeLimitSec, state.courseName, state.courseNames, state.gameMode, qIndex, combo, startTime, setState, setView, setResumeData]);
+  }, [state.problemSet, state.timeLimitSec, state.courseName, state.courseNames, state.gameMode, qIndex, combo, startTime, stats, setState, setView, setResumeData]);
 
   const submitAns = useCallback(() => {
     if (!ans || isRaidLocked()) return; const q = state.problemSet[qIndex];
     const normalizedAns = normalizeStr(ans);
     const isCorrect = q.a.some(correctStr => normalizeStr(correctStr) === normalizedAns);
 
+    // 学習ログ: 初回正答（firstTryCorrect）を出すため、正解・誤答の両方を1回の解答として数える
+    studyRef.current?.answer(isCorrect, ans);
+
     if (isCorrect) {
       // じんとりでは正解音を「インクをぬる音」に差しかえて、ぬった手ごたえを出す
       const newC = combo + 1; audioCtrl.playSE(isTerritory ? 'splat' : 'correct'); if (newC > 1) audioCtrl.playSE('combo', newC);
+      if (newC === 5) studyRef.current?.markFever();
       if (newC % 10 === 0) triggerConfetti({ particleCount: 50, spread: 60, origin: { y: 0.8 }, zIndex: 9999 });
       if (isRaid) {
         // 正解=ボスへの攻撃。score は与ダメージ累計として既存のスコア同期をそのまま使う
@@ -3765,7 +3874,12 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       }
 
       if (state.gameMode === 'TIME_ATTACK' && correctCount + 1 >= state.problemSet.length) { setTimeout(finishGame, 500); }
-      else { setQIndex(i => (i + 1) % state.problemSet.length); }
+      else {
+        const nextIndex = (qIndex + 1) % state.problemSet.length;
+        setQIndex(nextIndex);
+        // 同じ式が何度も出題されうるため、出題ごとに1件ずつ数える（§2.10）
+        studyRef.current?.present(state.problemSet[nextIndex]?.q);
+      }
     } else {
       audioCtrl.playSE('wrong'); setCombo(0); wrongCountRef.current += 1;
       if (isTerritory) setTerrMissAt(Date.now()); // ペンキーが「ドンマイ！」と はげましてくれる
@@ -3803,6 +3917,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const isRaidLockedRef = useRef(isRaidLocked); useEffect(() => { isRaidLockedRef.current = isRaidLocked; });
   const handleAppend = useCallback((c) => { if (isRaidLockedRef.current()) return; audioCtrl.playSE('click'); setAns(a => (a.length < 15 ? a + c : a)); }, []);
   const handleClear = useCallback(() => { audioCtrl.playSE('click'); setAns(''); }, []);
+  // どうぐを開いて解いた問題は、自力で解いたのとは分けて記録する（hint: true）
+  const handleToolUse = useCallback((toolId) => { studyRef.current?.markTool(toolId); }, []);
   const handleSubmit = useCallback(() => { submitAnsRef.current(); }, []);
 
   const q = state.problemSet[qIndex] || { q: '?', a: ['?'] };
@@ -3930,7 +4046,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         </div>
       </div>
 
-      <LearningToolPanel open={showTools} onClose={() => { audioCtrl.playSE('click'); setShowTools(false); }} courseName={state.courseName} qText={q.q} onFx={() => audioCtrl.playSE('click')} />
+      <LearningToolPanel open={showTools} onClose={() => { audioCtrl.playSE('click'); setShowTools(false); }} courseName={state.courseName} qText={q.q} onFx={() => audioCtrl.playSE('click')} onToolUse={handleToolUse} />
 
       {/* ボスバトルの全画面イベント演出(撃破・新ボス登場・たてなおし・おうえん・げきおこ・バクダン) */}
       {isRaid && <RaidEventOverlay lastEvent={raidState?.lastEvent} />}

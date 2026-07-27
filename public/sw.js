@@ -17,10 +17,16 @@ self.addEventListener('install', (event) => {
   );
 });
 
+// 同一オリジン(gigayama.github.io)には他の学習アプリも同居している。
+// 古いキャッシュの掃除は、かならず自アプリのプレフィックスが付いたものだけに限る
+const CACHE_PREFIX = 'qalc-cache-';
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(
+        keys.filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE).map((k) => caches.delete(k))
+      ))
       .then(() => self.clients.claim())
   );
 });

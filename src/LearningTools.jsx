@@ -2329,7 +2329,7 @@ const BaaiTool = ({ spec }) => {
 };
 
 // ---- どうぐパネル（ボトムシート） ----
-export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx }) => {
+export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx, onToolUse }) => {
   const tools = useMemo(() => getAvailableTools(courseName, qText), [courseName, qText]);
   const [active, setActive] = useState(tools[0] || null);
   const p = useMemo(() => parseArith(qText), [qText]);
@@ -2337,6 +2337,11 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx }) =>
   useEffect(() => {
     if (!tools.includes(active)) setActive(tools[0] || null);
   }, [qText, tools, active]);
+
+  // 学習ログ用: どのどうぐを見ながら解いたかを呼び出し側へ知らせる（その問題は hint 扱いになる）
+  useEffect(() => {
+    if (open && active) onToolUse?.(active);
+  }, [open, active, onToolUse]);
 
   return (
     <>
