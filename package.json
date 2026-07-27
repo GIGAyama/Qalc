@@ -7,7 +7,8 @@
         "dev": "vite",
         "build": "vite build",
         "lint": "eslint .",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "test:studylog": "node scripts/studyLog.test.mjs"
     },
     "dependencies": {
         "framer-motion": "^11.0.8",
