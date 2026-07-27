@@ -120,6 +120,19 @@ s5.save({});
 eq('wrong sanitized', read()[0].items[0].wrong, ['123456789012']);
 s5.dispose();
 
+// --- items は200件まで。attempted は items.length と一致させる（§2.7） ---
+store.clear();
+const s8 = createStudySession({ gameMode: 'SCORE_ATTACK', courseName: 'x', courseNames: ['2年_九九'] });
+for (let i = 0; i < 250; i++) { s8.present(`${i}+1`); s8.answer(i % 2 === 0, 'a'); if (i % 2 !== 0) s8.answer(true, '1'); }
+s8.save({});
+r = read()[0];
+eq('items capped', r.items.length, 200);
+eq('attempted === items.length', r.summary.attempted, r.items.length);
+eq('firstTryCorrect <= attempted', r.summary.firstTryCorrect <= r.summary.attempted, true);
+eq('count は実際の出題数', r.summary.count, 250);
+eq('切り捨てた分は ext に残す', r.ext.itemsTruncated.attempted, 250);
+s8.dispose();
+
 // --- 保存済みログが壊れていても復帰できる ---
 store.clear();
 localStorage.setItem('study.records.v1', '{壊れたJSON');

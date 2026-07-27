@@ -238,6 +238,7 @@ const sanitizeInput = (v) => {
 // 短くすると、教師の説明を聞くための数分の離席まで中断として記録されてしまう
 export const STUDY_ABORT_AWAY_MS = 5 * 60 * 1000;
 const IDLE_MS = 60 * 1000;           // 60秒 無操作で activeMs の加算を止める（§2.8）
+const STUDY_ITEMS_MAX = 200;         // 1レコードの設問数の上限。studyLog.js と同じ値（§2.10）
 
 // タブが表示され、かつ操作が続いていた時間を数える（§2.8 の参照実装）
 const createActiveTimer = () => {
@@ -371,9 +372,18 @@ export function createStudySession({ gameMode, courseName, courseNames, multipla
       if (disposed) return null;
       const carry = pending ? pending.q : null;
       closePending();
-      const attempted = items.length;
       // 1問も解答していない中断は保存しない（§5.4）。ログ枠500件を空レコードで埋めないため
-      if (attempted === 0) { reset(carry); return null; }
+      if (items.length === 0) { reset(carry); return null; }
+
+      // items は1レコード200件まで（studyLog.js が超過分を切り捨てる）。
+      // 集計側は正答率の分母を items から数えるため、attempted は切り詰めたあとの
+      // 件数に合わせ、`attempted === items.length` を必ず守る（§2.7）。
+      // 切り捨てが起きたときは、実際の解答数を ext に残して失わないようにする
+      const kept = items.slice(0, STUDY_ITEMS_MAX);
+      const truncated = items.length > kept.length
+        ? { attempted: items.length, firstTryCorrect }
+        : null;
+      const attempted = kept.length;
 
       const endMs = Math.max(startMs, endedAtMs || Date.now());
       const elapsedMs = endMs - startMs;
@@ -399,10 +409,10 @@ export function createStudySession({ gameMode, courseName, courseNames, multipla
         summary: {
           count,
           attempted,
-          firstTryCorrect,
-          correct: items.filter((it) => it.ok).length,
+          firstTryCorrect: kept.filter((it) => it.firstTry).length,
+          correct: kept.filter((it) => it.ok).length,
         },
-        items,
+        items: kept,
         ext: {
           ...ext,
           feverCount,
@@ -410,6 +420,7 @@ export function createStudySession({ gameMode, courseName, courseNames, multipla
           ...(Array.isArray(courseNames) && courseNames.length > 1
             ? { unitIds: courseNames.map(unitIdOf) }
             : {}),
+          ...(truncated ? { itemsTruncated: truncated } : {}),
         },
       };
 
