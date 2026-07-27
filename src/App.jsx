@@ -8,7 +8,7 @@ import {
   Store, CheckCircle2, PaintBucket, Shirt, Users, Radio,
   LayoutDashboard, Lightbulb
 } from 'lucide-react';
-import { LearningToolPanel, getAvailableTools } from './LearningTools.jsx';
+import { LearningToolPanel, getAvailableTools, TOOL_META } from './LearningTools.jsx';
 import { createStudySession, STUDY_ABORT_AWAY_MS } from './studySession.js';
 import { loadStudyRecords, summarize, topMissedItems } from './studyStats.js';
 import { BACK_PRIORITY, useBackHandler, useHistoryBackGuard, EdgeSwipeBack } from './BackNavigation.jsx';
@@ -3498,6 +3498,20 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     return () => { document.removeEventListener('visibilitychange', onVisibility); if (awayTimer) clearTimeout(awayTimer); };
   }, []);
 
+  // ページが破棄される直前にレコードを確定する。
+  // Chromebook ではメモリ不足やスリープでタブごと消されることがあり、上の5分タイマーも
+  // 一緒に消えるため、これがないと記録中のぶんが丸ごと失われる。
+  // beforeunload はモバイルや bfcache 経路で発火しないことがあるので pagehide を使う。
+  // 保存後は次のレコードが自動的に始まるので、bfcache から戻って学習が続いても取りこぼさない。
+  useEffect(() => {
+    const onPageHide = () => {
+      if (gameEndedRef.current) return; // 結果画面へ進んだぶんは finishGame で保存ずみ
+      studyRef.current?.save({ status: 'aborted', ext: { maxCombo: maxComboRef.current } });
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
+
   // 「戻る」: どうぐ → メモ → やめる確認ダイアログ の順にとじる。
   // ゲーム中はいきなりホームへもどさず、かならず確認ダイアログを出す(とちゅうの記録を守るため)。
   useBackHandler(showTools, () => { audioCtrl.playSE('click'); setShowTools(false); return true; }, BACK_PRIORITY.overlay);
@@ -3762,7 +3776,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         maxCombo: maxComboRef.current,
         level: getLevelInfo(newStats.totalExp).level,
         score: baseExp,
-        ...(state.gameMode === 'BOSS_RAID' ? { bossDefeated: defeatedRef.current, supports: mySupportsRef.current } : {}),
+        ...(state.gameMode === 'BOSS_RAID' ? { bossDefeated: defeatedRef.current > 0, bossDefeatedCount: defeatedRef.current, supports: mySupportsRef.current } : {}),
         ...(state.gameMode === 'TERRITORY' ? { paints: scoreRef.current } : {}),
       },
     });
@@ -3917,8 +3931,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const isRaidLockedRef = useRef(isRaidLocked); useEffect(() => { isRaidLockedRef.current = isRaidLocked; });
   const handleAppend = useCallback((c) => { if (isRaidLockedRef.current()) return; audioCtrl.playSE('click'); setAns(a => (a.length < 15 ? a + c : a)); }, []);
   const handleClear = useCallback(() => { audioCtrl.playSE('click'); setAns(''); }, []);
-  // どうぐを開いて解いた問題は、自力で解いたのとは分けて記録する（hint: true）
-  const handleToolUse = useCallback((toolId) => { studyRef.current?.markTool(toolId); }, []);
+  // どうぐを開いて解いた問題は、自力で解いたのとは分けて記録する（hint: true）。
+  // ext.tools は教師が読む値なので、内部IDではなく画面と同じ名前で残す
+  const handleToolUse = useCallback((toolId) => {
+    studyRef.current?.markTool(TOOL_META[toolId]?.label || toolId);
+  }, []);
   const handleSubmit = useCallback(() => { submitAnsRef.current(); }, []);
 
   const q = state.problemSet[qIndex] || { q: '?', a: ['?'] };
