@@ -36,8 +36,19 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
+      # npm install ではなく npm ci。
+      # package-lock.json のとおりに入れるので、ロックファイル外のバージョンが
+      # 勝手に入りこむことがない(配るものを毎回同じにする)
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+      # 配信されるライブラリ(本番依存)に既知の脆弱性がないことを確かめる。
+      # ビルド用ツール(devDependencies)は児童の端末に配られないので --omit=dev で外す。
+      # ここで止まったら、直すまでデプロイしない
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      # 学習ログと、へやの入室まわり(だれを入れるか・何を配るか)のテスト
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
       - name: Setup Pages

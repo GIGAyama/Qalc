@@ -22,6 +22,7 @@ import {
   PROTOCOL_VERSION, PEER_OPTIONS, ACCEPT_WINDOW_MS,
   ROOM_ID_LEN, generateRoomId, isValidRoomId, formatRoomId,
   NAME_MAX, sanitizeName,
+  parseMemberMessage, parseHostMessage,
   safeSend, sendToAll, sendToApproved,
 } from './roomAccess.js';
 import { BACK_PRIORITY, useBackHandler, useHistoryBackGuard, EdgeSwipeBack } from './BackNavigation.jsx';
@@ -5205,9 +5206,12 @@ export default function App() {
         memberSeenRef.current[conn.peer] = Date.now();
         setPeerState(p => ({ ...p, connections: [...p.connections.filter(c => c.peer !== conn.peer), conn] }));
       });
-      conn.on('data', (rawData) => {
+      conn.on('data', (incoming) => {
         if (!alive()) return;
         memberSeenRef.current[conn.peer] = Date.now(); // 何か届いた＝生きている
+        // 届いた値は信用しない。型と範囲でしぼり、知らない type は捨てる
+        const rawData = parseMemberMessage(incoming);
+        if (!rawData) return;
         if (rawData.type === 'pong') {
           return;
         } else if (rawData.type === 'leave') {
@@ -5220,8 +5224,8 @@ export default function App() {
             setTimeout(() => { try { conn.close(); } catch (e) {} }, 200);
             return;
           }
-          // 送られてきた名前は信用しない。改造した端末は長い文字列でも記号でも送ってこられる
-          const name = sanitizeName(rawData.name) || 'ゲスト';
+          // 名前は parseMemberMessage でかけ直してある。空なら「ゲスト」であつかう
+          const name = rawData.name || 'ゲスト';
           // ゲーム中はリーダーが承認画面を見られない。だまって待たせるのではなく理由を返して切る
           if (viewRef.current === 'game') {
             safeSend(conn, { type: 'room_closed', data: { reason: 'in_game' } });
@@ -5313,8 +5317,11 @@ export default function App() {
         setView('clientWait');
         showToast('success', 'リーダーに もうしこみました');
       });
-      conn.on('data', (rawData) => {
+      conn.on('data', (incoming) => {
         if (!alive()) return; // すでにルームを抜けている端末は、以降いっさい反応しない
+        // リーダーの端末が改造されている場合にそなえ、こちらでも型と範囲をたしかめる
+        const rawData = parseHostMessage(incoming);
+        if (!rawData) return;
         if (rawData.type === 'ping') {
           safeSend(conn, { type: 'pong' }); // 生きていることをリーダーへ返す
         } else if (rawData.type === 'join_accepted') {
@@ -5333,6 +5340,8 @@ export default function App() {
                 : 'リーダーがへやをとじました';
           teardownPeer({ type: 'warning', msg });
         } else if (rawData.type === 'game_start') {
+          // data は parseHostMessage で許可キーのみに絞られている。
+          // (以前は届いた data をそのまま混ぜていたため、知らないキーで画面の状態を上書きできた)
           setState(prev => ({ ...prev, raidResult: null, territoryResult: null, ...rawData.data }));
           // ボスバトル/じんとりなら初期スナップショットから表示を立ち上げる
           if (rawData.data.raid) preloadBossSprites();
@@ -5507,7 +5516,7 @@ export default function App() {
 
     return (
       <style>{`
-        /* フォントの読みこみは index.html の <link> に移した(CSPで許可先をはっきりさせるため) */
+        /* フォントの読みこみは main.jsx (同梱の woff2)。外部への通信はない */
         :root { ${themeVars} }
         body { font-family: 'Zen Maru Gothic', sans-serif; background-color: var(--bg); color: var(--text); touch-action: manipulation; transition: background-color 0.3s ease; }
         .no-scrollbar::-webkit-scrollbar { display: none; }

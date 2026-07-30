@@ -62,6 +62,198 @@ export const formatRoomId = (id) => (typeof id === 'string' && id.length === ROO
 export const NAME_MAX = 8;
 export const sanitizeName = (v) => (typeof v === 'string' ? v : '').replace(/[^ぁ-んァ-ヴーa-zA-Z0-9]/g, '').slice(0, NAME_MAX);
 
+// ==========================================
+// 受けとったメッセージの検証
+// ==========================================
+// 通信の相手は「同じアプリを開いているはず」の端末だが、そう決めつけてはいけない。
+// 開発者ツールから改造した端末は、どんな型のどんな値でも送ってこられる。
+// 送られた値をそのまま使うと、ボスを1発でたおす・盤面を一気にぬる・
+// 児童の画面に好きな文字を出す、といったことができてしまう。
+//
+// ここでは「知らない type は捨てる」「値は型と範囲でしぼる」「知らないキーは通さない」の
+// 3つだけを徹底する。範囲外は はじくのではなく丸める(clamp)。
+// 通信のゆらぎで正しい値が捨てられ、ゲームが進まなくなるほうが困るため。
+
+const TERR_CELLS = 7 * 7;               // じんとりの盤面(TERRITORY_CONSTANTS.COLS × ROWS)
+const TERR_SPECIAL_KINDS = ['drop', 'line', 'rush']; // TerritoryBattle.jsx の SPECIALS のキー
+const TERR_MAX_CHARGE = 12;             // 1正解あたりのぬり数の上限(App.jsx の Math.min(12, ...))
+// ボスへの与ダメージの上限。BossBattle.jsx の calcRaidDamage の最大値
+//   (10 + 2*コンボ10) * 1.5(フィーバー) * 2(おうえん) = 90
+// ★ calcRaidDamage の式を変えたら、この値も必ず見直すこと
+const RAID_MAX_DAMAGE = 90;
+const MAX_COMBO = 9999;
+const MAX_SCORE = 9999999;
+const GAME_MODES = ['SCORE_ATTACK', 'TIME_ATTACK', 'SUDDEN_DEATH', 'BOSS_RAID', 'TERRITORY'];
+
+// 数値として使える値だけを通し、範囲におさめる。整数でない/NaN/Infinity/文字列は null
+const num = (v, min, max, { int = true } = {}) => {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  if (int && !Number.isInteger(v)) v = Math.round(v);
+  return Math.min(max, Math.max(min, v));
+};
+const cellIdx = (v) => {
+  const n = num(v, 0, TERR_CELLS - 1);
+  return n === null ? null : n;
+};
+
+/* メンバー → リーダー のメッセージ。
+ * 参加者リストやゲームの進行を動かすのはこの向きなので、いちばん厳しく見る。
+ * 返り値は「安全な形にそろえたメッセージ」。捨てるべきものは null。 */
+export const parseMemberMessage = (raw) => {
+  if (!raw || typeof raw !== 'object' || typeof raw.type !== 'string') return null;
+  const d = raw.data && typeof raw.data === 'object' ? raw.data : {};
+
+  switch (raw.type) {
+    case 'pong':
+    case 'leave':
+    case 'raid_support':
+      return { type: raw.type };
+
+    case 'join':
+      // 版番号は数値でなければ「不一致」として扱わせる(NaN は PROTOCOL_VERSION と一致しない)
+      return { type: 'join', name: sanitizeName(raw.name), v: typeof raw.v === 'number' ? raw.v : -1 };
+
+    case 'score_update': {
+      const score = num(d.score, 0, MAX_SCORE);
+      const combo = num(d.combo, 0, MAX_COMBO);
+      if (score === null || combo === null) return null;
+      return { type: 'score_update', data: { score, combo } };
+    }
+
+    case 'raid_attack': {
+      // 1発でボスをたおせるような値は、ここで上限まで丸められる
+      const damage = num(d.damage, 1, RAID_MAX_DAMAGE);
+      const combo = num(d.combo, 0, MAX_COMBO);
+      if (damage === null || combo === null) return null;
+      return { type: 'raid_attack', data: { damage, combo } };
+    }
+
+    case 'terr_charge': {
+      const idx = cellIdx(d.cellIdx);
+      const amount = num(d.amount, 1, TERR_MAX_CHARGE);
+      const combo = num(d.combo, 0, MAX_COMBO);
+      if (idx === null || amount === null || combo === null) return null;
+      return { type: 'terr_charge', data: { cellIdx: idx, amount, combo } };
+    }
+
+    case 'terr_target': {
+      const idx = cellIdx(d.cellIdx);
+      if (idx === null) return null;
+      return { type: 'terr_target', data: { cellIdx: idx } };
+    }
+
+    case 'terr_special': {
+      const idx = cellIdx(d.cellIdx);
+      if (idx === null || !TERR_SPECIAL_KINDS.includes(d.kind)) return null;
+      return { type: 'terr_special', data: { kind: d.kind, cellIdx: idx } };
+    }
+
+    default:
+      return null; // 知らない type は捨てる
+  }
+};
+
+/* リーダー → メンバー のメッセージ。
+ * こちらは「リーダーの端末が改造されていたら」への備え。
+ * とくに game_start は、以前は届いた data を state にまるごと混ぜていたため、
+ * 知らないキーで画面の状態を上書きできた。
+ * いまは下で必要なキーを1つずつ組み立てるので、それ以外は入りようがない
+ * (届いた data をコピーしてから足し引きするのではなく、まっさらな器に詰めなおす)。 */
+
+// 問題は「文字列の問題文」と「答えの候補(文字列の配列)」だけ。
+// ここを通すことで、問題文の位置に画像やオブジェクトを差しこむことはできなくなる。
+const MAX_PROBLEMS = 2000;
+const MAX_PROBLEM_LEN = 200;
+const sanitizeProblems = (v) => {
+  if (!Array.isArray(v)) return [];
+  return v.slice(0, MAX_PROBLEMS).map((p) => ({
+    q: typeof p?.q === 'string' ? p.q.slice(0, MAX_PROBLEM_LEN) : '',
+    a: Array.isArray(p?.a)
+      ? p.a.filter((x) => typeof x === 'string').slice(0, 20).map((x) => x.slice(0, MAX_PROBLEM_LEN))
+      : [],
+  })).filter((p) => p.q && p.a.length);
+};
+
+const sanitizeParticipants = (v) => {
+  if (!v || typeof v !== 'object') return {};
+  const out = {};
+  Object.entries(v).slice(0, 100).forEach(([id, m]) => {
+    if (typeof id !== 'string' || !m || typeof m !== 'object') return;
+    out[id] = {
+      id,
+      // リーダー側でもかけているが、ここでもかける。長い名前で画面をくずされないように
+      name: sanitizeName(m.name) || 'ゲスト',
+      score: num(m.score, 0, MAX_SCORE) ?? 0,
+      combo: num(m.combo, 0, MAX_COMBO) ?? 0,
+      ...(m.team === 'red' || m.team === 'blue' ? { team: m.team } : {}),
+    };
+  });
+  return out;
+};
+
+export const parseHostMessage = (raw) => {
+  if (!raw || typeof raw !== 'object' || typeof raw.type !== 'string') return null;
+
+  switch (raw.type) {
+    case 'ping':
+    case 'join_accepted':
+    case 'version_mismatch':
+      return { type: raw.type };
+
+    case 'room_closed':
+      return { type: 'room_closed', data: { reason: typeof raw.data?.reason === 'string' ? raw.data.reason : '' } };
+
+    case 'game_start': {
+      const d = raw.data;
+      if (!d || typeof d !== 'object') return null;
+      const problemSet = sanitizeProblems(d.problemSet);
+      if (!problemSet.length) return null; // 問題がなければゲームは始めない
+      return {
+        type: 'game_start',
+        data: {
+          problemSet,
+          timeLimitSec: num(d.timeLimitSec, 0, 3600) ?? 0,
+          courseName: typeof d.courseName === 'string' ? d.courseName.slice(0, 200) : '',
+          courseNames: Array.isArray(d.courseNames)
+            ? d.courseNames.filter((x) => typeof x === 'string').slice(0, 50)
+            : [],
+          gameMode: GAME_MODES.includes(d.gameMode) ? d.gameMode : 'SCORE_ATTACK',
+          // raid / territory の中身はホスト権威のスナップショット。
+          // 形(オブジェクトかどうか)だけ見て、数値の細部は各モジュールの描画側にゆだねる
+          raid: d.raid && typeof d.raid === 'object' ? d.raid : null,
+          territory: d.territory && typeof d.territory === 'object' ? d.territory : null,
+        },
+      };
+    }
+
+    case 'game_finish': {
+      const d = raw.data && typeof raw.data === 'object' ? raw.data : {};
+      return {
+        type: 'game_finish',
+        data: {
+          ...(d.raidResult && typeof d.raidResult === 'object' ? { raidResult: d.raidResult } : {}),
+          ...(d.territoryResult && typeof d.territoryResult === 'object' ? { territoryResult: d.territoryResult } : {}),
+        },
+      };
+    }
+
+    case 'participants_update':
+      return { type: 'participants_update', data: sanitizeParticipants(raw.data) };
+
+    // ゲーム中のスナップショット・演出。オブジェクトであることだけ確かめて渡す
+    case 'raid_state':
+    case 'raid_boss_attack':
+    case 'raid_event':
+    case 'terr_state':
+    case 'terr_event':
+      if (!raw.data || typeof raw.data !== 'object') return null;
+      return { type: raw.type, data: raw.data };
+
+    default:
+      return null; // 知らない type は捨てる
+  }
+};
+
 // --- 送信のユーティリティ ---
 // 切断済みの接続へ送ると PeerJS がエラーを出すため、開いている接続にだけ送る
 export const safeSend = (conn, data) => {

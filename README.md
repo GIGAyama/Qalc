@@ -233,7 +233,7 @@ GIGA山の学習アプリ群で共通の形式（**スキーマ版 `study.v1` / 
 | P2P通信 | PeerJS (WebRTC) ※バンドルに同梱 |
 | QRコード | qrcode ※バンドルに同梱 |
 | エフェクト | Canvas Confetti ※バンドルに同梱 |
-| フォント | Zen Maru Gothic |
+| フォント | Zen Maru Gothic ※バンドルに同梱（woff2のみ） |
 | データ保存 | LocalStorage |
 | デプロイ | GitHub Pages |
 
@@ -252,13 +252,21 @@ GIGA山の学習アプリ群で共通の形式（**スキーマ版 `study.v1` / 
 | ホスト | 用途 | ブロックした場合 |
 |--------|------|------------------|
 | `gigayama.github.io` | アプリ本体の配信 | アプリが開けない |
-| `fonts.googleapis.com` / `fonts.gstatic.com` | 本文フォント | 標準フォントで表示される（動作に支障なし） |
 | `0.peerjs.com` | みんなであそぶ（へやの番号のやりとり） | **みんなであそぶだけが使えなくなる** |
 | `stun.l.google.com` / `eu-0.turn.peerjs.com` / `us-0.turn.peerjs.com` | みんなであそぶ（端末同士のつなぎ役） | 環境によってつながらない |
 
 みんなであそぶを使わせない運用にする場合は、**`0.peerjs.com` をブロックすればひとりで遊ぶモードだけに限定できる**。
 
-実行時に読みこむ JavaScript は、すべて自分のサイトから配信している（PeerJS・QRCode・Canvas Confetti は同梱済み）。外部 CDN からスクリプトを取ってくることはない。
+**ひとりで遊ぶだけなら、必要な通信は `gigayama.github.io` のみ。** JavaScript（PeerJS・QRCode・Canvas Confetti）と本文フォント（Zen Maru Gothic）はすべて同梱しており、外部CDNやGoogleへの通信は発生しない。フォントは unicode-range でサブセットに分かれているため、画面に出た文字ぶんだけ（ホーム画面なら14ファイル程度）が落ちてきて Service Worker にキャッシュされる。2回目以降は通信ゼロ、オフラインでも本来の書体で表示される。
+
+### 受けとったデータの検証
+
+P2P で届くメッセージは、開発者ツールから改造した端末なら何でも送ってこられる。そのため両方向で型と範囲をたしかめている（`src/roomAccess.js` の `parseMemberMessage` / `parseHostMessage`）。
+
+- 知らない `type` は捨てる。範囲外の数値は はじくのではなく丸める（通信のゆらぎでゲームが止まらないように）
+- メンバー→リーダー: ボスへの与ダメージは上限90（`calcRaidDamage` の最大値）、じんとりのマスは 0〜48、1正解あたりのぬり数は12まで。**巨大な数値を送ってボスを1発でたおすことはできない**
+- リーダー→メンバー: `game_start` は決まった7つのキーだけを組み立てなおす（以前は届いた値を画面の状態にまるごと混ぜていたため、知らないキーで上書きできた）。問題文は文字列200文字までにしぼる
+- 参加者リストのなまえは受けとる側でもかけ直す（長い名前で画面をくずされない）
 
 ### Content Security Policy
 
@@ -266,6 +274,7 @@ GIGA山の学習アプリ群で共通の形式（**スキーマ版 `study.v1` / 
 
 - `script-src 'self'` … 外部CDNからのスクリプト読み込みを禁止
 - `style-src` に `'unsafe-inline'` が必要 … テーマ切り替えが動的な `<style>`、Framer Motion が `style` 属性を書きかえるため。**外すとテーマとアニメーションが壊れる**
+- `font-src 'self'` … フォントも同梱したので外部は不要。`data:` を許可しなくてよいよう、Vite の `assetsInlineLimit` でフォントの data: URI 化を止めている（`vite.config.js`）
 - `connect-src` … PeerJS のシグナリング（`0.peerjs.com`）のみ許可
 - WebRTC の ICE（STUN/TURN）は CSP では制御できない（`stun:` / `turn:` を書いてもブラウザが無視する）。接続先は `src/roomAccess.js` の `PEER_OPTIONS` に明示している
 

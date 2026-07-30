@@ -11,6 +11,7 @@
       各指定の理由:
         script-src 'self'          … CDNからの動的読み込みをやめ、すべて同梱した
         style-src  'unsafe-inline' … テーマ切り替えが動的<style>、framer-motionがstyle属性を書きかえるため必須
+        font-src   'self'          … フォントも同梱したので外部は不要
         connect-src                … PeerJS のシグナリング(へやの番号のやりとり)だけを許可する
         object-src 'none' / base-uri / form-action … 使っていない機能をふさぐ
 
@@ -20,20 +21,12 @@
       接続先そのものは src/roomAccess.js の PEER_OPTIONS に明示しており、
       校内フィルタで許可が必要なホストは README にまとめてある。
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; worker-src 'self'; manifest-src 'self'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; worker-src 'self'; manifest-src 'self'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Qalc | カルク ～目指せ、計算マスター～</title>
     <meta name="description" content="小学生向け計算ゲーム学習アプリ。みんなで楽しく算数を学ぼう！" />
-    <!--
-      本文フォント。以前は App.jsx の動的<style>内で @import していたが、
-      CSPで許可するホストが読みとりにくかったため <link> に出した。
-      なお、これは いまも外部(Google)への通信であり、児童端末のIPとUAがGoogleに送られる。
-      完全に外へ出さないためには woff2 の同梱(セルフホスト)が必要 → 今後の課題として残す。
-    -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" />
+    <!-- 本文フォントは自分のサイトから配る(src/main.jsx で読みこみ)。外部への通信はない -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#FF6B6B" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
