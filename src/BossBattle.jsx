@@ -127,6 +127,9 @@ export const bossForStage = (stage) => {
 export const bossMaxHp = (stage, n) => Math.round((75 + 75 * Math.max(1, n)) * Math.pow(1.34, stage - 1));
 
 // プレイヤーの与ダメージ。mods でボスのバリア/のろいの影響を反映する
+// ★ この式の最大値は roomAccess.js の RAID_MAX_DAMAGE(=90) に写してある。
+//   改造した端末が大きなダメージを送ってこないよう、リーダー側でそこまで丸めている。
+//   式をいじって最大値が変わるときは、あちらも必ず直すこと(でないと正しい攻撃が丸められる)。
 export const calcRaidDamage = (combo, cheerActive, mods = {}) => {
   let dmg = 10 + 2 * Math.min(combo, 10);
   if (combo >= 5) dmg *= 1.5; // フィーバー

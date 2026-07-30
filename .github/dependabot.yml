@@ -1,0 +1,30 @@
+# 依存ライブラリの更新を自動で提案させる。
+# 児童の端末に配られるのは dependencies だけなので、そちらは毎週みる。
+# 更新のPRはレビューが必要（勝手にマージはされない）。
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      # 配信されるライブラリ。ここの更新は優先してみる
+      production:
+        applies-to: version-updates
+        dependency-type: production
+      # ビルド用ツール。まとめて1本のPRにして、レビューの手間を増やさない
+      development:
+        applies-to: version-updates
+        dependency-type: development
+
+  # GitHub Actions 自体のバージョンも古くならないようにする
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

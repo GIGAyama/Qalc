@@ -1,3 +1,7 @@
+/* 本文フォント(Zen Maru Gothic)は main.jsx から読みこむ。
+ * ここで @import すると Vite が woff(旧形式)も成果物に入れてしまい、
+ * だれも使わないファイルが7MBぶん増えるため(vite.config.js の drop-legacy-woff 参照) */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
