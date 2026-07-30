@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+// 外部CDNからの動的読み込みはやめ、すべてバンドルに同梱する。
+// 理由: (1) CDNが改ざんされると児童端末で任意コードが動く (2) 校内フィルタでCDNが
+// ブロックされると「エラーも出ないまま機能が動かない」 (3) CSPを 'self' で閉じられる
+import Peer from 'peerjs';
+import QRCode from 'qrcode';
+import confetti from 'canvas-confetti';
 import {
   Calculator, Trash2, PenTool, Home, Rocket,
   Flame, Clock, Award, Settings, Plus, XCircle, Bot, Volume2,
@@ -11,6 +17,13 @@ import {
 import { LearningToolPanel, getAvailableTools, TOOL_META } from './LearningTools.jsx';
 import { createStudySession, STUDY_ABORT_AWAY_MS } from './studySession.js';
 import { loadStudyRecords, summarize, topMissedItems } from './studyStats.js';
+// 「だれがへやに入れるか」「だれに何を配るか」は roomAccess.js に切りだしてテストしている
+import {
+  PROTOCOL_VERSION, PEER_OPTIONS, ACCEPT_WINDOW_MS,
+  ROOM_ID_LEN, generateRoomId, isValidRoomId, formatRoomId,
+  NAME_MAX, sanitizeName,
+  safeSend, sendToAll, sendToApproved,
+} from './roomAccess.js';
 import { BACK_PRIORITY, useBackHandler, useHistoryBackGuard, EdgeSwipeBack } from './BackNavigation.jsx';
 import {
   RAID_CONSTANTS, bossForStage, bossMaxHp, calcRaidDamage, attackIntervalMs, pickBossAttack,
@@ -2225,7 +2238,7 @@ const StorageAPI = {
 // ==========================================
 const toastEvent = new EventTarget();
 const showToast = (icon, title) => { toastEvent.dispatchEvent(new CustomEvent('show', { detail: { icon, title } })); };
-const triggerConfetti = (options) => { if (window.confetti) window.confetti(options); };
+const triggerConfetti = (options) => { try { confetti(options); } catch (e) { /* 演出なので失敗しても進める */ } };
 
 const CustomToast = () => {
   const [toasts, setToasts] = useState([]);
@@ -2430,31 +2443,6 @@ const Keypad = React.memo(({ onAppend, onClear, onSubmit, digitLayout = DEFAULT_
     </div>
   </div>
 ));
-
-// CDNスクリプト動的読み込みフック（PeerJS, QRCode, canvas-confetti）
-const useExternalScripts = () => {
-  const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    const loadScript = (src) => new Promise((resolve) => {
-      if (document.querySelector(`script[src="${src}"]`)) return resolve();
-      const script = document.createElement('script');
-      script.src = src; script.onload = resolve; script.onerror = resolve; document.head.appendChild(script);
-    });
-    Promise.all([
-      loadScript('https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js'),
-      loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'),
-      loadScript('https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js')
-    ]).then(() => setLoaded(true));
-  }, []);
-  return loaded;
-};
-
-// --- P2P通信のユーティリティ ---
-// 切断済みの接続へ送ると PeerJS がエラーを出すため、開いている接続にだけ送る
-const safeSend = (conn, data) => {
-  try { if (conn && conn.open) conn.send(data); } catch (e) { /* すでに切れている接続は無視 */ }
-};
-const sendToAll = (connections, data) => (connections || []).forEach(c => safeSend(c, data));
 
 // 退出検知(ハートビート)。PeerJS の close は相手が黙って消えたとき数十秒〜届かないことがあるため、
 // ホストから定期的に ping を投げ、一定時間 pong が返らないメンバーは「抜けた」とみなす。
@@ -2662,7 +2650,7 @@ const MULTI_MODES = [
   { id: 'BOSS_RAID', label: 'ボス' },
   { id: 'TERRITORY', label: 'じんとり' },
 ];
-const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, configMode, setConfigMode, initRaid, initTerritory }) => {
+const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, configMode, setConfigMode, initRaid, initTerritory, approveMember, rejectMember }) => {
   const [groups, setGroups] = useState([]); const [selectedGroups, setSelectedGroups] = useState([]);
   const [time, setTime] = useState(3);
   const [selectedGrade, setSelectedGrade] = useState('すべて');
@@ -2676,16 +2664,35 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
 
   useEffect(() => { setGroups(StorageAPI.getProblemGroups()); }, []);
 
-  // QRコード描画
+  // QRコード描画（同梱した qrcode を canvas に直接描く。innerHTML の組み立てはしない）
+  const qrRef = useRef(null);
   useEffect(() => {
-    if (peerState.hostId && window.QRCode && document.getElementById('qrcode')) {
-      document.getElementById('qrcode').innerHTML = ''; // クリア
-      const url = `${window.location.origin}${window.location.pathname}?host=${peerState.hostId}`;
-      new window.QRCode(document.getElementById('qrcode'), { text: url, width: 160, height: 160 });
-    }
+    if (!peerState.hostId || !qrRef.current) return;
+    QRCode.toCanvas(qrRef.current, `${window.location.origin}${window.location.pathname}?host=${peerState.hostId}`, { width: 160, margin: 1 })
+      .catch(() => { /* 番号の手入力でも参加できるので、QRが出せなくても止めない */ });
   }, [peerState.hostId]);
 
   const hostTeam = peerState.hostTeam || 'red';
+
+  // うけつけタイムの残り秒。1秒ごとに描きかえて、開いたままにならないよう残りを見せる
+  const [acceptLeft, setAcceptLeft] = useState(0);
+  useEffect(() => {
+    const tick = () => setAcceptLeft(Math.max(0, Math.ceil(((peerState.acceptUntil || 0) - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [peerState.acceptUntil]);
+
+  const pendingList = Object.entries(peerState.pending || {});
+
+  const toggleAcceptWindow = () => {
+    audioCtrl.playSE('click');
+    setPeerState(p => ({ ...p, acceptUntil: (p.acceptUntil || 0) > Date.now() ? 0 : Date.now() + ACCEPT_WINDOW_MS }));
+  };
+  const approveAllPending = () => {
+    audioCtrl.playSE('coin');
+    pendingList.forEach(([id]) => approveMember(id));
+  };
 
   // じんとり用: メンバーのチームをタップで入れかえる(参加者リスト経由で全員に同期される)
   const toggleMemberTeam = (id) => {
@@ -2694,7 +2701,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
       const cur = p.participants[id];
       if (!cur) return p;
       const newP = { ...p, participants: { ...p.participants, [id]: { ...cur, team: cur.team === 'blue' ? 'red' : 'blue' } } };
-      sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
+      sendToApproved(newP, { type: 'participants_update', data: newP.participants });
       return newP;
     });
   };
@@ -2755,7 +2762,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
       });
       resetParticipants[p.hostId] = { id: p.hostId, name: 'リーダー', score: 0, combo: 0, ...(teamsMap ? { team: hostTeam } : {}) };
       const newP = { ...p, participants: resetParticipants, connections: p.connections.filter(c => c.open) };
-      sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
+      sendToApproved(newP, { type: 'participants_update', data: newP.participants });
       return newP;
     });
 
@@ -2775,9 +2782,10 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-5 flex flex-col gap-6 overflow-y-auto flex-grow shadow-sm">
         <div className="flex flex-col items-center justify-center p-4 bg-[var(--bg)] rounded-xl border-2 border-dashed border-[var(--text)] shrink-0">
           <p className="font-bold text-[var(--primary)] mb-1 text-sm ruby-text">ルーム<R c="番" r="ばん" /><R c="号" r="ごう" /></p>
-          <h4 className="font-black text-5xl text-[var(--text)] mb-4 tracking-widest">{peerState.hostId}</h4>
+          {/* 10けたは長いので 4-3-3 に区切って見せる。打つときは数字だけでよい（すきまは読みやすさのため） */}
+          <h4 className="font-black text-3xl sm:text-4xl text-[var(--text)] mb-4 tracking-wider tabular-nums">{formatRoomId(peerState.hostId)}</h4>
           <p className="font-bold text-sm text-[var(--text)] mb-3 ruby-text">この<R c="数" r="すう" /><R c="字" r="じ" />を<R c="入" r="にゅう" /><R c="力" r="りょく" />するか、QRコードを<R c="読" r="よ" />みこんでね</p>
-          <div id="qrcode" className="bg-white p-3 rounded-xl mb-3 shadow-inner"></div>
+          <canvas ref={qrRef} className="bg-white p-3 rounded-xl mb-3 shadow-inner" />
           <div className="w-full flex items-center bg-white border-2 border-gray-200 rounded-lg p-2">
             <input type="text" readOnly value={`${window.location.origin}${window.location.pathname}?host=${peerState.hostId}`} className="text-xs font-mono w-full outline-none bg-transparent" />
             <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?host=${peerState.hostId}`); showToast('success', 'コピーしました'); }} className="text-gray-500 hover:text-[var(--primary)] ml-2"><Share2 size={16} /></button>
@@ -2870,7 +2878,48 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
           </div>
         )}
 
+        {/* 入室のきょか。ここを通した人だけが参加者リスト・問題・ゲーム開始を受けとれる */}
         <div className="shrink-0">
+          <h4 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text flex items-center justify-between">
+            <span><R c="入" r="はい" />りたい<R c="人" r="ひと" /></span>
+            {pendingList.length > 0 && <span className="text-sm text-[var(--panel)] bg-[var(--primary)] rounded-full px-3 py-0.5">{pendingList.length}</span>}
+          </h4>
+
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={toggleAcceptWindow}
+              className={`flex-1 py-2 text-xs font-black rounded-lg border-2 transition-colors ruby-text ${acceptLeft > 0 ? 'bg-[var(--secondary)] text-[var(--panel)] border-[var(--text)]' : 'bg-transparent border-gray-300 text-gray-500'}`}
+            >
+              {acceptLeft > 0
+                ? <>うけつけ<R c="中" r="ちゅう" /> あと {acceptLeft} <R c="秒" r="びょう" />（とめる）</>
+                : <>うけつけタイム（{ACCEPT_WINDOW_MS / 1000}<R c="秒" r="びょう" />）</>}
+            </button>
+            {pendingList.length > 1 && (
+              <button onClick={approveAllPending} className="px-3 py-2 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--accent)] text-[var(--text)] ruby-text">
+                ぜんいん いれる
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2 mb-5">
+            {pendingList.length === 0 && (
+              <p className="text-center text-gray-400 py-2 font-bold text-xs ruby-text">
+                {acceptLeft > 0
+                  ? <>いま<R c="入" r="はい" />ってくる<R c="人" r="ひと" />は じどうで きょかされます</>
+                  : <>もうしこみが あると ここに<R c="出" r="で" />ます</>}
+              </p>
+            )}
+            {pendingList.map(([id, req]) => (
+              <div key={id} className="flex justify-between items-center bg-[var(--bg)] p-2 pl-3 rounded-xl border-2 border-dashed border-[var(--primary)] gap-2">
+                <span className="font-bold text-[var(--text)] truncate">{req.name}</span>
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={() => { audioCtrl.playSE('coin'); approveMember(id); }} className="px-3 py-1.5 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--secondary)] text-[var(--panel)]">いれる</button>
+                  <button onClick={() => { audioCtrl.playSE('click'); rejectMember(id); }} className="px-3 py-1.5 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--panel)] text-[var(--text)]">ことわる</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
           <h4 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text"><R c="参" r="さん" /><R c="加" r="か" /><R c="者" r="しゃ" />の<R c="状" r="じょう" /><R c="況" r="きょう" /></h4>
           <div className="flex flex-col gap-2">
             {Object.keys(peerState.participants).length === 0 && <p className="text-center text-gray-400 py-4 font-bold text-sm ruby-text"><R c="参" r="さん" /><R c="加" r="か" /><R c="者" r="しゃ" />がいません</p>}
@@ -2899,6 +2948,14 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
 const ClientJoinView = ({ initClient, urlHostId, setView }) => {
   const [name, setName] = useState('');
   const [roomId, setRoomId] = useState(urlHostId || '');
+
+  const submit = () => {
+    if (!isValidRoomId(roomId)) return showToast('warning', `ルーム番号は ${ROOM_ID_LEN} けたの数字です`);
+    const clean = sanitizeName(name);
+    if (!clean) return showToast('warning', 'なまえは ひらがな・カタカナ・すうじ で 入れてね');
+    initClient(clean, roomId);
+  };
+
   return (
     <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] p-6 text-center shadow-md max-w-sm mx-auto mt-10 flex flex-col">
       <div className="bg-[var(--accent)] w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-[var(--text)] shrink-0">
@@ -2907,36 +2964,40 @@ const ClientJoinView = ({ initClient, urlHostId, setView }) => {
       <h3 className="font-black text-2xl mb-4 text-[var(--text)] shrink-0 ruby-text">へやに<R c="入" r="はい" />ります</h3>
 
       <div className="mb-4 shrink-0">
-        <p className="font-bold mb-2 text-[var(--text)] opacity-70 text-sm ruby-text">ルーム<R c="番" r="ばん" /><R c="号" r="ごう" />（<R c="数" r="すう" /><R c="字" r="じ" />）</p>
+        <p className="font-bold mb-2 text-[var(--text)] opacity-70 text-sm ruby-text">ルーム<R c="番" r="ばん" /><R c="号" r="ごう" />（<R c="数" r="すう" /><R c="字" r="じ" />{ROOM_ID_LEN}けた）</p>
         <input
           type="text"
           inputMode="numeric"
-          className="w-full border-[3px] border-[var(--text)] rounded-xl p-4 font-black text-2xl tracking-widest text-center outline-none focus:border-[var(--secondary)] bg-[var(--bg)]"
-          placeholder="123456"
+          maxLength={ROOM_ID_LEN}
+          className="w-full border-[3px] border-[var(--text)] rounded-xl p-4 font-black text-2xl tracking-wider text-center outline-none focus:border-[var(--secondary)] bg-[var(--bg)] tabular-nums"
+          placeholder="1234567890"
           value={roomId}
-          onChange={(e) => setRoomId(e.target.value.replace(/[^0-9]/g, ''))}
+          onChange={(e) => setRoomId(e.target.value.replace(/[^0-9]/g, '').slice(0, ROOM_ID_LEN))}
         />
+        <p className="text-[11px] font-bold text-[var(--text)] opacity-50 mt-1 tabular-nums">{roomId.length} / {ROOM_ID_LEN}</p>
       </div>
 
       <div className="mb-6 shrink-0">
-        <p className="font-bold mb-2 text-[var(--text)] opacity-70 text-sm ruby-text">あなたの<R c="名" r="な" /><R c="前" r="まえ" /></p>
+        <p className="font-bold mb-2 text-[var(--text)] opacity-70 text-sm ruby-text">あなたの<R c="名" r="な" /><R c="前" r="まえ" />（ニックネーム）</p>
         <input
           type="text"
+          maxLength={NAME_MAX}
           className="w-full border-[3px] border-[var(--text)] rounded-xl p-4 font-black text-xl text-center outline-none focus:border-[var(--secondary)] bg-[var(--bg)]"
-          placeholder="なまえ"
+          placeholder="さくら / 5ばん"
           value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') { if (!roomId.trim()) return showToast('warning', 'ルーム番号を入力してください'); if (!name.trim()) return showToast('warning', '名前を入力してください'); initClient(name, roomId); } }}
+          onChange={(e) => setName(sanitizeName(e.target.value))}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
         />
+        {/* 本名を入れないことは技術だけでは防げない。ここで はっきり つたえる */}
+        <p className="text-[11px] font-bold text-[var(--primary)] mt-2 leading-snug ruby-text">
+          ⚠ ほんとうの<R c="名" r="な" /><R c="前" r="まえ" />（フルネーム）は<R c="入" r="い" />れないでね。<br />
+          ひらがな・カタカナ・すうじで {NAME_MAX}<R c="文" r="も" /><R c="字" r="じ" />までだよ
+        </p>
       </div>
 
       <MotionButton
         className="bg-[var(--secondary)] text-[var(--panel)] w-full py-4 text-xl border-[3px] border-[var(--text)] shrink-0"
-        onClick={() => {
-          if (!roomId.trim()) return showToast('warning', 'ルーム番号を入力してください');
-          if (!name.trim()) return showToast('warning', '名前を入力してください');
-          initClient(name, roomId);
-        }}
+        onClick={submit}
       >
         へやに<R c="入" r="はい" />る！
       </MotionButton>
@@ -2947,18 +3008,34 @@ const ClientJoinView = ({ initClient, urlHostId, setView }) => {
 };
 
 // --- クライアント 待機画面 ---
-const ClientWaitView = ({ peerState, leaveRoom }) => (
-  <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] p-8 text-center shadow-md flex flex-col items-center justify-center min-h-[50vh] max-w-sm mx-auto mt-10">
-    <div className="animate-spin mb-6 bg-[var(--bg)] p-4 rounded-full border-2 border-[var(--text)]">
-      <Radio size={48} className="text-[var(--secondary)]" />
+// リーダーの「きょか」を待っている間と、きょかが出てゲーム開始を待っている間の2つの状態がある。
+// 児童に「いま何を待っているのか」が伝わるように、見た目と文言をはっきり分ける。
+const ClientWaitView = ({ peerState, leaveRoom }) => {
+  const approved = !!peerState.approved;
+  return (
+    <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] p-8 text-center shadow-md flex flex-col items-center justify-center min-h-[50vh] max-w-sm mx-auto mt-10">
+      <div className="animate-spin mb-6 bg-[var(--bg)] p-4 rounded-full border-2 border-[var(--text)]">
+        {approved ? <Radio size={48} className="text-[var(--secondary)]" /> : <Clock size={48} className="text-[var(--primary)]" />}
+      </div>
+      {approved ? (
+        <>
+          <h3 className="font-black text-3xl text-[var(--text)] mb-3 ruby-text">{peerState.myName} さん、<br /><R c="準" r="じゅん" /><R c="備" r="び" />OK！</h3>
+          <p className="font-bold text-[var(--text)] opacity-70 bg-[var(--accent)] px-4 py-2 rounded-lg border-2 border-[var(--text)] mb-6 ruby-text">
+            リーダーがスタートするまで<br />このまま<R c="待" r="ま" />っていてね
+          </p>
+        </>
+      ) : (
+        <>
+          <h3 className="font-black text-2xl text-[var(--text)] mb-3 ruby-text">リーダーの<br /><R c="許" r="きょ" /><R c="可" r="か" />を<R c="待" r="ま" />っています</h3>
+          <p className="font-bold text-[var(--text)] opacity-70 bg-[var(--bg)] border-2 border-dashed border-[var(--text)] px-4 py-2 rounded-lg mb-6 ruby-text text-sm">
+            「{peerState.myName}」で<R c="申" r="もう" />しこみました。<br />リーダーが「いれる」を おすまで<br />ちょっと<R c="待" r="ま" />っててね
+          </p>
+        </>
+      )}
+      <button className="text-[var(--text)] opacity-50 font-bold hover:opacity-100 transition underline ruby-text" onClick={leaveRoom}>やめる（<R c="退" r="たい" /><R c="出" r="しゅつ" />する）</button>
     </div>
-    <h3 className="font-black text-3xl text-[var(--text)] mb-3 ruby-text">{peerState.myName} さん、<br /><R c="準" r="じゅん" /><R c="備" r="び" />OK！</h3>
-    <p className="font-bold text-[var(--text)] opacity-70 bg-[var(--accent)] px-4 py-2 rounded-lg border-2 border-[var(--text)] mb-6 ruby-text">
-      リーダーがスタートするまで<br />このまま<R c="待" r="ま" />っていてね
-    </p>
-    <button className="text-[var(--text)] opacity-50 font-bold hover:opacity-100 transition underline ruby-text" onClick={leaveRoom}>やめる（<R c="退" r="たい" /><R c="出" r="しゅつ" />する）</button>
-  </div>
-);
+  );
+};
 
 
 // --- ショップ＆きせかえ画面 ---
@@ -3702,7 +3779,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       setPeerState(p => {
         if (!p.hostId || !p.participants[p.hostId]) return p;
         const newP = { ...p, participants: { ...p.participants, [p.hostId]: { ...p.participants[p.hostId], score, combo } } };
-        sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
+        sendToApproved(newP, { type: 'participants_update', data: newP.participants });
         return newP;
       });
     }
@@ -3798,7 +3875,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       safeSend(peerState.conn, { type: 'game_finish', data: { finalScore: baseExp } });
     } else if (peerState && peerState.role === 'host') {
       // ホストが終了した場合、全クライアントにも終了を通知
-      sendToAll(peerState.connections, { type: 'game_finish', data: raidResult ? { raidResult } : territoryResult ? { territoryResult } : undefined });
+      sendToApproved(peerState, { type: 'game_finish', data: raidResult ? { raidResult } : territoryResult ? { territoryResult } : undefined });
     }
 
     setView('result');
@@ -4484,6 +4561,9 @@ const ImportView = ({ setView }) => {
 // ==========================================
 export default function App() {
   const [view, setView] = useState('home');
+  // PeerJS のコールバックから「いまどの画面か」を見るためのref(コールバックは古い view を閉じこめてしまうため)
+  const viewRef = useRef(view);
+  useEffect(() => { viewRef.current = view; }, [view]);
   const [configMode, setConfigMode] = useState('SCORE_ATTACK');
   const [isMuted, setIsMuted] = useState(audioCtrl.muted);
   const [state, setState] = useState({ problemSet: [], timeLimitSec: 0, courseName: '', finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0, gameMode: 'SCORE_ATTACK', mistakes: [] });
@@ -4513,11 +4593,12 @@ export default function App() {
     showToast('success', '中断データを消しました');
   };
 
-  const scriptsLoaded = useExternalScripts();
-
   // P2P通信用のステート
+  // pending: 入室を申しこんだがリーダーがまだ「いれる」をおしていない人。participants には入れない
+  // acceptUntil: 「うけつけタイム」の終了時刻(ミリ秒)。この間の申しこみは自動で許可する
+  // approved: メンバー側が「リーダーの許可が出たか」を持つフラグ
   const [urlHostId, setUrlHostId] = useState(null);
-  const [peerState, setPeerState] = useState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {} });
+  const [peerState, setPeerState] = useState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {}, pending: {}, acceptUntil: 0, approved: false });
   const peerStateRef = useRef(peerState);
   useEffect(() => { peerStateRef.current = peerState; }, [peerState]);
   // ルームに入りなおすたびに増える通し番号。退出後に古い接続のイベントで画面が動かないようにするための世代管理
@@ -5003,8 +5084,9 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const hostParam = params.get('host');
+    // URLの値はそのまま使わない。10けたの数字の形をしていなければ、ただの参加画面として開く
     if (hostParam) {
-      setUrlHostId(hostParam);
+      setUrlHostId(isValidRoomId(hostParam) ? hostParam : null);
       setView('clientJoin');
       // リロード時などに意図せず参加画面に戻らないようURLパラメータを消去
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -5013,10 +5095,10 @@ export default function App() {
 
   // 【ホスト専用】メンバーが抜けたときの後片付け。
   // 参加者リスト・接続・じんとりのねらい表示から取りのぞき、残りの全員へ最新の参加者リストを配る。
-  const hostRemoveMember = useCallback((peerId, notify) => {
+  const hostRemoveMember = useCallback((peerId, notify, reason = 'removed') => {
     const cur = peerStateRef.current;
     if (cur.role !== 'host' || !peerId || peerId === cur.hostId) return;
-    const known = !!cur.participants[peerId] || cur.connections.some(c => c.peer === peerId);
+    const known = !!cur.participants[peerId] || !!cur.pending?.[peerId] || cur.connections.some(c => c.peer === peerId);
     if (!known) return;
     const name = cur.participants[peerId]?.name;
 
@@ -5025,19 +5107,50 @@ export default function App() {
 
     // 相手の端末が生きている場合(通信不良で切ったときなど)は、へやから外れたことを伝えてから切断する
     const gone = cur.connections.find(c => c.peer === peerId);
-    if (gone) { safeSend(gone, { type: 'room_closed', data: { reason: 'removed' } }); setTimeout(() => { try { gone.close(); } catch (e) {} }, 200); }
+    if (gone) { safeSend(gone, { type: 'room_closed', data: { reason } }); setTimeout(() => { try { gone.close(); } catch (e) {} }, 200); }
 
     setPeerState(p => {
-      if (!p.participants[peerId] && !p.connections.some(c => c.peer === peerId)) return p;
+      if (!p.participants[peerId] && !p.pending?.[peerId] && !p.connections.some(c => c.peer === peerId)) return p;
       const participants = { ...p.participants };
       delete participants[peerId];
-      const newP = { ...p, participants, connections: p.connections.filter(c => c.peer !== peerId) };
-      sendToAll(newP.connections, { type: 'participants_update', data: participants });
+      const pending = { ...(p.pending || {}) };
+      delete pending[peerId];
+      const newP = { ...p, participants, pending, connections: p.connections.filter(c => c.peer !== peerId) };
+      sendToApproved(newP, { type: 'participants_update', data: participants });
       return newP;
     });
 
     if (notify && name) showToast('warning', `${name} さんが たいしゅつしました`);
   }, []);
+
+  // 【ホスト専用】入室の申しこみを許可する。ここを通らないと participants に入らない＝
+  // 参加者リストもゲーム開始も届かない(＝番号を知っているだけでは、へやの中は見えない)
+  const hostApproveMember = useCallback((peerId) => {
+    setPeerState(p => {
+      const req = p.pending?.[peerId];
+      const conn = p.connections.find(c => c.peer === peerId);
+      if (!req || !conn) return p;
+      // じんとり用に参加時点でチームを自動割当(人数の少ない側へ)。他モードでは使われないだけで無害
+      const hostTeam = p.hostTeam || 'red';
+      let red = hostTeam === 'red' ? 1 : 0; let blue = 1 - red;
+      Object.entries(p.participants).forEach(([id, m]) => { if (id === p.hostId) return; if (m.team === 'blue') blue++; else red++; });
+      const team = red <= blue ? 'red' : 'blue';
+      const pending = { ...p.pending }; delete pending[peerId];
+      const newP = {
+        ...p,
+        pending,
+        participants: { ...p.participants, [peerId]: { id: peerId, name: req.name, score: 0, combo: 0, team } },
+      };
+      safeSend(conn, { type: 'join_accepted' });
+      sendToApproved(newP, { type: 'participants_update', data: newP.participants });
+      return newP;
+    });
+  }, []);
+
+  // 【ホスト専用】申しこみをことわる。相手には「きょかされなかった」ことを伝えて切る
+  const hostRejectMember = useCallback((peerId) => {
+    hostRemoveMember(peerId, false, 'rejected');
+  }, [hostRemoveMember]);
 
   // 【ホスト専用】ハートビート。ping に一定時間こたえないメンバーは抜けたとみなして片付ける。
   // (PeerJS の close は相手が黙って消えたときに届かないことがあるため)
@@ -5072,16 +5185,15 @@ export default function App() {
 
   // 【ホスト(リーダー)の初期化処理】
   const initHost = () => {
-    if (!window.Peer) return showToast('error', '通信準備中です。少し待ってから再度お試しください。');
-    const roomId = Math.floor(100000 + Math.random() * 900000).toString();
-    const peer = new window.Peer(roomId);
+    const roomId = generateRoomId();
+    const peer = new Peer(roomId, PEER_OPTIONS);
     const session = ++peerSessionRef.current;
     const alive = () => peerSessionRef.current === session; // 退出後に古い接続からのイベントで動かないようにする
 
     peer.on('open', (id) => {
       if (!alive()) return;
       memberSeenRef.current = {};
-      setPeerState(p => ({ ...p, role: 'host', peer, hostId: id, participants: {}, connections: [] }));
+      setPeerState(p => ({ ...p, role: 'host', peer, hostId: id, participants: {}, pending: {}, acceptUntil: 0, connections: [] }));
       setView('hostRoom');
       showToast('success', 'あたらしいへやを作成しました！');
     });
@@ -5102,24 +5214,54 @@ export default function App() {
           // メンバーが「退出」をおした。参加者リストからすぐに外す
           hostRemoveMember(conn.peer, true);
         } else if (rawData.type === 'join') {
-          setPeerState(p => {
-            // じんとり用に参加時点でチームを自動割当(人数の少ない側へ)。他モードでは使われないだけで無害
-            const hostTeam = p.hostTeam || 'red';
-            let red = hostTeam === 'red' ? 1 : 0; let blue = 1 - red;
-            Object.entries(p.participants).forEach(([id, m]) => { if (id === p.hostId) return; if (m.team === 'blue') blue++; else red++; });
-            const team = red <= blue ? 'red' : 'blue';
-            const newP = { ...p, participants: { ...p.participants, [conn.peer]: { id: conn.peer, name: rawData.name, score: 0, combo: 0, team } } };
-            sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
-            return newP;
-          });
-          showToast('success', `${rawData.name} さんが参加しました`);
+          // 古い版の端末が入ろうとした場合。「ルームが見つかりません」ではなく理由を伝えて切る
+          if (rawData.v !== PROTOCOL_VERSION) {
+            safeSend(conn, { type: 'version_mismatch' });
+            setTimeout(() => { try { conn.close(); } catch (e) {} }, 200);
+            return;
+          }
+          // 送られてきた名前は信用しない。改造した端末は長い文字列でも記号でも送ってこられる
+          const name = sanitizeName(rawData.name) || 'ゲスト';
+          // ゲーム中はリーダーが承認画面を見られない。だまって待たせるのではなく理由を返して切る
+          if (viewRef.current === 'game') {
+            safeSend(conn, { type: 'room_closed', data: { reason: 'in_game' } });
+            setTimeout(() => { try { conn.close(); } catch (e) {} }, 200);
+            return;
+          }
+          const cur = peerStateRef.current;
+          if (cur.participants[conn.peer] || cur.pending?.[conn.peer]) return; // 二重申しこみは無視
+          // うけつけタイム中は自動で許可(30人学級でリーダーが30回タップしなくてよいように)
+          if ((cur.acceptUntil || 0) > Date.now()) {
+            setPeerState(p => {
+              if (p.participants[conn.peer]) return p;
+              const hostTeam = p.hostTeam || 'red';
+              let red = hostTeam === 'red' ? 1 : 0; let blue = 1 - red;
+              Object.entries(p.participants).forEach(([id, m]) => { if (id === p.hostId) return; if (m.team === 'blue') blue++; else red++; });
+              const team = red <= blue ? 'red' : 'blue';
+              const newP = { ...p, participants: { ...p.participants, [conn.peer]: { id: conn.peer, name, score: 0, combo: 0, team } } };
+              safeSend(conn, { type: 'join_accepted' });
+              sendToApproved(newP, { type: 'participants_update', data: newP.participants });
+              return newP;
+            });
+            // トーストは更新関数の外で出す(StrictMode では更新関数が2回走り、2重に出てしまう)
+            showToast('success', `${name} さんが参加しました`);
+          } else {
+            // それ以外は「承認まち」に入れるだけ。参加者リストはまだ配らない
+            setPeerState(p => (p.participants[conn.peer] || p.pending?.[conn.peer])
+              ? p
+              : { ...p, pending: { ...(p.pending || {}), [conn.peer]: { id: conn.peer, name, at: Date.now() } } });
+            showToast('success', `${name} さんが 入りたいそうです`);
+          }
         } else if (rawData.type === 'score_update') {
           setPeerState(p => {
             if (!p.participants[conn.peer]) return p;
             const newP = { ...p, participants: { ...p.participants, [conn.peer]: { ...p.participants[conn.peer], score: rawData.data.score, combo: rawData.data.combo } } };
-            sendToAll(newP.connections, { type: 'participants_update', data: newP.participants });
+            sendToApproved(newP, { type: 'participants_update', data: newP.participants });
             return newP;
           });
+        } else if (!peerStateRef.current.participants[conn.peer]) {
+          // ここから下はゲーム中の操作。まだ許可していない端末からのものは受けつけない
+          return;
         } else if (rawData.type === 'raid_attack') {
           hostApplyDamage(conn.peer, rawData.data.damage, rawData.data.combo);
         } else if (rawData.type === 'raid_support') {
@@ -5145,14 +5287,17 @@ export default function App() {
   };
 
   // 【ホストからのブロードキャスト送信】（refを使って最新のconnectionsを参照）
+  // 許可した人にだけ配る。承認まちの端末にゲーム開始や問題文がながれないようにするため
   const broadcast = useCallback((data) => {
-    sendToAll(peerStateRef.current.connections, data);
+    sendToApproved(peerStateRef.current, data);
   }, []);
 
   // 【クライアント(児童)の初期化処理】
   const initClient = (playerName, hId) => {
-    if (!window.Peer) return showToast('error', '通信準備中です。');
-    const peer = new window.Peer();
+    if (!isValidRoomId(hId)) return showToast('error', `ルーム番号は ${ROOM_ID_LEN} けたの数字です`);
+    const name = sanitizeName(playerName);
+    if (!name) return showToast('error', 'なまえを もういちど 入れてね');
+    const peer = new Peer(PEER_OPTIONS);
     const session = ++peerSessionRef.current;
     // 退出したあとに(切断が完了するまでの間などに)届いたメッセージで画面が動きださないようにする
     const alive = () => peerSessionRef.current === session;
@@ -5162,18 +5307,31 @@ export default function App() {
       const conn = peer.connect(hId);
       conn.on('open', () => {
         if (!alive()) return;
-        conn.send({ type: 'join', name: playerName });
-        setPeerState(p => ({ ...p, role: 'client', peer, conn, myName: playerName }));
+        conn.send({ type: 'join', name, v: PROTOCOL_VERSION });
+        // まだ「承認まち」。リーダーが「いれる」をおすまで approved は false のまま
+        setPeerState(p => ({ ...p, role: 'client', peer, conn, myName: name, approved: false }));
         setView('clientWait');
-        showToast('success', 'リーダーのルームに入りました！');
+        showToast('success', 'リーダーに もうしこみました');
       });
       conn.on('data', (rawData) => {
         if (!alive()) return; // すでにルームを抜けている端末は、以降いっさい反応しない
         if (rawData.type === 'ping') {
           safeSend(conn, { type: 'pong' }); // 生きていることをリーダーへ返す
+        } else if (rawData.type === 'join_accepted') {
+          setPeerState(p => ({ ...p, approved: true }));
+          audioCtrl.playSE('coin');
+          showToast('success', 'リーダーのへやに 入れました！');
+        } else if (rawData.type === 'version_mismatch') {
+          // 古いキャッシュのまま入ろうとした。原因がわかる文言で伝える(「へやが見つからない」ではない)
+          teardownPeer({ type: 'error', msg: 'アプリが古いようです。ページを さいよみこみ してね' });
         } else if (rawData.type === 'room_closed') {
           // リーダーがへやをとじた/自分がへやから外された。この端末はここで完全に切りはなす
-          teardownPeer({ type: 'warning', msg: rawData.data?.reason === 'removed' ? 'へやからはなれました' : 'リーダーがへやをとじました' });
+          const reason = rawData.data?.reason;
+          const msg = reason === 'rejected' ? 'リーダーが きょかしませんでした'
+            : reason === 'in_game' ? 'いま ゲーム中です。おわるまで まってね'
+              : reason === 'removed' ? 'へやからはなれました'
+                : 'リーダーがへやをとじました';
+          teardownPeer({ type: 'warning', msg });
         } else if (rawData.type === 'game_start') {
           setState(prev => ({ ...prev, raidResult: null, territoryResult: null, ...rawData.data }));
           // ボスバトル/じんとりなら初期スナップショットから表示を立ち上げる
@@ -5230,7 +5388,7 @@ export default function App() {
     if (peer && !peer.destroyed) setTimeout(() => { try { peer.destroy(); } catch (e) {} }, 300);
 
     memberSeenRef.current = {};
-    setPeerState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {} });
+    setPeerState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {}, pending: {}, acceptUntil: 0, approved: false });
     raidRef.current = null;
     setRaidState(null);
     terrRef.current = null;
@@ -5349,7 +5507,7 @@ export default function App() {
 
     return (
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap');
+        /* フォントの読みこみは index.html の <link> に移した(CSPで許可先をはっきりさせるため) */
         :root { ${themeVars} }
         body { font-family: 'Zen Maru Gothic', sans-serif; background-color: var(--bg); color: var(--text); touch-action: manipulation; transition: background-color 0.3s ease; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -5390,7 +5548,7 @@ export default function App() {
           {view === 'singleConfig' && <PageWrapper key="single"><SingleConfigView setView={setView} setState={setState} configMode={configMode} stats={stats} /></PageWrapper>}
 
           {/* 追加ビュー */}
-          {view === 'hostRoom' && <PageWrapper key="host"><HostRoomView peerState={peerState} setPeerState={setPeerState} broadcast={broadcast} setView={setView} setState={setState} configMode={configMode} setConfigMode={setConfigMode} initRaid={initRaid} initTerritory={initTerritory} /></PageWrapper>}
+          {view === 'hostRoom' && <PageWrapper key="host"><HostRoomView peerState={peerState} setPeerState={setPeerState} broadcast={broadcast} setView={setView} setState={setState} configMode={configMode} setConfigMode={setConfigMode} initRaid={initRaid} initTerritory={initTerritory} approveMember={hostApproveMember} rejectMember={hostRejectMember} /></PageWrapper>}
           {view === 'clientJoin' && <PageWrapper key="clientJoin"><ClientJoinView initClient={initClient} urlHostId={urlHostId} setView={setView} /></PageWrapper>}
           {view === 'clientWait' && <PageWrapper key="clientWait"><ClientWaitView peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
 

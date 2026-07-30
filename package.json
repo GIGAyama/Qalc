@@ -8,11 +8,16 @@
         "build": "vite build",
         "lint": "eslint .",
         "preview": "vite preview",
-        "test:studylog": "node scripts/studyLog.test.mjs"
+        "test:studylog": "node scripts/studyLog.test.mjs",
+        "test:room": "node scripts/roomAccess.test.mjs",
+        "test": "npm run test:studylog && npm run test:room"
     },
     "dependencies": {
+        "canvas-confetti": "^1.9.4",
         "framer-motion": "^11.0.8",
         "lucide-react": "^0.358.0",
+        "peerjs": "^1.5.5",
+        "qrcode": "^1.5.4",
         "react": "^18.2.0",
         "react-dom": "^18.2.0"
     },

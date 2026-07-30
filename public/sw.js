@@ -1,4 +1,7 @@
-const CACHE = 'qalc-cache-v2';
+// 版を上げると古いキャッシュが捨てられ、新しい成果物が配られる。
+// JS/CSS をキャッシュ優先で持つので、中身をかえたら必ずここを上げること
+// (上げわすれると、旧版を持った端末が新版のへやに入れず「アプリが古い」と言われつづける)
+const CACHE = 'qalc-cache-v3';
 const SHELL = [
   '/Qalc/',
   '/Qalc/index.html',
