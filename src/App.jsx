@@ -32,20 +32,25 @@ import {
   safeSend, sendToAll, sendToApproved,
 } from './roomAccess.js';
 import { BACK_PRIORITY, useBackHandler, useHistoryBackGuard, EdgeSwipeBack } from './BackNavigation.jsx';
+/* バトルは「みんなであそぶ」専用。決まりごと・計算（とフック）は最初から読み、
+ * 画面は選ばれるまで読まない（Part I §5）。画面の一覧は ./battles/lazy.jsx */
 import {
   RAID_CONSTANTS, bossForStage, bossMaxHp, calcRaidDamage, attackIntervalMs, pickBossAttack,
   makeShuffledLayout, useRaidDebuffs, raidInputLocked, raidDamageMods, raidProblemTransform,
   rollBurstCount, preloadBossSprites, useRaidShake,
-  BossPanel, SupportButton, ProblemDebuffOverlay, FreezeOverlay, RaidEventOverlay, RaidScreenFx, RaidResultPanel,
-  BossAvatar
-} from './BossBattle.jsx';
+} from './battles/raidLogic.js';
 import {
   TERRITORY_CONSTANTS, TEAMS, otherTeam, createTerritoryCells, isSelectable, autoPickTarget,
-  computeScores, resolveCaptures, addCharge, applyBlast, specialCharges, rollSpecial, rollLucky, pickNearTarget, SPECIALS,
+  computeScores, resolveCaptures, addCharge, applyBlast, specialCharges, rollSpecial, rollLucky,
+  pickNearTarget, SPECIALS, useTerritoryMood, preloadTerritoryCharacters, TERRITORY_CHARACTER_NAME,
+} from './battles/territoryLogic.js';
+import {
+  preloadBattles,
+  BossPanel, SupportButton, ProblemDebuffOverlay, FreezeOverlay, RaidEventOverlay, RaidScreenFx,
+  RaidResultPanel, BossAvatar,
   TerritoryScoreBar, TerritoryBoard, TerritoryEventOverlay, TerritoryResultPanel,
-  TerritorySpecialButton, TerritoryRushBadge, TerritoryLastSpurtFx,
-  TerritoryCharacter, useTerritoryMood, preloadTerritoryCharacters, TERRITORY_CHARACTER_NAME
-} from './TerritoryBattle.jsx';
+  TerritorySpecialButton, TerritoryRushBadge, TerritoryLastSpurtFx, TerritoryCharacter,
+} from './battles/lazy.jsx';
 
 // 問題データ・ショップ・ミッションの定義は src/data/ に切りだした。
 // App.jsx が5,000行を超えて追いきれなくなっていたため（Part I §5）。
@@ -3418,6 +3423,7 @@ export default function App() {
     peerLoading = true;
     let Peer;
     try {
+      preloadBattles();   // 通信の準備と同時に、バトルの画面も裏で取ってくる
       Peer = await loadPeer();
     } catch (e) {
       peerLoading = false;
@@ -3543,6 +3549,7 @@ export default function App() {
     peerLoading = true;
     let Peer;
     try {
+      preloadBattles();   // 通信の準備と同時に、バトルの画面も裏で取ってくる
       Peer = await loadPeer();
     } catch (e) {
       peerLoading = false;
@@ -3819,6 +3826,10 @@ export default function App() {
       )}
 
       <main className="flex-grow relative overflow-hidden">
+        {/* バトルの画面は別ファイルから読みこむ。へやを作った時点で先に取ってあるので
+            ここで待たされることはないが、念のため fallback は空にしておく
+            （読みこみ中に文字が出ると、そのぶん画面がちらつくため） */}
+        <Suspense fallback={null}>
         <AnimatePresence mode="wait">
           {view === 'home' && <PageWrapper key="home"><HomeView setView={setView} stats={stats} setStats={setStats} setConfigMode={setConfigMode} initHost={initHost} resumeData={resumeData} onResume={resumeGame} onDiscardResume={discardResume} /></PageWrapper>}
           {view === 'singleConfig' && <PageWrapper key="single"><SingleConfigView setView={setView} setState={setState} configMode={configMode} stats={stats} /></PageWrapper>}
@@ -3834,6 +3845,7 @@ export default function App() {
           {view === 'import' && <PageWrapper key="import"><ImportView setView={setView} /></PageWrapper>}
           {view === 'shop' && <PageWrapper key="shop"><ShopView setView={setView} stats={stats} setStats={setStats} /></PageWrapper>}
         </AnimatePresence>
+        </Suspense>
       </main>
 
       {view !== 'game' && (
