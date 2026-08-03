@@ -358,3 +358,67 @@ secondary 17件 / on-accent 28件）。`bg-[var(--primary)]` などの**面は�
 3. **F3・F4 の扱い** — → 分割まで実施することで合意。F4 は解消、F3 は未達（上記）。
 
 4. **D8 コントラスト** — → 報告のみに留めた（上記）。
+
+
+---
+
+## 他リポジトリとの突き合わせ（2026-08-03 追記）
+
+`add_repo` の許可を得て、Part III P3・P4 が「正本と揃える」としていた2件を実施した。
+
+### 品質ゲートの正本（`SchoolPlan_Editor/scripts/lib/project-quality.mjs`）
+
+読んで突き合わせた結果、**正本と今回の `check-project.mjs` は守備範囲がほとんど重なっていない。**
+
+| | 正本（SchoolPlan_Editor） | 今回（Qalc） |
+|---|---|---|
+| 想定する型 | **C型（GAS）** | **B型（Vite + React）** |
+| 主な検査 | `appsscript.json` の必須ファイル、`.gs` と HTML 内 script の構文、HTML include の解決、OAuth スコープ、X-Frame | manifest / sw.js / offline.html、`100dvh`・safe-area・`clamp()`・Canvas の DPR、画像の大きさ、初回JS、study.v1 |
+| 共通 | 秘密情報の直書き、マージの跡、1ファイルの行数・バイト数、`postMessage(..., '*')` | 同左 |
+
+つまり**どちらかがもう一方を置きかえるものではない。**
+正本は「GAS のアプリが壊れずに動くか」、今回のものは「Part I §2/§3（表示とPWA）を満たしているか」を見ている。
+
+そこで、**型によらず共通の部分だけを正本に合わせた。**
+
+- 秘密情報の検出パターンを正本の `detectSecretCandidates` と同じにした
+  （Google APIキー・GitHub のトークン・OpenAI のAPIキー・秘密鍵）
+- マージの跡（`<<<<<<<`）の検出を追加（正本の `MERGE_CONFLICT_MARKER`）
+
+**逆向きの提案**：正本側にも Part I §2/§3 の検査が無い。
+`SchoolPlan_Editor` も Chromebook と iPad で使う以上、`100dvh`・safe-area・Canvas の DPR は
+同じように要る。今回の `check-project.mjs` の D／E 節を正本へ持っていくとよい（別作業）。
+
+### `studyLog.js` の正本
+
+3本を突き合わせた。
+
+| リポジトリ | 形 | ロジック版 |
+|---|---|---|
+| Qalc | ESM（`export function saveStudyRecord`） | 1.1 |
+| KANJI_Town | ESM（同上） | 1.1 |
+| Keisan-Card | IIFE（`global.StudyLog = {...}`） | 1.1 |
+
+**版ずれは無かった。** Qalc と KANJI_Town はコメント以外まったく同一で、
+Keisan-Card は書き方が違うだけで振る舞いは同じ（上限500件・設問200件・
+`schema: 'study.v1'`・誤答12文字・外部送信なし、すべて一致）。
+
+書き方が違うのは**アプリの型に合わせた必要な差**である。
+A型（単一HTML）は ESM の `import` が使えないため IIFE にするしかない。
+したがって「1つのファイルを配り直す」形の正本化はできない。
+
+**正本は「ロジック版1.1の振る舞い」と定義し、ESM 版と IIFE 版の2つを公式な形とするのが実態に合う。**
+版ずれを見つけられるよう、`check-project.mjs` に検査を足した（全文比較はしない）。
+
+- **G3** … `studyLog.js` にロジック版が明記されているか
+- **G4** … 変わってはいけない値（上限500件・設問200件・`study.v1`・誤答12文字）が保たれているか
+
+### まだ着手していないもの
+
+**第1群（個人情報・実運用中の15リポジトリ）への展開。**
+Part III「バッチ運用」は、まず破壊リスクの低い1件で P0〜P1 と検証まで通し、
+PR の粒度と所要時間を人間と合意してから展開せよ、としている。
+**今回の Qalc がその1件目にあたる。**（`AUDIT.md` → 10コミット → PR 2本 → 品質ゲート44項目）
+
+粒度と所要時間をご確認のうえ、どのリポジトリから進めるかご指示ください。
+進めるときは `ROLLOUT.md` に進捗を記録する。
