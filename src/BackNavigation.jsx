@@ -35,9 +35,12 @@ export const registerBackHandler = (fn, priority = BACK_PRIORITY.view) => {
   };
 };
 
-// 優先度の高いものから順に呼び、最初に true を返したところで止める
-const dispatchBack = () => {
-  const ordered = [...handlers].sort((a, b) => (b.priority - a.priority) || (b.seq - a.seq));
+// 優先度の高いものから順に呼び、最初に true を返したところで止める。
+// minPriority を指定すると、それ未満の受け手には回さない
+const dispatchBack = (minPriority = 0) => {
+  const ordered = [...handlers]
+    .filter((h) => h.priority >= minPriority)
+    .sort((a, b) => (b.priority - a.priority) || (b.seq - a.seq));
   for (const h of ordered) {
     let handled = false;
     try { handled = h.fn() === true; } catch (e) { handled = false; }
@@ -45,6 +48,13 @@ const dispatchBack = () => {
   }
   return false;
 };
+
+/* Esc キーでいちばん手前のものを閉じる（Part I §4）。
+ *
+ * 「戻る」と同じ受け手を使いまわすが、閉じる対象は overlay と panel だけにしてある。
+ * Esc で画面そのものが1つ前へもどってしまうと、キーボードで操作している人が
+ * 意図せず学習をやめてしまうため（Esc は「閉じる」であって「戻る」ではない）。 */
+export const dispatchEscape = () => dispatchBack(BACK_PRIORITY.panel);
 
 // 端末の戻るボタンとエッジスワイプが同時に発火しても、「戻る」は1回だけにする。
 // (わざと2回つづけて戻る操作をしたときはちゃんと2階層もどれるよう、時間は短めにしてある)
@@ -86,8 +96,26 @@ export const useHistoryBackGuard = () => {
       goBack();
     };
 
+    /* Esc は「いちばん手前のものを閉じる」。
+     * ゲーム画面は Esc に「入力した数字を消す」を割りあてているので、
+     * ダイアログを閉じたときは stopImmediatePropagation でそちらへ流さない
+     * （ダイアログを閉じたつもりで、書きかけの答えまで消えないように）。
+     * この受け手はアプリの最上位で1回だけ登録されるので、
+     * 画面ごとの keydown より先に呼ばれる。 */
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (dispatchEscape()) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+
     window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, []);
 };
 

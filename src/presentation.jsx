@@ -12,6 +12,8 @@
  */
 import React, { useSyncExternalStore, useCallback, useEffect, useState } from 'react';
 import { Presentation, Maximize, Minimize, X } from 'lucide-react';
+// Esc と端末の「戻る」でも閉じられるようにする（Part I §4）
+import { useBackHandler, BACK_PRIORITY } from './BackNavigation.jsx';
 
 // 自アプリ接頭辞のキー。学習ログ(study.records.v1)とは別なので、リセットしても学習記録は消えない
 const KEY = 'qalc.presentation.v1';
@@ -122,6 +124,8 @@ export const PresentationControl = ({ onSound }) => {
     const { big, maskNames, reduceFx } = usePresentation();
     const [open, setOpen] = useState(false);
     const [isFull, toggleFull] = useFullscreen();
+    // 開いているあいだだけ、Esc と端末の「戻る」を受けとる
+    useBackHandler(open, () => { setOpen(false); return true; }, BACK_PRIORITY.overlay);
 
     const click = (fn) => () => { onSound?.(); fn(); };
 

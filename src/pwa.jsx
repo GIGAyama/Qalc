@@ -8,6 +8,8 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { Download, RefreshCw, Share, PlusSquare, X } from 'lucide-react';
+// Esc と端末の「戻る」でも閉じられるようにする（Part I §4）
+import { useBackHandler, BACK_PRIORITY } from './BackNavigation.jsx';
 
 /* ── ホーム画面から起動しているか ───────────────────────── */
 export const isStandalone = () =>
@@ -120,6 +122,8 @@ export const InstallButton = ({ onSound }) => {
     const [canInstall, setCanInstall] = useState(() => !!window.__deferredInstallPrompt);
     const [installed, setInstalled] = useState(() => isStandalone());
     const [showIosHelp, setShowIosHelp] = useState(false);
+    // 開いているあいだだけ、Esc と端末の「戻る」を受けとる
+    useBackHandler(showIosHelp, () => { setShowIosHelp(false); return true; }, BACK_PRIORITY.overlay);
 
     useEffect(() => {
         const onReady = () => setCanInstall(true);

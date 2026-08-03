@@ -2302,7 +2302,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : `w-full ${isTerritory ? 'md:flex-grow md:w-auto max-w-4xl' : 'max-w-4xl h-full'} mx-auto`} md:h-full p-4`}>
 
           <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
-            <button onClick={() => { audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-2 py-1 font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center gap-1"><XCircle size={16} /> やめる</button>
+            <button onClick={() => { audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-3 min-h-[44px] font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center justify-center gap-1"><XCircle size={16} /> やめる</button>
             <TimerClock gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} />
             <div className="font-black text-2xl text-[var(--primary)] flex items-center gap-2 drop-shadow-sm">
               {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : state.gameMode === 'BOSS_RAID' ? <>⚔ {score} <span className="text-sm text-[var(--text)] opacity-80">ダメージ</span></> : state.gameMode === 'TERRITORY' ? <>🖌 {score} <span className="text-sm text-[var(--text)] opacity-80">ぬり</span></> : <>{score} <span className="text-sm text-[var(--text)] opacity-80">pt</span></>}
@@ -3811,7 +3811,7 @@ export default function App() {
             <button
               onClick={() => setIsMuted(audioCtrl.toggle())}
               aria-label={isMuted ? 'おとを出す' : 'おとを消す'}
-              className="text-[var(--text)] opacity-80 hover:opacity-100 p-2 rounded-full transition-all focus:outline-none border-2 border-transparent hover:border-[var(--text)] hover:bg-[var(--bg)] min-w-[44px] min-h-[44px] flex items-center justify-center"
+              className="text-[var(--text)] opacity-80 hover:opacity-100 p-2 rounded-full transition-all border-2 border-transparent hover:border-[var(--text)] hover:bg-[var(--bg)] min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} className="text-[var(--primary)]" />}
             </button>
@@ -3845,7 +3845,10 @@ export default function App() {
         >
           <p>
             © {new Date().getFullYear()} Qalc
-            <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] cursor-default outline-none">
+            {/* outline-none を外した。キーボードだけで操作している人に、
+                いまここにフォーカスがあることが見えなくなっていたため（Part I §4）。
+                inline-flex + min-h で押しどころも 44px を確保する（Part I §2-9） */}
+            <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] inline-flex items-center justify-center min-h-[44px] px-2 align-middle">
               GIGA山
             </a>
           </p>
