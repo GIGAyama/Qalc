@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trophy, Flag } from 'lucide-react';
+// 提示モード中は児童名を伏せる（電子黒板は廊下や参観の保護者からも見える）
+import { PupilName } from './presentation.jsx';
 
 // ==========================================
 // じんとりバトル(TERRITORY)モード
@@ -755,8 +757,8 @@ export const TerritoryEventOverlay = ({ events }) => {
     if (e.kind === 'lead') return { color: TEAMS[e.team]?.color, node: <>🔥 ぎゃくてん！ {TEAMS[e.team]?.label}チームが リード！</> };
     if (e.kind === 'chain') return { color: TEAMS[e.team]?.color, node: <>🌊 れんさ！ {e.count}マス いっきに ぬった！</> };
     if (e.kind === 'lucky') return { color: '#D946EF', node: <>🎁 ラッキーマス！ {LUCKY_EFFECTS[e.effect]?.emoji} {LUCKY_EFFECTS[e.effect]?.label}</> };
-    if (e.kind === 'capture' && e.steal) return { color: TEAMS[e.team]?.color, node: <>⚡ {e.name} が マスを うばった！</> };
-    if (e.kind === 'capture') return { color: TEAMS[e.team]?.color, node: <>⭐ {e.name} が ボーナスマスを ゲット！</> };
+    if (e.kind === 'capture' && e.steal) return { color: TEAMS[e.team]?.color, node: <>⚡ <PupilName name={e.name} /> が マスを うばった！</> };
+    if (e.kind === 'capture') return { color: TEAMS[e.team]?.color, node: <>⭐ <PupilName name={e.name} /> が ボーナスマスを ゲット！</> };
     return null;
   };
 
@@ -774,7 +776,7 @@ export const TerritoryEventOverlay = ({ events }) => {
               transition={{ duration: 1.7, times: [0, 0.22, 0.4, 0.75, 1] }}>
               <span className="text-6xl md:text-7xl drop-shadow-[0_4px_0_rgba(0,0,0,0.35)]">{SPECIALS[cutIn.effect]?.emoji}</span>
               <div className="mt-1 bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl px-5 py-2 shadow-[4px_4px_0_var(--text)] text-center">
-                <div className="font-black text-lg md:text-2xl" style={{ color: TEAMS[cutIn.team]?.color }}>{cutIn.name}</div>
+                <div className="font-black text-lg md:text-2xl" style={{ color: TEAMS[cutIn.team]?.color }}><PupilName name={cutIn.name} /></div>
                 <div className="font-black text-sm md:text-lg text-[var(--text)]">{SPECIALS[cutIn.effect]?.name}！</div>
               </div>
             </motion.div>
@@ -905,7 +907,7 @@ export const TerritoryResultPanel = ({ territoryResult, myId }) => {
           {mvps.map((m, i) => (
             <motion.div key={m.key} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', bounce: 0.5, delay: 0.4 + i * 0.1 }}
               className="bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-3 py-1.5 font-black text-xs text-[var(--text)] flex items-center gap-1">
-              {m.emoji} {m.label}: {m.winner.name}
+              {m.emoji} {m.label}: <PupilName name={m.winner.name} />
             </motion.div>
           ))}
         </div>
@@ -916,7 +918,7 @@ export const TerritoryResultPanel = ({ territoryResult, myId }) => {
           <div key={p.id} className={`rounded-xl border-2 px-3 py-2 bg-[var(--bg)] ${p.id === myId ? 'border-[var(--primary)]' : 'border-[var(--text)]'}`}>
             <div className="flex items-center gap-2 mb-1">
               <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-[var(--text)]" style={{ background: TEAMS[p.team]?.color || '#999' }} />
-              <span className="font-bold text-sm truncate flex-grow">{p.name}{p.id === myId && <span className="text-[10px] text-[var(--primary)] ml-1">(あなた)</span>}</span>
+              <span className="font-bold text-sm truncate flex-grow"><PupilName name={p.name} />{p.id === myId && <span className="text-[10px] text-[var(--primary)] ml-1">(あなた)</span>}</span>
               <span className="font-black text-sm text-[var(--text)] shrink-0">🖌{p.captures || 0}</span>
               <span className="font-black text-xs shrink-0" style={{ color: TEAMS[p.team]?.color }}>⚡{p.steals || 0}</span>
               <span className="font-black text-xs text-purple-500 shrink-0">💥{p.specials || 0}</span>

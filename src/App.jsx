@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 // 外部CDNからの動的読み込みはやめ、すべてバンドルに同梱する。
 // 理由: (1) CDNが改ざんされると児童端末で任意コードが動く (2) 校内フィルタでCDNが
 // ブロックされると「エラーも出ないまま機能が動かない」 (3) CSPを 'self' で閉じられる
@@ -15,6 +15,8 @@ import {
   LayoutDashboard, Lightbulb
 } from 'lucide-react';
 import { LearningToolPanel, getAvailableTools, TOOL_META } from './LearningTools.jsx';
+// 提示モード(電子黒板)・児童名の伏せ字・演出をへらす設定（Part I §2-10, §2-11）
+import { PresentationControl, PupilName, usePresentation, prefersReducedMotion } from './presentation.jsx';
 import { createStudySession, STUDY_ABORT_AWAY_MS } from './studySession.js';
 import { loadStudyRecords, summarize, topMissedItems } from './studyStats.js';
 // 「だれがへやに入れるか」「だれに何を配るか」は roomAccess.js に切りだしてテストしている
@@ -54,6 +56,9 @@ class AudioController {
   toggle() { this.muted = !this.muted; if (!this.muted) { this.init(); this.playSE('click'); } else { this.stopBGM(); } return this.muted; }
 
   vibrate(pattern) {
+    // 「動きを減らす」設定のときはふるえも止める。
+    // 振動は視覚の演出ではないが、感覚過敏の児童にはこちらのほうが負担が大きいことがある
+    if (prefersReducedMotion()) return;
     if (!this.muted && typeof navigator !== 'undefined' && navigator.vibrate) {
       navigator.vibrate(pattern);
     }
@@ -2239,7 +2244,12 @@ const StorageAPI = {
 // ==========================================
 const toastEvent = new EventTarget();
 const showToast = (icon, title) => { toastEvent.dispatchEvent(new CustomEvent('show', { detail: { icon, title } })); };
-const triggerConfetti = (options) => { try { confetti(options); } catch (e) { /* 演出なので失敗しても進める */ } };
+// 紙ふぶきは「動きを減らす」設定のときは出さない。
+// 感覚過敏の児童には、画面いっぱいに散る粒がいちばんつらい演出になる（Part I §2-10）
+const triggerConfetti = (options) => {
+  if (prefersReducedMotion()) return;
+  try { confetti(options); } catch (e) { /* 演出なので失敗しても進める */ }
+};
 
 const CustomToast = () => {
   const [toasts, setToasts] = useState([]);
@@ -2338,14 +2348,28 @@ const MathText = React.memo(({ text }) => {
 });
 
 // 手書きキャンバス（描画はネイティブイベントで完結するため React.memo で親の再レンダーから完全に隔離する）
+// 画面上の大きさ(CSS px)と、実際に描くピクセル数を分ける（Part I §2-5）。
+// これをやらないと Chromebook や iPad の高DPI機で、手書きの線と数字がぼやける。
+//
+// dpr を 2 で頭打ちにするのは、3倍端末で 9倍の面積を持つと、メモリ4GBの Chromebook が
+// タブごと落ちるため。2 あれば肉眼では十分にきれいに見える。
+const canvasDpr = () => Math.min(window.devicePixelRatio || 1, 2);
+
 const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
   const canvasRef = useRef(null); const isDrawing = useRef(false); const lastPos = useRef({ x: 0, y: 0 }); const rectRef = useRef({ left: 0, top: 0 });
+  // 紙を塗るときに使う「CSS px での大きさ」。バッファは dpr 倍あるので cvs.width とは一致しない
+  const cssSize = useRef({ w: 0, h: 0 });
 
   // desynchronized + alpha:false: 透明合成(アルファブレンド)を排除し、通常の合成パイプラインを
   // 介さない低遅延描画パスを最大限有効化する（低スペック機での描画/入力遅延を大幅に削減）
   const getCtx = (cvs) => cvs.getContext('2d', { desynchronized: true, alpha: false });
   const resolveVar = (cvs, name, fallback) => getComputedStyle(cvs).getPropertyValue(name).trim() || fallback;
-  const fillPaper = (cvs, ctx) => { ctx.fillStyle = resolveVar(cvs, '--panel', '#ffffff'); ctx.fillRect(0, 0, cvs.width, cvs.height); };
+  // ctx には dpr の拡大が入っているので、塗る範囲も CSS px で指定する
+  const fillPaper = (cvs, ctx) => {
+    ctx.fillStyle = resolveVar(cvs, '--panel', '#ffffff');
+    const { w, h } = cssSize.current;
+    ctx.fillRect(0, 0, w || cvs.width, h || cvs.height);
+  };
 
   useImperativeHandle(ref, () => ({
     clear: () => { const cvs = canvasRef.current; if (cvs) fillPaper(cvs, getCtx(cvs)); }
@@ -2364,20 +2388,33 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
 
     // バッファ上限: 万一レイアウトが暴走してもバッファの巨大化（メガピクセル級の再確保・コピー）で
     // 端末が固まらないようにする保険。通常の画面サイズではこの上限に届かない。
+    // dpr 倍したあとの実ピクセル数に対しての上限なので、CSS px 側は上限 / dpr になる。
     const MAX_DIM = 4096;
     const doResize = () => {
       if (!canvasRef.current || !canvasRef.current.parentElement) return;
       const currentCvs = canvasRef.current;
       const parent = currentCvs.parentElement;
+      const dpr = canvasDpr();
       // clientWidth/Height はボーダーを除いた整数値。canvas は absolute 配置でフロー外のため、
       // ここでバッファを変えてもレイアウトに影響せず ResizeObserver が再発火しない
-      const newW = Math.min(parent.clientWidth, MAX_DIM); const newH = Math.min(parent.clientHeight, MAX_DIM);
-      if (newW === 0 || newH === 0) return;
+      const cssW = Math.min(parent.clientWidth, Math.floor(MAX_DIM / dpr));
+      const cssH = Math.min(parent.clientHeight, Math.floor(MAX_DIM / dpr));
+      if (cssW === 0 || cssH === 0) return;
+      // バッファは CSS 上の大きさの dpr 倍。ここが「ぼやけない」ための本体
+      const newW = Math.round(cssW * dpr); const newH = Math.round(cssH * dpr);
       if (Math.abs(currentCvs.width - newW) > 1 || Math.abs(currentCvs.height - newH) > 1) {
+        // 書きかけの線を退避する。tempCanvas はバッファ実寸で持ち、
+        // 戻すときは CSS px に縮めて描く（ctx に dpr の拡大が入っているため）
+        const prev = cssSize.current;
         const tempCanvas = document.createElement('canvas'); tempCanvas.width = currentCvs.width || newW; tempCanvas.height = currentCvs.height || newH;
         if (currentCvs.width > 0 && currentCvs.height > 0) tempCanvas.getContext('2d').drawImage(currentCvs, 0, 0);
         currentCvs.width = newW; currentCvs.height = newH;
-        fillPaper(currentCvs, ctx); applyStyle(); ctx.drawImage(tempCanvas, 0, 0);
+        cssSize.current = { w: cssW, h: cssH };
+        // width/height への代入でコンテキストの状態は初期化されるため、毎回かけ直す。
+        // これ以降、描画コードは今までどおり CSS px の座標のまま書ける
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        fillPaper(currentCvs, ctx); applyStyle();
+        ctx.drawImage(tempCanvas, 0, 0, prev.w || cssW, prev.h || cssH);
       }
     };
     // 開閉時の300msトランジション中は毎フレーム ResizeObserver が発火するため、
@@ -2388,6 +2425,19 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
       resizeTimer = setTimeout(() => { resizeTimer = null; window.requestAnimationFrame(doResize); }, 120);
     };
     const observer = new ResizeObserver(resize); observer.observe(cvs.parentElement);
+
+    // 電子黒板や外部ディスプレイにつなぎかえると devicePixelRatio が変わる。
+    // 画面の大きさは変わらないことがあるので ResizeObserver では気づけない。
+    // dpr そのものを監視して、変わったらバッファを取り直す（Part I §2-5）
+    let dprMql = null;
+    const onDprChange = () => { watchDpr(); resize(); };
+    const watchDpr = () => {
+      if (!window.matchMedia) return;
+      dprMql?.removeEventListener?.('change', onDprChange);
+      dprMql = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      dprMql.addEventListener?.('change', onDprChange);
+    };
+    watchDpr();
 
     const startDraw = (e) => {
       e.preventDefault();
@@ -2410,6 +2460,7 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
 
     return () => {
       observer.disconnect();
+      dprMql?.removeEventListener?.('change', onDprChange);
       if (resizeTimer) clearTimeout(resizeTimer);
       cvs.removeEventListener('pointerdown', startDraw); cvs.removeEventListener('pointermove', draw); cvs.removeEventListener('pointerup', stopDraw); cvs.removeEventListener('pointercancel', stopDraw);
     };
@@ -2669,7 +2720,17 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
   const qrRef = useRef(null);
   useEffect(() => {
     if (!peerState.hostId || !qrRef.current) return;
-    QRCode.toCanvas(qrRef.current, `${window.location.origin}${window.location.pathname}?host=${peerState.hostId}`, { width: 160, margin: 1 })
+    // 画面上は 160px のまま、描くピクセル数だけ dpr 倍にする（Part I §2-5）。
+    // QRコードは細い白黒の格子なので、等倍で描くと高DPI機でにじんで読み取れないことがある
+    const cssPx = 160;
+    const dpr = canvasDpr();
+    QRCode.toCanvas(qrRef.current, `${window.location.origin}${window.location.pathname}?host=${peerState.hostId}`, { width: cssPx * dpr, margin: 1 })
+      .then(() => {
+        // toCanvas は width/height 属性と一緒に style も書きかえるので、あとから CSS 側を戻す
+        if (!qrRef.current) return;
+        qrRef.current.style.width = `${cssPx}px`;
+        qrRef.current.style.height = `${cssPx}px`;
+      })
       .catch(() => { /* 番号の手入力でも参加できるので、QRが出せなくても止めない */ });
   }, [peerState.hostId]);
 
@@ -2852,7 +2913,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
                           <button onClick={toggleHostTeam} className="text-[11px] font-black bg-[var(--panel)] border-2 border-[var(--text)] rounded-full px-2 py-0.5 active:scale-95">👑 リーダー</button>
                         )}
                         {members.map(([id, m]) => (
-                          <button key={id} onClick={() => toggleMemberTeam(id)} className="text-[11px] font-bold bg-[var(--panel)] border-2 border-[var(--text)] rounded-full px-2 py-0.5 active:scale-95 max-w-[110px] truncate">{m.name}</button>
+                          <button key={id} onClick={() => toggleMemberTeam(id)} className="text-[11px] font-bold bg-[var(--panel)] border-2 border-[var(--text)] rounded-full px-2 py-0.5 active:scale-95 max-w-[110px] truncate"><PupilName name={m.name} /></button>
                         ))}
                       </div>
                     </div>
@@ -2912,7 +2973,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
             )}
             {pendingList.map(([id, req]) => (
               <div key={id} className="flex justify-between items-center bg-[var(--bg)] p-2 pl-3 rounded-xl border-2 border-dashed border-[var(--primary)] gap-2">
-                <span className="font-bold text-[var(--text)] truncate">{req.name}</span>
+                <span className="font-bold text-[var(--text)] truncate"><PupilName name={req.name} /></span>
                 <div className="flex gap-2 shrink-0">
                   <button onClick={() => { audioCtrl.playSE('coin'); approveMember(id); }} className="px-3 py-1.5 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--secondary)] text-[var(--panel)]">いれる</button>
                   <button onClick={() => { audioCtrl.playSE('click'); rejectMember(id); }} className="px-3 py-1.5 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--panel)] text-[var(--text)]">ことわる</button>
@@ -2928,7 +2989,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
               <div key={id} className="flex justify-between items-center bg-[var(--bg)] p-3 rounded-xl border-2 border-[var(--text)]">
                 <div className="flex items-center gap-3">
                   <span className="font-black text-gray-400 w-4 text-center">{index + 1}</span>
-                  <span className="font-bold text-[var(--text)]">{p.name}</span>
+                  <span className="font-bold text-[var(--text)]"><PupilName name={p.name} /></span>
                 </div>
                 <div className="flex items-center gap-4 text-sm font-bold">
                   <span className="text-[var(--secondary)]">🔥 {p.combo} Combo</span>
@@ -3020,7 +3081,7 @@ const ClientWaitView = ({ peerState, leaveRoom }) => {
       </div>
       {approved ? (
         <>
-          <h3 className="font-black text-3xl text-[var(--text)] mb-3 ruby-text">{peerState.myName} さん、<br /><R c="準" r="じゅん" /><R c="備" r="び" />OK！</h3>
+          <h3 className="font-black text-3xl text-[var(--text)] mb-3 ruby-text"><PupilName name={peerState.myName} /> さん、<br /><R c="準" r="じゅん" /><R c="備" r="び" />OK！</h3>
           <p className="font-bold text-[var(--text)] opacity-70 bg-[var(--accent)] px-4 py-2 rounded-lg border-2 border-[var(--text)] mb-6 ruby-text">
             リーダーがスタートするまで<br />このまま<R c="待" r="ま" />っていてね
           </p>
@@ -3029,7 +3090,7 @@ const ClientWaitView = ({ peerState, leaveRoom }) => {
         <>
           <h3 className="font-black text-2xl text-[var(--text)] mb-3 ruby-text">リーダーの<br /><R c="許" r="きょ" /><R c="可" r="か" />を<R c="待" r="ま" />っています</h3>
           <p className="font-bold text-[var(--text)] opacity-70 bg-[var(--bg)] border-2 border-dashed border-[var(--text)] px-4 py-2 rounded-lg mb-6 ruby-text text-sm">
-            「{peerState.myName}」で<R c="申" r="もう" />しこみました。<br />リーダーが「いれる」を おすまで<br />ちょっと<R c="待" r="ま" />っててね
+            「<PupilName name={peerState.myName} />」で<R c="申" r="もう" />しこみました。<br />リーダーが「いれる」を おすまで<br />ちょっと<R c="待" r="ま" />っててね
           </p>
         </>
       )}
@@ -4056,7 +4117,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             <div key={p.id} className="bg-[var(--bg)] border-2 border-[var(--text)] rounded-lg px-3 py-1.5 flex flex-col items-center min-w-[80px]">
               <div className="flex items-center gap-1">
                 <span className={`text-xs font-black px-1.5 py-0.5 rounded-sm ${idx === 0 ? 'bg-yellow-400 text-white' : idx === 1 ? 'bg-gray-400 text-white' : idx === 2 ? 'bg-orange-400 text-white' : 'text-[var(--text)] opacity-50'}`}>{idx + 1}</span>
-                <span className="text-xs font-bold truncate max-w-[60px]">{p.name}</span>
+                <span className="text-xs font-bold truncate max-w-[60px]"><PupilName name={p.name} /></span>
               </div>
               <span className="text-base text-[var(--primary)] font-black">{p.score}<span className="text-[10px] ml-0.5 opacity-60">pt</span></span>
             </div>
@@ -4262,21 +4323,21 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
           <div className="flex items-end justify-center gap-2 h-36 w-full mb-6 px-2">
             {top5[1] && (
               <div className="flex flex-col items-center w-1/4 h-full justify-end">
-                <span className="font-bold text-xs sm:text-sm truncate w-full text-center">{top5[1].name}</span>
+                <span className="font-bold text-xs sm:text-sm truncate w-full text-center"><PupilName name={top5[1].name} /></span>
                 <span className="font-black text-base sm:text-lg text-[var(--secondary)] mb-1">{top5[1].score}<span className="text-[10px] ml-0.5">pt</span></span>
                 <div className="w-full bg-gray-300 h-[60%] rounded-t-lg border-2 border-[var(--text)] border-b-0 flex justify-center pt-2 font-black text-xl text-white shadow-inner">2</div>
               </div>
             )}
             {top5[0] && (
               <div className="flex flex-col items-center w-1/3 h-full justify-end">
-                <span className="font-bold text-sm sm:text-base truncate w-full text-center">{top5[0].name}</span>
+                <span className="font-bold text-sm sm:text-base truncate w-full text-center"><PupilName name={top5[0].name} /></span>
                 <span className="font-black text-lg sm:text-2xl text-[var(--primary)] mb-1">{top5[0].score}<span className="text-xs ml-0.5">pt</span></span>
                 <div className="w-full bg-yellow-400 h-[85%] rounded-t-lg border-2 border-[var(--text)] border-b-0 flex justify-center pt-2 font-black text-3xl text-white shadow-inner">1</div>
               </div>
             )}
             {top5[2] && (
               <div className="flex flex-col items-center w-1/4 h-full justify-end">
-                <span className="font-bold text-xs sm:text-sm truncate w-full text-center">{top5[2].name}</span>
+                <span className="font-bold text-xs sm:text-sm truncate w-full text-center"><PupilName name={top5[2].name} /></span>
                 <span className="font-black text-base sm:text-lg text-[var(--text)] opacity-70 mb-1">{top5[2].score}<span className="text-[10px] ml-0.5">pt</span></span>
                 <div className="w-full bg-orange-300 h-[40%] rounded-t-lg border-2 border-[var(--text)] border-b-0 flex justify-center pt-2 font-black text-lg text-white shadow-inner">3</div>
               </div>
@@ -4288,7 +4349,7 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
               {top5.slice(3, 5).map((p, i) => (
                 <div key={p.id} className="flex gap-2 items-center bg-[var(--bg)] px-3 py-2 rounded-lg border-2 border-[var(--text)]">
                   <span className="font-black text-gray-500 text-sm">#{i + 4}</span>
-                  <span className="font-bold text-sm max-w-[80px] truncate">{p.name}</span>
+                  <span className="font-bold text-sm max-w-[80px] truncate"><PupilName name={p.name} /></span>
                   <span className="font-black text-base">{p.score}<span className="text-[10px] ml-0.5">pt</span></span>
                 </div>
               ))}
@@ -4570,6 +4631,8 @@ export default function App() {
   const [state, setState] = useState({ problemSet: [], timeLimitSec: 0, courseName: '', finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0, gameMode: 'SCORE_ATTACK', mistakes: [] });
   const [stats, setStats] = useState(() => StorageAPI.getStats());
   const [resumeData, setResumeData] = useState(() => StorageAPI.getResume());
+  // 提示モードと「えんしゅつをへらす」の状態。framer-motion にも伝える
+  const { reduceFx } = usePresentation();
 
   const resumeGame = () => {
     const data = StorageAPI.getResume();
@@ -5534,17 +5597,35 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-[var(--bg)] relative overflow-hidden transition-colors duration-500">
+    // reducedMotion="user" は端末の「視差効果を減らす」を framer-motion に守らせる指定。
+    // アプリ内の「えんしゅつをへらす」が入っているときは "always" にして、
+    // OS の設定に手が届かない児童でも動きを止められるようにする（Part I §2-10）
+    <MotionConfig reducedMotion={reduceFx ? 'always' : 'user'}>
+    {/* 横向きにしたときノッチ側が欠けないよう、左右にセーフエリアぶんの余白を足す（Part I §2-3） */}
+    <div
+      className="flex flex-col h-[100dvh] w-full bg-[var(--bg)] relative overflow-hidden transition-colors duration-500"
+      style={{ paddingLeft: 'var(--safe-l)', paddingRight: 'var(--safe-r)' }}
+    >
       <GlobalStyle />
       {view !== 'game' && (
-        <header className="flex-shrink-0 bg-[var(--panel)]/90 backdrop-blur border-b-[4px] border-[var(--accent)] py-3 px-5 flex justify-between items-center z-50 sticky top-0 shadow-sm transition-colors duration-500">
+        <header
+          className="flex-shrink-0 bg-[var(--panel)]/90 backdrop-blur border-b-[4px] border-[var(--accent)] py-3 px-5 flex justify-between items-center z-50 sticky top-0 shadow-sm transition-colors duration-500"
+          // 上端のノッチ・ステータスバーにタイトルが潜りこまないようにする
+          style={{ paddingTop: 'calc(0.75rem + var(--safe-t))' }}
+        >
           <div className="flex items-center cursor-pointer gap-2" onClick={handleHomeClick}>
             <div className="bg-[var(--secondary)] p-1.5 rounded-lg text-[var(--panel)] shadow-sm border-2 border-[var(--text)]"><Calculator size={22} strokeWidth={3} /></div>
             <h1 className="text-2xl font-black text-[var(--text)] tracking-wide">Qalc<span className="text-[var(--primary)]">.</span></h1>
           </div>
           <div className="flex items-center gap-3">
             {peerState.role && <span className="font-bold text-xs bg-[var(--accent)] px-2 py-1 rounded border-2 border-[var(--text)]">{peerState.role === 'host' ? 'リーダー' : 'メンバー'}</span>}
-            <button onClick={() => setIsMuted(audioCtrl.toggle())} className="text-[var(--text)] opacity-50 hover:opacity-100 p-2 rounded-full transition-all focus:outline-none border-2 border-transparent hover:border-[var(--text)] hover:bg-[var(--bg)]">
+            {/* 電子黒板に映すときの拡大・全画面・名前かくし（Part I §2-11） */}
+            <PresentationControl onSound={() => audioCtrl.playSE('click')} />
+            <button
+              onClick={() => setIsMuted(audioCtrl.toggle())}
+              aria-label={isMuted ? 'おとを出す' : 'おとを消す'}
+              className="text-[var(--text)] opacity-50 hover:opacity-100 p-2 rounded-full transition-all focus:outline-none border-2 border-transparent hover:border-[var(--text)] hover:bg-[var(--bg)] min-w-[44px] min-h-[44px] flex items-center justify-center"
+            >
               {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} className="text-[var(--primary)]" />}
             </button>
           </div>
@@ -5570,7 +5651,11 @@ export default function App() {
       </main>
 
       {view !== 'game' && (
-        <footer className="w-full bg-[var(--panel)] border-t-[3px] border-[var(--text)] pt-3 pb-2 text-center text-sm text-[var(--text)] font-bold shrink-0 z-50 transition-colors duration-500">
+        <footer
+          className="w-full bg-[var(--panel)] border-t-[3px] border-[var(--text)] pt-3 pb-2 text-center text-sm text-[var(--text)] font-bold shrink-0 z-50 transition-colors duration-500"
+          // iPhone のホームバーに文字が重ならないようにする（Part I §2-3）
+          style={{ paddingBottom: 'calc(0.5rem + var(--safe-b))' }}
+        >
           <p>
             © {new Date().getFullYear()} Qalc
             <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] cursor-default outline-none">
@@ -5607,5 +5692,6 @@ export default function App() {
       {/* カスタム通知コンポーネントを配置 */}
       <CustomToast />
     </div>
+    </MotionConfig>
   );
 }

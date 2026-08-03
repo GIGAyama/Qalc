@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Swords, Heart, Crown, Sparkles, AlertTriangle, Flame, Shield, Bomb } from 'lucide-react';
+// 提示モード中は児童名を伏せる（電子黒板は廊下や参観の保護者からも見える）
+import { PupilName } from './presentation.jsx';
 
 // ==========================================
 // ボスバトル(BOSS_RAID)モード
@@ -542,7 +544,7 @@ export const BossPanel = ({ raidState, compact = false }) => {
       <div className="flex-grow min-w-0 relative">
         <div className="flex items-center justify-between gap-2 mb-1">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="font-black text-sm md:text-base text-[var(--text)] truncate">{name}</span>
+            <span className="font-black text-sm md:text-base text-[var(--text)] truncate"><PupilName name={name} /></span>
             <span className="shrink-0 text-[10px] font-black bg-[var(--primary)] text-white rounded-full px-2 py-0.5 border border-[var(--text)]">{stage}たいめ</span>
             {/* 狭い画面では文字を落としてアイコンだけにし、ボス名の表示幅を確保する */}
             {enraged && (
@@ -860,7 +862,7 @@ export const RaidEventOverlay = ({ lastEvent }) => {
       {show && kind === 'boss_enrage' && enrageCut()}
       {show && kind === 'boss_defeated' && banner('bg-[var(--accent)] text-[var(--text)]', <>👑 たおした！！</>)}
       {show && kind === 'team_down' && banner('bg-[var(--panel)] text-[var(--primary)]', <><span className="ruby-text">💥 たいせいを たてなおせ！</span></>)}
-      {show && kind === 'support' && banner('bg-pink-100 text-pink-600', <>💝 {lastEvent.name} さんの おうえん！</>)}
+      {show && kind === 'support' && banner('bg-pink-100 text-pink-600', <>💝 <PupilName name={lastEvent.name} /> さんの おうえん！</>)}
       {show && kind === 'bomb_defused' && banner('bg-emerald-100 text-emerald-600', <>✅ バクダン かいじょ！</>)}
       {show && kind === 'bomb_blast' && banner('bg-red-100 text-red-600', <>💣 ばくはつした！</>)}
       {show && kind === 'boss_shield' && banner('bg-cyan-100 text-cyan-700', <>🛡 バリアを はった！</>)}
@@ -908,7 +910,7 @@ export const RaidResultPanel = ({ raidResult, myId }) => {
           {mvps.map(m => (
             <motion.div key={m.key} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', bounce: 0.5, delay: 0.3 }}
               className="bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-3 py-1.5 font-black text-xs text-[var(--text)] flex items-center gap-1">
-              {m.emoji} {m.label}: {m.winner.name}
+              {m.emoji} {m.label}: <PupilName name={m.winner.name} />
             </motion.div>
           ))}
         </div>
@@ -919,7 +921,7 @@ export const RaidResultPanel = ({ raidResult, myId }) => {
           <div key={p.id} className={`rounded-xl border-2 px-3 py-2 ${p.id === myId ? 'border-[var(--primary)] bg-[var(--bg)]' : 'border-[var(--text)] bg-[var(--bg)]'}`}>
             <div className="flex items-center gap-2 mb-1">
               <span className="font-black text-xs text-[var(--text)] opacity-50 w-6">#{idx + 1}</span>
-              <span className="font-bold text-sm truncate flex-grow">{p.name}{p.id === myId && <span className="text-[10px] text-[var(--primary)] ml-1">(あなた)</span>}</span>
+              <span className="font-bold text-sm truncate flex-grow"><PupilName name={p.name} />{p.id === myId && <span className="text-[10px] text-[var(--primary)] ml-1">(あなた)</span>}</span>
               <span className="font-black text-sm text-[var(--text)] shrink-0">⚔{p.damage}</span>
               <span className="font-black text-xs text-pink-500 shrink-0">💝{p.supports || 0}</span>
               <span className="font-black text-xs text-orange-500 shrink-0">🔥{p.maxCombo || 0}</span>
