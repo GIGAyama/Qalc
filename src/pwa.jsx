@@ -106,7 +106,7 @@ export const UpdateNotice = () => {
                     type="button"
                     onClick={() => setReady(false)}
                     aria-label="あとにする"
-                    className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text)] opacity-50 hover:opacity-100"
+                    className="shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text)] opacity-80 hover:opacity-100"
                 >
                     <X size={18} />
                 </button>
@@ -156,7 +156,7 @@ export const InstallButton = ({ onSound }) => {
                 type="button"
                 onClick={() => { onSound?.(); if (isIos() && !canInstall) setShowIosHelp((v) => !v); else install(); }}
                 aria-label="アプリとしてインストールする"
-                className="p-2 rounded-full transition-all border-2 border-transparent text-[var(--text)] opacity-50 hover:opacity-100 hover:border-[var(--text)] hover:bg-[var(--bg)] min-w-[44px] min-h-[44px] flex items-center justify-center"
+                className="p-2 rounded-full transition-all border-2 border-transparent text-[var(--text)] opacity-80 hover:opacity-100 hover:border-[var(--text)] hover:bg-[var(--bg)] min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
                 <Download size={24} />
             </button>
@@ -181,7 +181,7 @@ export const InstallButton = ({ onSound }) => {
                                 type="button"
                                 onClick={() => { onSound?.(); setShowIosHelp(false); }}
                                 aria-label="とじる"
-                                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text)] opacity-60 hover:opacity-100"
+                                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text)] opacity-80 hover:opacity-100"
                             >
                                 <X size={20} />
                             </button>
@@ -200,7 +200,7 @@ export const InstallButton = ({ onSound }) => {
                                 <span>右上の <b>「追加」</b> を おす</span>
                             </li>
                         </ol>
-                        <p className="mt-3 text-[11px] text-[var(--text)] opacity-60 leading-snug">
+                        <p className="mt-3 text-[11px] text-[var(--text)] opacity-80 leading-snug">
                             ホームがめんに おいておくと、インターネットに つながっていなくても あそべます。
                         </p>
                     </div>

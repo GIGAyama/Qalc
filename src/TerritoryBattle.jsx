@@ -479,7 +479,7 @@ export const TerritoryScoreBar = ({ terrState, myTeam, lastSpurt }) => {
       <div className="flex justify-center items-center gap-2 mt-0.5 text-[10px] font-black relative">
         {myTeam && <span style={{ color: TEAMS[myTeam].color }}>あなたは {TEAMS[myTeam].label}チーム！</span>}
         {!hasCells || neutral > 0
-          ? <span className="text-[var(--text)] opacity-50">しろいマス のこり {neutral}</span>
+          ? <span className="text-[var(--text)] opacity-80">しろいマス のこり {neutral}</span>
           : <span className="text-[var(--primary)]">⚔ ぜんめん うばいあい！</span>}
         {lastSpurt && <span className="text-red-500">⏰ ラストスパート ぬり2ばい！</span>}
       </div>
@@ -521,7 +521,7 @@ const InkSplat = ({ owner }) => (
 export const TerritoryBoard = ({ terrState, myTeam, myId, targetIdx, onSelect, lastSpurt }) => {
   const cells = terrState?.cells;
   if (!cells || !myTeam) {
-    return <div className="flex items-center justify-center h-full font-bold text-sm text-[var(--text)] opacity-60">ばんめんを じゅんびちゅう…</div>;
+    return <div className="flex items-center justify-center h-full font-bold text-sm text-[var(--text)] opacity-80">ばんめんを じゅんびちゅう…</div>;
   }
   const enemy = otherTeam(myTeam);
 
@@ -643,7 +643,7 @@ export const TerritorySpecialButton = ({ gauge, kind, onFire }) => {
             strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - ratio)} style={{ transition: 'stroke-dashoffset 0.3s' }} />
         </svg>
         <span className={`leading-none ${ready ? 'text-3xl drop-shadow' : 'text-xl opacity-40 grayscale'}`}>{sp.emoji}</span>
-        {!ready && <span className="text-[9px] font-black text-[var(--text)] opacity-50 tabular-nums">{gauge}/{TERRITORY_CONSTANTS.SPECIAL_MAX}</span>}
+        {!ready && <span className="text-[9px] font-black text-[var(--text)] opacity-80 tabular-nums">{gauge}/{TERRITORY_CONSTANTS.SPECIAL_MAX}</span>}
       </motion.button>
       {ready && (
         <motion.span initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}
@@ -889,7 +889,7 @@ export const TerritoryResultPanel = ({ territoryResult, myId }) => {
       </div>
       <div className="flex justify-between w-full text-[11px] font-black mb-3 relative">
         <CountUp to={Math.round((scores.red / TOTAL_VALUE) * 100)} suffix="%" className="text-[#EF4444]" />
-        <span className="text-[var(--text)] opacity-50">ぬり率</span>
+        <span className="text-[var(--text)] opacity-80">ぬり率</span>
         <CountUp to={Math.round((scores.blue / TOTAL_VALUE) * 100)} suffix="%" className="text-[#3B82F6]" />
       </div>
 
