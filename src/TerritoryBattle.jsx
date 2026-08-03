@@ -408,7 +408,11 @@ export const TerritoryCharacter = ({ mood = 'idle', line, team, bubble = true, b
         <AnimatePresence mode="wait">
           <motion.div key={mood} className="absolute inset-0"
             initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.7 }} transition={{ duration: 0.2 }}>
+            {/* width/height は元画像と同じ 448。入れておかないと読みこみ前の高さが 0 になり、
+                絵が出たしゅんかん下のスコアがガクッとずれる(CLS)。decoding=async は
+                デコード待ちで盤面の操作が止まらないようにするため（Part I §2-6） */}
             <motion.img src={territoryCharacterUrl(mood)} alt={TERRITORY_CHARACTER_NAME} draggable={false}
+              width={448} height={448} decoding="async"
               className="w-full h-full object-contain"
               style={{ filter: 'drop-shadow(0 3px 4px rgba(0,0,0,0.3))' }}
               animate={m.anim} transition={m.transition} />
