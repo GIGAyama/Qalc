@@ -8,6 +8,8 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { Download, RefreshCw, Share, PlusSquare, X } from 'lucide-react';
+// Esc と端末の「戻る」でも閉じられるようにする（Part I §4）
+import { useBackHandler, BACK_PRIORITY } from './BackNavigation.jsx';
 
 /* ── ホーム画面から起動しているか ───────────────────────── */
 export const isStandalone = () =>
@@ -91,14 +93,14 @@ export const UpdateNotice = () => {
             style={{ bottom: 'calc(16px + var(--safe-b))' }}
         >
             <div className="pointer-events-auto flex items-center gap-3 bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-2xl shadow-[3px_3px_0_var(--text)] px-4 py-3 max-w-md w-full">
-                <RefreshCw size={22} className="text-[var(--primary)] shrink-0" />
+                <RefreshCw size={22} className="text-[var(--primary-d)] shrink-0" />
                 <span className="font-bold text-sm text-[var(--text)] flex-grow leading-snug">
                     あたらしい バージョンが あります
                 </span>
                 <button
                     type="button"
                     onClick={apply}
-                    className="shrink-0 min-h-[44px] px-4 rounded-xl border-[3px] border-[var(--text)] bg-[var(--primary)] text-[var(--panel)] font-black text-sm active:scale-95 transition-transform"
+                    className="shrink-0 min-h-[44px] px-4 rounded-xl border-[3px] border-[var(--text)] bg-[var(--primary)] text-[var(--on-primary)] font-black text-sm active:scale-95 transition-transform"
                 >
                     さいしんに する
                 </button>
@@ -120,6 +122,8 @@ export const InstallButton = ({ onSound }) => {
     const [canInstall, setCanInstall] = useState(() => !!window.__deferredInstallPrompt);
     const [installed, setInstalled] = useState(() => isStandalone());
     const [showIosHelp, setShowIosHelp] = useState(false);
+    // 開いているあいだだけ、Esc と端末の「戻る」を受けとる
+    useBackHandler(showIosHelp, () => { setShowIosHelp(false); return true; }, BACK_PRIORITY.overlay);
 
     useEffect(() => {
         const onReady = () => setCanInstall(true);
@@ -188,15 +192,15 @@ export const InstallButton = ({ onSound }) => {
                         </div>
                         <ol className="text-sm text-[var(--text)] flex flex-col gap-2 leading-snug">
                             <li className="flex items-start gap-2">
-                                <Share size={18} className="shrink-0 mt-0.5 text-[var(--primary)]" />
+                                <Share size={18} className="shrink-0 mt-0.5 text-[var(--primary-d)]" />
                                 <span>下（または右上）の <b>きょうゆう</b> ボタンを おす</span>
                             </li>
                             <li className="flex items-start gap-2">
-                                <PlusSquare size={18} className="shrink-0 mt-0.5 text-[var(--primary)]" />
+                                <PlusSquare size={18} className="shrink-0 mt-0.5 text-[var(--primary-d)]" />
                                 <span><b>「ホーム画面に追加」</b> を えらぶ</span>
                             </li>
                             <li className="flex items-start gap-2">
-                                <span className="shrink-0 mt-0.5 w-[18px] text-center font-black text-[var(--primary)]">3</span>
+                                <span className="shrink-0 mt-0.5 w-[18px] text-center font-black text-[var(--primary-d)]">3</span>
                                 <span>右上の <b>「追加」</b> を おす</span>
                             </li>
                         </ol>

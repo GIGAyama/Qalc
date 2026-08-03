@@ -12,6 +12,8 @@
  */
 import React, { useSyncExternalStore, useCallback, useEffect, useState } from 'react';
 import { Presentation, Maximize, Minimize, X } from 'lucide-react';
+// Esc と端末の「戻る」でも閉じられるようにする（Part I §4）
+import { useBackHandler, BACK_PRIORITY } from './BackNavigation.jsx';
 
 // 自アプリ接頭辞のキー。学習ログ(study.records.v1)とは別なので、リセットしても学習記録は消えない
 const KEY = 'qalc.presentation.v1';
@@ -122,6 +124,8 @@ export const PresentationControl = ({ onSound }) => {
     const { big, maskNames, reduceFx } = usePresentation();
     const [open, setOpen] = useState(false);
     const [isFull, toggleFull] = useFullscreen();
+    // 開いているあいだだけ、Esc と端末の「戻る」を受けとる
+    useBackHandler(open, () => { setOpen(false); return true; }, BACK_PRIORITY.overlay);
 
     const click = (fn) => () => { onSound?.(); fn(); };
 
@@ -134,7 +138,7 @@ export const PresentationControl = ({ onSound }) => {
                 aria-expanded={open}
                 className={`p-2 rounded-full transition-all border-2 min-w-[44px] min-h-[44px] flex items-center justify-center
                     ${big
-                        ? 'text-[var(--primary)] border-[var(--text)] bg-[var(--accent)]'
+                        ? 'text-[var(--primary-d)] border-[var(--text)] bg-[var(--accent)]'
                         : 'text-[var(--text)] opacity-80 hover:opacity-100 border-transparent hover:border-[var(--text)] hover:bg-[var(--bg)]'}`}
             >
                 <Presentation size={24} />
@@ -215,7 +219,7 @@ const PanelToggle = ({ checked, onChange, label, hint }) => (
         <span
             aria-hidden="true"
             className={`mt-0.5 shrink-0 w-6 h-6 rounded-md border-[3px] border-[var(--text)] flex items-center justify-center text-xs font-black
-                ${checked ? 'bg-[var(--primary)] text-[var(--panel)]' : 'bg-[var(--panel)] text-transparent'}`}
+                ${checked ? 'bg-[var(--primary)] text-[var(--on-primary)]' : 'bg-[var(--panel)] text-transparent'}`}
         >
             ✓
         </span>

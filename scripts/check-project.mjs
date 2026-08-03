@@ -84,9 +84,16 @@ const indexHtml = read(P.indexHtml) || '';
   }
 }
 {
-  // ありがちな直書き。APIキー・スプレッドシートID・メールアドレス
+  /* ありがちな直書き。
+   * 前半4つは SchoolPlan_Editor/scripts/lib/project-quality.mjs（品質ゲートの正本）の
+   * detectSecretCandidates と同じパターン。正本は GAS(C型)むけで、こちらは
+   * 表示とPWA(B型)むけと守備範囲が違うが、「秘密情報を配ってしまわない」ことは
+   * 型によらず共通なので、そこだけ揃えている。 */
   const patterns = [
-    [/AIza[0-9A-Za-z_-]{35}/, 'Google APIキーらしき文字列'],
+    [/AIza[0-9A-Za-z_-]{35}/, 'Google APIキー'],
+    [/(?:ghp|github_pat)_[0-9A-Za-z_]{20,}/, 'GitHub のトークン'],
+    [/sk-[0-9A-Za-z_-]{32,}/, 'OpenAI のAPIキー'],
+    [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/, '秘密鍵'],
     [/\b1[A-Za-z0-9_-]{43}\b/, 'スプレッドシートIDらしき文字列'],
     [/[\w.+-]+@(?!example\.)[\w-]+\.[\w.]+/, 'メールアドレス'],
   ];
@@ -96,6 +103,17 @@ const indexHtml = read(P.indexHtml) || '';
     for (const [re, label] of patterns) if (re.test(t)) hits.push(`${f.replace(ROOT + '/', '')}: ${label}`);
   }
   check('B2', '秘密情報・IDの直書きが無い', hits.length === 0, hits.join(' / '));
+}
+{
+  /* マージの跡が残ったまま配られていないか（正本の MERGE_CONFLICT_MARKER と同じ）。
+   * 残っていると画面に <<<<<<< がそのまま出るか、構文エラーで真っ白になる。 */
+  const bad = [];
+  for (const f of allSource) {
+    readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+      if (/^(<<<<<<<|=======|>>>>>>>)(\s|$)/.test(line)) bad.push(`${f.replace(ROOT + '/', '')}:${i + 1}`);
+    });
+  }
+  check('B6', 'マージの跡（<<<<<<<）が残っていない', bad.length === 0, bad.join(', '));
 }
 check('B4', "postMessage の宛先が '*' でない", !/postMessage\([^)]*['"]\*['"]/.test(sourceText));
 
@@ -244,6 +262,31 @@ check('E10', 'MANUAL に iOS のホーム画面追加手順がある',
   }
   check('G2', '中断記録と5分ルールがある',
     /aborted/.test(sourceText) && /5 \* 60 \* 1000|300000/.test(sourceText));
+
+  /* 共通ロジックの版ずれの検知（Part III P3「共通ロジックを正本と差分確認し、揃える」）
+   *
+   * studyLog.js は GIGA山の学習アプリ全体で同じ動きをすることになっている。
+   * 実際に3本（Qalc / KANJI_Town / Keisan-Card）を突き合わせたところ、
+   * ロジック版1.1の中身は一致していた。ちがうのは書き方だけで、
+   *   B型(Vite) … ESM（export function）
+   *   A型(単一HTML) … IIFE（global.StudyLog）
+   * とアプリの型に合わせてあるためで、これは版ずれではない。
+   *
+   * ここでは「版の表記」と「変わってはいけない値」だけを見る。
+   * 全文を比べないのは、上のとおり書き方が型ごとに違ってよいから。 */
+  if (log) {
+    check('G3', 'studyLog のロジック版が明記されている', /ロジック版[：: ]*\*{0,2}1\.1/.test(log),
+      (log.match(/ロジック版[：: ]*\*{0,2}[\d.]+/) || ['見あたらない'])[0]);
+    const invariants = [
+      [/STUDY_LOG_MAX\s*=\s*500/, '上限500件'],
+      [/STUDY_ITEMS_MAX\s*=\s*200/, '設問200件'],
+      [/schema:\s*'study\.v1'/, "schema: 'study.v1'"],
+      [/length\s*<=\s*12/, '誤答は12文字まで'],
+    ];
+    const missing = invariants.filter(([re]) => !re.test(log)).map(([, label]) => label);
+    check('G4', '共通ロジックの決まった値が変わっていない', missing.length === 0,
+      missing.length ? `ちがっている: ${missing.join(' / ')}` : '上限500件・設問200件・study.v1・誤答12文字');
+  }
 }
 
 // ── 出力 ────────────────────────────────────────

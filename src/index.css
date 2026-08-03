@@ -81,10 +81,21 @@ body {
     overscroll-behavior: contain;
 }
 
-/* キーボードだけで操作している人に、いまどこにいるかを必ず見せる（Part I §4） */
-:focus-visible {
-    outline: 3px solid var(--primary, #FF6B6B);
-    outline-offset: 2px;
+/* キーボードだけで操作している人に、いまどこにいるかを必ず見せる（Part I §4）
+ *
+ * !important を付けているのは、Tailwind の focus:outline-none
+ * （実体は outline: 2px solid transparent）のほうが詳細度で勝つため。
+ * :focus-visible は 0,1,0 なので、.focus\:outline-none:focus の 0,2,0 に負ける。
+ * 実際、音量ボタンにこの指定が付いていて枠が消えていた（その指定自体も外した）。
+ * ここは「消えていても大半の人は気づかないが、キーボードだけで操作する人には
+ * 致命的」という種類の指定なので、あとから足されても消えないようにしてある。 */
+:focus-visible,
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[role="switch"]:focus-visible {
+    outline: 3px solid var(--primary, #FF6B6B) !important;
+    outline-offset: 2px !important;
 }
 
 /* ハイコントラストモードでは背景色が無効化される。

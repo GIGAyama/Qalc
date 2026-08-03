@@ -73,9 +73,9 @@ const BlocksTool = ({ p, qText, onFx }) => {
       <div className="flex flex-col items-center gap-4">
         <ToolHint>ブロックを ふやしたり へらしたりして かんがえよう</ToolHint>
         <div className="flex items-center gap-4">
-          <button onClick={() => { onFx?.(); setFreeCount((c) => Math.max(0, c - 1)); }} className="w-14 h-14 rounded-2xl bg-[var(--bg)] border-[3px] border-[var(--text)] font-black text-3xl text-[var(--primary)] shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none touch-manipulation">−</button>
+          <button onClick={() => { onFx?.(); setFreeCount((c) => Math.max(0, c - 1)); }} className="w-14 h-14 rounded-2xl bg-[var(--bg)] border-[3px] border-[var(--text)] font-black text-3xl text-[var(--primary-d)] shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none touch-manipulation">−</button>
           <div className="font-black text-4xl text-[var(--text)] w-16 text-center">{freeCount}</div>
-          <button onClick={() => { onFx?.(); setFreeCount((c) => Math.min(20, c + 1)); }} className="w-14 h-14 rounded-2xl bg-[var(--bg)] border-[3px] border-[var(--text)] font-black text-3xl text-[var(--secondary)] shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none touch-manipulation">＋</button>
+          <button onClick={() => { onFx?.(); setFreeCount((c) => Math.min(20, c + 1)); }} className="w-14 h-14 rounded-2xl bg-[var(--bg)] border-[3px] border-[var(--text)] font-black text-3xl text-[var(--secondary-d)] shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none touch-manipulation">＋</button>
         </div>
         <BlockGrid count={freeCount} color="bg-orange-400" />
       </div>
@@ -122,7 +122,7 @@ const BlocksTool = ({ p, qText, onFx }) => {
 const CherryCircle = ({ value, revealed, onReveal }) => (
   <button
     onClick={onReveal}
-    className={`w-14 h-14 rounded-full border-[3px] border-[var(--text)] font-black text-2xl flex items-center justify-center shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none transition-all touch-manipulation ${revealed ? 'bg-[var(--accent)] text-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`}
+    className={`w-14 h-14 rounded-full border-[3px] border-[var(--text)] font-black text-2xl flex items-center justify-center shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none transition-all touch-manipulation ${revealed ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`}
   >
     {revealed ? value : '?'}
   </button>
@@ -146,7 +146,7 @@ const SakuranboTool = ({ p, onFx }) => {
 
   const NumberBox = ({ n, isTarget }) => (
     <div className="flex flex-col items-center">
-      <span className={`font-black text-5xl ${isTarget ? 'text-[var(--primary)]' : 'text-[var(--text)]'}`}>{n}</span>
+      <span className={`font-black text-5xl ${isTarget ? 'text-[var(--primary-d)]' : 'text-[var(--text)]'}`}>{n}</span>
       {isTarget && (
         <>
           <svg width="90" height="26" className="mt-1" aria-hidden="true">
@@ -205,7 +205,7 @@ const HissanTool = ({ p }) => {
     );
   }
 
-  const DotCell = () => <div className="w-4 h-12 sm:h-14 flex items-end justify-center pb-2 font-black text-3xl text-[var(--primary)] leading-none">.</div>;
+  const DotCell = () => <div className="w-4 h-12 sm:h-14 flex items-end justify-center pb-2 font-black text-3xl text-[var(--primary-d)] leading-none">.</div>;
   const DotSpacer = () => <div className="w-4 h-12 sm:h-14" />;
 
   const opChar = p.op === '×' ? '×' : p.op === '+' ? '＋' : '−';
@@ -546,7 +546,7 @@ const ArrayTool = ({ spec }) => {
           </div>
         )}
       </div>
-      {spec.remainder && rest > 0 && <span className="font-black text-sm text-[var(--primary)]">あかい ●が あまりだよ</span>}
+      {spec.remainder && rest > 0 && <span className="font-black text-sm text-[var(--primary-d)]">あかい ●が あまりだよ</span>}
     </div>
   );
 };
@@ -584,7 +584,7 @@ const ImproperFractionView = ({ n, d }) => {
       <div className="flex flex-col gap-1.5 w-full max-w-[260px]">
         {rows.map((filled, r) => (
           <div key={r} className="flex items-center gap-2">
-            <span className={`font-black text-xs w-10 text-right ${filled === d ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'}`}>
+            <span className={`font-black text-xs w-10 text-right ${filled === d ? 'text-[var(--primary-d)]' : 'text-[var(--text)] opacity-80'}`}>
               {filled === d ? '1' : `${filled}/${d}`}
             </span>
             <div className="flex flex-grow h-8 border-[3px] border-[var(--text)] rounded-lg overflow-hidden bg-[var(--panel)]">
@@ -671,7 +671,7 @@ const ReduceFractionView = ({ n, d }) => {
       </div>
       <span className="font-black text-2xl text-[var(--text)]">↓ {k}こずつ まとめると</span>
       <div className="flex items-center gap-3 w-full justify-center">
-        <span className="font-black text-sm text-[var(--primary)] w-14 text-right">{n / k}/{d / k}</span>
+        <span className="font-black text-sm text-[var(--primary-d)] w-14 text-right">{n / k}/{d / k}</span>
         <div className="flex h-9 w-full max-w-[240px] border-[3px] border-[var(--text)] rounded-lg overflow-hidden bg-[var(--panel)]">
           {Array.from({ length: d / k }).map((_, i) => (
             <div key={i} className={`flex-1 ${i < n / k ? 'bg-[var(--primary)]' : ''} ${i > 0 ? 'border-l-[3px] border-[var(--text)]' : ''}`} />
@@ -1128,7 +1128,7 @@ const MiniClock = ({ h, m, unknown, label }) => {
           </>
         )}
       </svg>
-      <span className={`font-black text-sm ${unknown ? 'text-[var(--primary)]' : 'text-[var(--text)]'}`}>
+      <span className={`font-black text-sm ${unknown ? 'text-[var(--primary-d)]' : 'text-[var(--text)]'}`}>
         {unknown ? '？時？分' : `${h}時${String(m).padStart(2, '0')}分`}
       </span>
     </div>
@@ -1198,7 +1198,7 @@ const JikokuTool = ({ spec }) => {
       <div className="flex items-center justify-center gap-1 sm:gap-3">
         <MiniClock h={spec.from.h} m={spec.from.m} unknown={spec.ask === 'from'} label="はじめ" />
         <div className="flex flex-col items-center pb-6">
-          <span className="font-black text-sm text-[var(--primary)] whitespace-nowrap">{spec.ask === 'span' ? '？分' : `${spec.span}分`}</span>
+          <span className="font-black text-sm text-[var(--primary-d)] whitespace-nowrap">{spec.ask === 'span' ? '？分' : `${spec.span}分`}</span>
           <span className="font-black text-2xl text-[var(--text)]">→</span>
         </div>
         <MiniClock h={spec.to.h} m={spec.to.m} unknown={spec.ask === 'to'} label="おわり" />
@@ -1221,11 +1221,11 @@ const TaniTool = ({ spec }) => {
           <React.Fragment key={u}>
             {i > 0 && (
               <div className="flex flex-col items-center justify-center px-0.5 shrink-0">
-                <span className={`font-black text-[10px] leading-tight ${i - 1 >= from && i <= to ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'}`}>×{ladder.factors[i - 1]}</span>
-                <span className={`text-lg leading-none ${i - 1 >= from && i <= to ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'}`}>→</span>
+                <span className={`font-black text-[10px] leading-tight ${i - 1 >= from && i <= to ? 'text-[var(--primary-d)]' : 'text-[var(--text)] opacity-80'}`}>×{ladder.factors[i - 1]}</span>
+                <span className={`text-lg leading-none ${i - 1 >= from && i <= to ? 'text-[var(--primary-d)]' : 'text-[var(--text)] opacity-80'}`}>→</span>
               </div>
             )}
-            <div className={`shrink-0 w-14 py-2 rounded-xl border-[3px] flex items-center justify-center font-black text-base ${i === from || i === to ? 'bg-[var(--accent)] border-[var(--text)] text-[var(--text)]' : 'bg-[var(--bg)] border-[var(--text)] border-opacity-80 text-[var(--text)] opacity-80'}`}>
+            <div className={`shrink-0 w-14 py-2 rounded-xl border-[3px] flex items-center justify-center font-black text-base ${i === from || i === to ? 'bg-[var(--accent)] border-[var(--text)] text-[var(--on-accent)]' : 'bg-[var(--bg)] border-[var(--text)] border-opacity-80 text-[var(--text)] opacity-80'}`}>
               {u}
             </div>
           </React.Fragment>
@@ -1490,7 +1490,7 @@ const HeikinTool = ({ spec }) => {
           </div>
         ))}
         <div className="absolute left-0 right-0 border-t-[3px] border-dashed border-[var(--primary)]" style={{ bottom: `${(avg / max) * 100}%` }}>
-          <span className="absolute top-1 right-0 font-black text-xs text-[var(--primary)] bg-[var(--panel)] border border-[var(--primary)] rounded px-1">ならした 高さ ＝ ？</span>
+          <span className="absolute top-1 right-0 font-black text-xs text-[var(--primary-d)] bg-[var(--panel)] border border-[var(--primary)] rounded px-1">ならした 高さ ＝ ？</span>
         </div>
       </div>
       <span className="font-black text-base text-[var(--text)] bg-[var(--bg)] border-2 border-[var(--text)] rounded-xl px-3 py-1.5">
@@ -1521,7 +1521,7 @@ const BaisuuTool = ({ spec }) => {
         {Array.from({ length: max }).map((_, i) => {
           const n = i + 1;
           const a = isA(n); const b = isB(n);
-          const cls = a && b ? 'bg-[var(--accent)] text-[var(--text)]'
+          const cls = a && b ? 'bg-[var(--accent)] text-[var(--on-accent)]'
             : a ? 'bg-orange-400 text-[var(--text)]'
               : b ? 'bg-sky-400 text-[var(--text)]'
                 : 'bg-[var(--bg)] text-[var(--text)] opacity-80';
@@ -1589,7 +1589,7 @@ const ShikiTool = ({ spec }) => {
           {parts.map((x, i) => (
             <div
               key={i}
-              className={`flex items-center justify-center font-black text-sm ${x.label === '□' ? 'bg-[var(--primary)] text-[var(--panel)]' : 'bg-[var(--accent)] text-[var(--text)]'} ${i > 0 ? 'border-l-[3px] border-[var(--text)]' : ''}`}
+              className={`flex items-center justify-center font-black text-sm ${x.label === '□' ? 'bg-[var(--primary)] text-[var(--on-primary)]' : 'bg-[var(--accent)] text-[var(--on-accent)]'} ${i > 0 ? 'border-l-[3px] border-[var(--text)]' : ''}`}
               style={{ width: `${widthOf(x)}%` }}
             >
               {x.label}
@@ -1618,12 +1618,12 @@ const HireiTool = ({ spec }) => {
         <div className="flex">
           <div className="w-12 py-2 border border-[var(--text)] bg-[var(--bg)] font-black text-center text-[var(--text)]">x</div>
           <div className="w-20 py-2 border border-[var(--text)] bg-[var(--panel)] font-black text-center text-[var(--text)]">{spec.x1}</div>
-          <div className="w-20 py-2 border border-[var(--text)] bg-[var(--accent)] font-black text-center text-[var(--text)]">{spec.x2}</div>
+          <div className="w-20 py-2 border border-[var(--text)] bg-[var(--accent)] font-black text-center text-[var(--on-accent)]">{spec.x2}</div>
         </div>
         <div className="flex">
           <div className="w-12 py-2 border border-[var(--text)] bg-[var(--bg)] font-black text-center text-[var(--text)]">y</div>
           <div className="w-20 py-2 border border-[var(--text)] bg-[var(--panel)] font-black text-center text-[var(--text)]">{spec.y1}</div>
-          <div className="w-20 py-2 border border-[var(--text)] bg-[var(--accent)] font-black text-center text-[var(--primary)]">？</div>
+          <div className="w-20 py-2 border border-[var(--text)] bg-[var(--accent)] font-black text-center text-[var(--primary-d)]">？</div>
         </div>
       </div>
       <div className="flex flex-col items-center gap-1">
@@ -1662,7 +1662,7 @@ const DataTool = ({ spec }) => {
                   <span key={i} className={`w-5 h-5 rounded-full border-2 border-[var(--text)] ${hot ? 'bg-[var(--primary)]' : 'bg-[var(--secondary)]'}`} />
                 ))}
               </div>
-              <span className={`font-black text-sm ${hot ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'}`}>{v}</span>
+              <span className={`font-black text-sm ${hot ? 'text-[var(--primary-d)]' : 'text-[var(--text)] opacity-80'}`}>{v}</span>
             </div>
           );
         })}
@@ -1670,7 +1670,7 @@ const DataTool = ({ spec }) => {
       <div className="w-full max-w-sm border-t-[3px] border-[var(--text)]" />
       <span className="font-black text-sm text-[var(--text)]">
         ならべると: {sorted.map((v, i) => (
-          <span key={i} className={spec.median && i === midIdx ? 'text-[var(--primary)]' : ''}>{v}{i < sorted.length - 1 ? ', ' : ''}</span>
+          <span key={i} className={spec.median && i === midIdx ? 'text-[var(--primary-d)]' : ''}>{v}{i < sorted.length - 1 ? ', ' : ''}</span>
         ))}
       </span>
       <span className="text-xs font-bold text-[var(--text)] opacity-80">
@@ -1694,7 +1694,7 @@ const BaaiTool = ({ spec }) => {
               {i > 0 && <span className="font-black text-xl text-[var(--text)]">×</span>}
               <div className="w-16 rounded-xl border-[3px] border-[var(--text)] bg-[var(--bg)] overflow-hidden">
                 <div className="py-1 text-[10px] font-bold text-center text-[var(--text)] opacity-80 border-b-2 border-[var(--text)]">{i + 1}ばんめ</div>
-                <div className="py-2 font-black text-2xl text-center text-[var(--primary)]">{spec.n - i}</div>
+                <div className="py-2 font-black text-2xl text-center text-[var(--primary-d)]">{spec.n - i}</div>
               </div>
             </React.Fragment>
           ))}
@@ -1713,7 +1713,7 @@ const BaaiTool = ({ spec }) => {
             {Array.from({ length: spec.n }).map((_, r) => (
               <div key={r} className="flex">
                 {Array.from({ length: spec.n }).map((_, c) => (
-                  <div key={c} className={`w-7 h-7 border border-[var(--text)] flex items-center justify-center text-[10px] font-black ${c > r ? 'bg-[var(--accent)] text-[var(--text)]' : 'bg-[var(--bg)] opacity-25'}`}>
+                  <div key={c} className={`w-7 h-7 border border-[var(--text)] flex items-center justify-center text-[10px] font-black ${c > r ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--bg)] opacity-25'}`}>
                     {c > r ? '●' : ''}
                   </div>
                 ))}
@@ -1752,7 +1752,7 @@ const BaaiTool = ({ spec }) => {
         <ToolHint>1回ごとに 「表」「裏」の 2つに 分かれるよ（樹形図）</ToolHint>
         <div className="flex flex-wrap justify-center gap-1.5 max-w-xs">
           {paths.map((p) => (
-            <span key={p} className="px-2 py-1 rounded-lg border-2 border-[var(--text)] bg-[var(--accent)] font-black text-xs text-[var(--text)]">{p}</span>
+            <span key={p} className="px-2 py-1 rounded-lg border-2 border-[var(--text)] bg-[var(--accent)] font-black text-xs text-[var(--on-accent)]">{p}</span>
           ))}
         </div>
         <span className="font-black text-base text-[var(--text)] bg-[var(--bg)] border-2 border-[var(--text)] rounded-xl px-3 py-1.5">
@@ -1806,7 +1806,7 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx, onTo
             className="fixed bottom-0 left-0 right-0 z-[80] mx-auto max-w-2xl bg-[var(--panel)] border-[3px] border-b-0 border-[var(--text)] rounded-t-3xl flex flex-col max-h-[70vh] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] pb-[env(safe-area-inset-bottom)]"
           >
             <div className="flex items-center gap-2 p-3 pb-2 shrink-0">
-              <Lightbulb size={22} className="text-[var(--secondary)] shrink-0" />
+              <Lightbulb size={22} className="text-[var(--secondary-d)] shrink-0" />
               <div className="flex gap-1.5 flex-grow overflow-x-auto no-scrollbar">
                 {tools.map((t) => {
                   const { Icon, label } = TOOL_META[t];

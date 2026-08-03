@@ -22,8 +22,8 @@
     "icon512Bytes": 61440,
     "faviconBytes": 30720,
 
-    "$comment2": "初回に読みこむ JS。Part I §5 の目標は 300KB(initialJsTarget)。このアプリは react-dom(130KB) と framer-motion(約120KB) だけで 250KB を占めるため、いまはまだ届いていない。到達不能な値で毎回落としつづけると検査そのものが無視されるようになるので、いまの実測(約646KB)に少しだけ余裕を持たせた値を天井にし、これ以上ふとらないことを保証する。減らせたら必ずこの値も下げること。差の内訳は AUDIT.md に残してある。",
-    "initialJsBytes": 680000,
+    "$comment2": "初回に読みこむ JS。Part I §5 の目標は 300KB(initialJsTarget)。このアプリは react-dom(130KB) と framer-motion(約120KB) だけで 250KB を占めるため、いまはまだ届いていない。到達不能な値で毎回落としつづけると検査そのものが無視されるようになるので、いまの実測(約598KB)に少しだけ余裕を持たせた値を天井にし、これ以上ふとらないことを保証する。減らせたら必ずこの値も下げること。差の内訳は AUDIT.md に残してある。",
+    "initialJsBytes": 630000,
     "initialJsTarget": 307200
   },
 
