@@ -311,4 +311,6 @@ npm run test:studylog
 
 ## ライセンス
 
-&copy; Qalc GIGA山
+MIT License — 詳しくは [LICENSE](./LICENSE) を参照してください。
+
+&copy; 2026 Qalc GIGA山
