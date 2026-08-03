@@ -107,7 +107,7 @@ Part I §3-1 のとおり、`id` を省略すると `start_url` が代わりの�
 **測った結果、優先すべきは「他アプリを壊しているかどうか」だった。**
 個人情報まわりは、診断した範囲ではどのリポジトリも大きな問題を抱えていない。
 
-### 第1段：他のアプリを壊すのを止める（4本）
+### 第1段：他のアプリを壊すのを止める（4本）— **PR 提出ずみ**
 
 `sw.js` の1行と `manifest` の `id` を直すだけ。**機能には触れないので、まとめて実施できる。**
 
@@ -141,10 +141,10 @@ Part I §3-1 のとおり、`id` を省略すると `start_url` が代わりの�
 | リポジトリ | 型 | 診断 | P0 | P1(表示/PWA) | P2 | P3 | ゲート | 備考 |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|---|
 | Qalc | B | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 試行第1号。PR #43/#44/#45 |
-| SchoolPlan_Editor | C | ✅ | — | — | — | — | — | 🚨sw全消し・mf不備 |
-| Townmap_Mikke | C | ✅ | — | — | — | — | — | 🚨sw全消し・mf不備・dpr無し |
-| Reflection_Journal | C | ✅ | — | — | — | — | — | 🚨sw全消し・mf不備・dpr無し |
-| Quoridor | B | ✅ | — | — | — | — | — | 🚨sw全消し・mf不備・favicon 1.1MB |
+| SchoolPlan_Editor | C | ✅ | — | 🔄PR#24 | — | — | — | sw全消し＋id を修正 |
+| Townmap_Mikke | C | ✅ | — | 🔄PR#10 | — | — | — | sw全消し＋id を修正。dpr は未 |
+| Reflection_Journal | C | ✅ | — | 🔄PR#5 | — | — | — | sw全消しのみ修正。**id は要判断** |
+| Quoridor | B | ✅ | — | 🔄PR#4 | — | — | — | sw全消しのみ修正。**id は要判断**・favicon 1.1MB |
 | tsubomi-learning | A | ✅ | — | — | — | — | — | 画像28.3MB・PWA無し |
 | KANA_Master | A | ✅ | — | — | — | — | — | App.jsx 7,474行 |
 | Keisan-Card | A | ✅ | — | — | — | — | — | offline無し・画像2枚 |
@@ -169,3 +169,41 @@ node scripts/audit-repo.mjs /path/to/repo --json    # 集計用
 Node 上のモックを消しているテスト（`tools/check-study.js`）を拾っていたため。
 いまは `scripts/` `tools/` `test/` とコメントを判定から外してある。
 **新しい検査を足すときは、同じ罠に注意すること。**
+
+
+---
+
+## 第1段の結果（2026-08-03）
+
+4本すべてに PR を出した。**`sw.js` の修正はどれも同じ形で、機能には触れていない。**
+
+| リポジトリ | PR | sw.js | manifest の id |
+|---|---|:--:|---|
+| SchoolPlan_Editor | [#24](https://github.com/GIGAyama/SchoolPlan_Editor/pull/24) | ✅ | ✅ 明示した（**同一性は保たれる**） |
+| Townmap_Mikke | [#10](https://github.com/GIGAyama/Townmap_Mikke/pull/10) | ✅ | ✅ 明示した（**同一性は保たれる**） |
+| Reflection_Journal | [#5](https://github.com/GIGAyama/Reflection_Journal/pull/5) | ✅ | ⏸ **要判断** |
+| Quoridor | [#4](https://github.com/GIGAyama/Quoridor/pull/4) | ✅ | ⏸ **要判断** |
+
+### `id` を2本だけ直さなかった理由
+
+`id` は**マニフェストの場所ではなくオリジンを基準に**解決される、という仕様がある。
+
+| 現状 | 実効値 | `/Name/` に変えると |
+|---|---|---|
+| `id` を書いていない（SchoolPlan_Editor / Townmap_Mikke） | 解決後の `start_url` ＝ `https://gigayama.github.io/Name/` | **同じ値**。すでに入れた人に影響なし → 直した |
+| `id: "./"`（Reflection_Journal / Quoridor） | `https://gigayama.github.io/`（**ドメイン直下**） | **別の識別子になる**。ホーム画面に追加した人は置き直しが必要 → **止めた** |
+
+後者は Part III の停止条件（「`manifest` の `id` 変更で既存のインストール済みアプリが
+別扱いになると判断されるとき」）に該当する。
+
+**なお、この2本はいまたがいに同じ識別子を共有している。**
+どちらも実効値が `https://gigayama.github.io/` なので、同じ端末で両方をホーム画面に
+追加すると取りちがえが起きうる。放置するリスクと、置き直しの手間を天秤にかける判断が要る。
+各 PR の本文に状況を書いた。
+
+### PR で別途報告したこと
+
+| リポジトリ | 内容 |
+|---|---|
+| Townmap_Mikke / Reflection_Journal | 手書き Canvas に `devicePixelRatio` 補正がなく、線がぼやける |
+| Quoridor | `favicon.png` が 1,102KB（Qalc では同じ作業で 238KB → 12.7KB になった） |
