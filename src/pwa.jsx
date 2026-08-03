@@ -100,7 +100,7 @@ export const UpdateNotice = () => {
                 <button
                     type="button"
                     onClick={apply}
-                    className="shrink-0 min-h-[44px] px-4 rounded-xl border-[3px] border-[var(--text)] bg-[var(--primary)] text-[var(--panel)] font-black text-sm active:scale-95 transition-transform"
+                    className="shrink-0 min-h-[44px] px-4 rounded-xl border-[3px] border-[var(--text)] bg-[var(--primary)] text-[var(--on-primary)] font-black text-sm active:scale-95 transition-transform"
                 >
                     さいしんに する
                 </button>

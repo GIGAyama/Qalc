@@ -1589,7 +1589,7 @@ const ShikiTool = ({ spec }) => {
           {parts.map((x, i) => (
             <div
               key={i}
-              className={`flex items-center justify-center font-black text-sm ${x.label === '□' ? 'bg-[var(--primary)] text-[var(--panel)]' : 'bg-[var(--accent)] text-[var(--on-accent)]'} ${i > 0 ? 'border-l-[3px] border-[var(--text)]' : ''}`}
+              className={`flex items-center justify-center font-black text-sm ${x.label === '□' ? 'bg-[var(--primary)] text-[var(--on-primary)]' : 'bg-[var(--accent)] text-[var(--on-accent)]'} ${i > 0 ? 'border-l-[3px] border-[var(--text)]' : ''}`}
               style={{ width: `${widthOf(x)}%` }}
             >
               {x.label}

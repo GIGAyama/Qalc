@@ -219,7 +219,7 @@ const PanelToggle = ({ checked, onChange, label, hint }) => (
         <span
             aria-hidden="true"
             className={`mt-0.5 shrink-0 w-6 h-6 rounded-md border-[3px] border-[var(--text)] flex items-center justify-center text-xs font-black
-                ${checked ? 'bg-[var(--primary)] text-[var(--panel)]' : 'bg-[var(--panel)] text-transparent'}`}
+                ${checked ? 'bg-[var(--primary)] text-[var(--on-primary)]' : 'bg-[var(--panel)] text-transparent'}`}
         >
             ✓
         </span>

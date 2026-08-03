@@ -622,7 +622,7 @@ const Keypad = React.memo(({ onAppend, onClear, onSubmit, digitLayout = DEFAULT_
       {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
       <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }}>C</motion.button>
       <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--panel)] border-[3px] border-[var(--text)] font-black text-3xl rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }}>OK</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--on-secondary)] border-[3px] border-[var(--text)] font-black text-3xl rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }}>OK</motion.button>
     </div>
   </div>
 ));
@@ -683,7 +683,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
       <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-4 relative">
         <div className="absolute top-3 right-3 flex items-center gap-2">
           {(stats.streak || 0) > 0 && (
-            <div className="flex items-center gap-1 font-black text-sm text-[var(--panel)] bg-[var(--primary)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm" title="連続学習日数">
+            <div className="flex items-center gap-1 font-black text-sm text-[var(--on-primary)] bg-[var(--primary)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm" title="連続学習日数">
               <Flame size={16} /> {stats.streak}<span className="text-[10px]">日</span>
             </div>
           )}
@@ -723,7 +723,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
             <span className="truncate">{resumeData.courseName}</span>
             <span className="ml-1 opacity-70 ruby-text">／ {resumeData.correctCount || 0}<R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></span>
           </div>
-          <MotionButton className="bg-[var(--primary)] text-[var(--panel)] w-full py-3 text-lg border-[3px] border-[var(--text)] ruby-text" onClick={onResume}>
+          <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-3 text-lg border-[3px] border-[var(--text)] ruby-text" onClick={onResume}>
             <Rocket size={20} /> つづきから<R c="始" r="はじ" />める
           </MotionButton>
         </div>
@@ -746,7 +746,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
         <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] w-full py-4 text-xl border-[4px] border-[var(--text)]" onClick={initHost}>
           <Users size={24} /> みんなであそぶ（へやをつくる）
         </MotionButton>
-        <MotionButton className="bg-[var(--secondary)] text-[var(--panel)] w-full py-4 text-xl border-[4px] border-[var(--text)]" onClick={() => setView('clientJoin')}>
+        <MotionButton className="bg-[var(--secondary)] text-[var(--on-secondary)] w-full py-4 text-xl border-[4px] border-[var(--text)]" onClick={() => setView('clientJoin')}>
           <User size={24} /> へやに<R c="入" r="はい" />る
         </MotionButton>
       </div>
@@ -1090,13 +1090,13 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
         <div className="shrink-0">
           <h4 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text flex items-center justify-between">
             <span><R c="入" r="はい" />りたい<R c="人" r="ひと" /></span>
-            {pendingList.length > 0 && <span className="text-sm text-[var(--panel)] bg-[var(--primary)] rounded-full px-3 py-0.5">{pendingList.length}</span>}
+            {pendingList.length > 0 && <span className="text-sm text-[var(--on-primary)] bg-[var(--primary)] rounded-full px-3 py-0.5">{pendingList.length}</span>}
           </h4>
 
           <div className="flex gap-2 mb-3">
             <button
               onClick={toggleAcceptWindow}
-              className={`flex-1 py-2 text-xs font-black rounded-lg border-2 transition-colors ruby-text ${acceptLeft > 0 ? 'bg-[var(--secondary)] text-[var(--panel)] border-[var(--text)]' : 'bg-transparent border-gray-300 text-gray-500'}`}
+              className={`flex-1 py-2 text-xs font-black rounded-lg border-2 transition-colors ruby-text ${acceptLeft > 0 ? 'bg-[var(--secondary)] text-[var(--on-secondary)] border-[var(--text)]' : 'bg-transparent border-gray-300 text-gray-500'}`}
             >
               {acceptLeft > 0
                 ? <>うけつけ<R c="中" r="ちゅう" /> あと {acceptLeft} <R c="秒" r="びょう" />（とめる）</>
@@ -1121,7 +1121,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
               <div key={id} className="flex justify-between items-center bg-[var(--bg)] p-2 pl-3 rounded-xl border-2 border-dashed border-[var(--primary)] gap-2">
                 <span className="font-bold text-[var(--text)] truncate"><PupilName name={req.name} /></span>
                 <div className="flex gap-2 shrink-0">
-                  <button onClick={() => { audioCtrl.playSE('coin'); approveMember(id); }} className="px-3 py-1.5 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--secondary)] text-[var(--panel)]">いれる</button>
+                  <button onClick={() => { audioCtrl.playSE('coin'); approveMember(id); }} className="px-3 py-1.5 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--secondary)] text-[var(--on-secondary)]">いれる</button>
                   <button onClick={() => { audioCtrl.playSE('click'); rejectMember(id); }} className="px-3 py-1.5 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--panel)] text-[var(--text)]">ことわる</button>
                 </div>
               </div>
@@ -1147,7 +1147,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
         </div>
       </div>
 
-      <MotionButton className="bg-[var(--primary)] text-[var(--panel)] w-full py-4 text-xl border-[3px] border-[var(--text)] shrink-0 ruby-text" onClick={startGame}><Radio size={24} /> <R c="全" r="ぜん" /><R c="員" r="いん" />でゲーム<R c="開" r="かい" /><R c="始" r="し" />！</MotionButton>
+      <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-4 text-xl border-[3px] border-[var(--text)] shrink-0 ruby-text" onClick={startGame}><Radio size={24} /> <R c="全" r="ぜん" /><R c="員" r="いん" />でゲーム<R c="開" r="かい" /><R c="始" r="し" />！</MotionButton>
     </div>
   );
 };
@@ -1204,7 +1204,7 @@ const ClientJoinView = ({ initClient, urlHostId, setView }) => {
       </div>
 
       <MotionButton
-        className="bg-[var(--secondary)] text-[var(--panel)] w-full py-4 text-xl border-[3px] border-[var(--text)] shrink-0"
+        className="bg-[var(--secondary)] text-[var(--on-secondary)] w-full py-4 text-xl border-[3px] border-[var(--text)] shrink-0"
         onClick={submit}
       >
         へやに<R c="入" r="はい" />る！
@@ -1439,7 +1439,7 @@ const ShopView = ({ setView, stats, setStats }) => {
           {gachaOwnedCount >= gachaPool.length ? (
             <div className="font-black text-[var(--primary-d)] py-3">🎉 ガチャコンプリート！おめでとう！</div>
           ) : (
-            <MotionButton className="bg-[var(--primary)] text-[var(--panel)] w-full py-4 text-lg border-[3px] border-[var(--text)]" onClick={spinGacha}>
+            <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-4 text-lg border-[3px] border-[var(--text)]" onClick={spinGacha}>
               🥚 ガチャをまわす（<Coins size={18} /> {GACHA_COST}）
             </MotionButton>
           )}
@@ -1659,7 +1659,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
         </div>
 
         <div className="mt-2 space-y-3">
-          <MotionButton className="bg-[var(--primary)] text-[var(--panel)] w-full py-4 text-xl border-[3px] border-[var(--text)]" onClick={start}><Gamepad2 size={24} /> スタート！</MotionButton>
+          <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-4 text-xl border-[3px] border-[var(--text)]" onClick={start}><Gamepad2 size={24} /> スタート！</MotionButton>
           <button className="text-[var(--text)] opacity-80 font-bold text-sm py-2 w-full hover:opacity-100 transition" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
         </div>
       </div>
@@ -2346,7 +2346,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             )}
             <span className="text-5xl font-black text-[var(--secondary-d)] tracking-widest">{ans || <span className="text-4xl font-bold text-[var(--text)] opacity-20">?</span>}</span>
             {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 w-12 h-12 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
-            <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--panel)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
+            <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--on-secondary)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
           </motion.div>
 
           <div className="relative flex-grow flex flex-col">
@@ -2401,11 +2401,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
                 {state.gameMode === 'TERRITORY' && <> ／ ぬった<R c="回" r="かい" /><R c="数" r="すう" />: <span className="font-black text-[var(--primary-d)]">🖌{score}</span></>}
               </p>
               <div className="flex flex-col w-full gap-2">
-                <MotionButton className="bg-[var(--primary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 w-full ruby-text" onClick={() => { setQuitDialog(false); finishGame(true); }}>
+                <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 w-full ruby-text" onClick={() => { setQuitDialog(false); finishGame(true); }}>
                   <Award size={18} /> ポイントもらって<R c="終" r="お" />わる
                 </MotionButton>
                 {!isMultiplayer && (
-                  <MotionButton className="bg-[var(--secondary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 w-full ruby-text" onClick={() => { setQuitDialog(false); pauseAndExit(); }}>
+                  <MotionButton className="bg-[var(--secondary)] text-[var(--on-secondary)] border-[3px] border-[var(--text)] py-3 w-full ruby-text" onClick={() => { setQuitDialog(false); pauseAndExit(); }}>
                     <Clock size={18} /> <R c="中" r="ちゅう" /><R c="断" r="だん" />して<R c="保" r="ほ" /><R c="存" r="ぞん" />
                   </MotionButton>
                 )}
@@ -2588,7 +2588,7 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
         {isMultiplayer ? (
           <div className="flex flex-col gap-3">
             {peerState.role === 'host' && (
-              <MotionButton className="bg-[var(--secondary)] text-[var(--panel)] w-full py-4 text-xl border-[3px] border-[var(--text)]" onClick={() => setView('hostRoom')}>
+              <MotionButton className="bg-[var(--secondary)] text-[var(--on-secondary)] w-full py-4 text-xl border-[3px] border-[var(--text)]" onClick={() => setView('hostRoom')}>
                 <Users size={20} /> へやにもどってもう<R c="一" r="いっ" /><R c="回" r="かい" />あそぶ
               </MotionButton>
             )}
@@ -2672,14 +2672,14 @@ const ManagerView = ({ setView }) => {
                 <h3 className="font-black text-xl text-[var(--text)] mb-6 leading-snug">「{editTarget}」を<br />本当に削除しますか？</h3>
                 <div className="flex w-full gap-3">
                   <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(false); }}>やめる</MotionButton>
-                  <MotionButton className="bg-[var(--primary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); executeDelete(); }}>削除する</MotionButton>
+                  <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); executeDelete(); }}>削除する</MotionButton>
                 </div>
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="font-bold text-xl flex items-center gap-2 text-[var(--text)]"><Settings size={20} /> コース編集</h3>{editTarget && <button className="text-[var(--panel)] font-bold border-2 border-[var(--primary)] bg-[var(--primary)] rounded-xl px-4 py-1.5 text-sm" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(true); }}>削除</button>}</div>
+        <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="font-bold text-xl flex items-center gap-2 text-[var(--text)]"><Settings size={20} /> コース編集</h3>{editTarget && <button className="text-[var(--on-primary)] font-bold border-2 border-[var(--primary)] bg-[var(--primary)] rounded-xl px-4 py-1.5 text-sm" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(true); }}>削除</button>}</div>
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl p-2 mb-4 shrink-0 shadow-sm"><input type="text" className="w-full font-bold text-lg p-2 outline-none bg-transparent text-[var(--text)]" placeholder="コース名 (例: 1年_たしざん)" value={editName} onChange={e => setEditName(e.target.value)} /></div>
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl flex flex-col flex-grow overflow-hidden mb-4 shadow-sm">
           <div className="bg-[var(--bg)] flex p-3 border-b-2 border-[var(--text)] font-bold text-sm text-[var(--text)] opacity-80 shrink-0"><div className="flex-grow px-2">問題</div><div className="w-24 px-2 text-center border-l-2 border-[var(--text)]">答え</div><div className="w-12 border-l-2 border-[var(--text)]"></div></div>
@@ -2698,7 +2698,7 @@ const ManagerView = ({ setView }) => {
         </div>
         <div className="flex gap-3 shrink-0 pb-4">
           <MotionButton className="bg-[var(--bg)] text-[var(--text)] w-1/3 py-3 border-[3px] border-[var(--text)]" onClick={() => setEditTarget(null)}>キャンセル</MotionButton>
-          <MotionButton className="bg-[var(--primary)] text-[var(--panel)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={save}>保存する</MotionButton>
+          <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={save}>保存する</MotionButton>
         </div>
       </div>
     );
@@ -2715,13 +2715,13 @@ const ManagerView = ({ setView }) => {
         {filteredGroups.length === 0 ? <div className="text-center text-[var(--text)] opacity-80 py-10 font-bold">コースがありません</div> : filteredGroups.map(g => (
           <div key={g.name} className="p-3 border-b border-dashed border-[var(--bg)] cursor-pointer flex justify-between items-center transition-colors rounded-lg group" onClick={() => { audioCtrl.playSE('click'); openEdit(g.name) }}>
             <div className="flex flex-col"><span className="font-bold text-[var(--text)]">{g.name}</span><span className="text-[var(--text)] opacity-80 text-xs">{g.count}問</span></div>
-            <button className="bg-[var(--bg)] hover:bg-[var(--secondary)] hover:text-[var(--panel)] text-[var(--text)] p-2 rounded-xl transition-colors border-2 border-[var(--text)] shadow-sm" onClick={(e) => copyShareCode(e, g.name)} title="共有コードをコピー"><Share2 size={18} /></button>
+            <button className="bg-[var(--bg)] hover:bg-[var(--secondary)] hover:text-[var(--on-secondary)] text-[var(--text)] p-2 rounded-xl transition-colors border-2 border-[var(--text)] shadow-sm" onClick={(e) => copyShareCode(e, g.name)} title="共有コードをコピー"><Share2 size={18} /></button>
           </div>
         ))}
       </div>
       <div className="shrink-0 flex flex-col gap-3 pb-4">
         <div className="flex gap-3">
-          <MotionButton className="bg-[var(--secondary)] text-[var(--panel)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={() => { audioCtrl.playSE('click'); setView('import') }}><Download size={20} /> 受信/AI</MotionButton>
+          <MotionButton className="bg-[var(--secondary)] text-[var(--on-secondary)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={() => { audioCtrl.playSE('click'); setView('import') }}><Download size={20} /> 受信/AI</MotionButton>
           <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={() => { audioCtrl.playSE('click'); openEdit('') }}><Plus size={20} /> 新規作成</MotionButton>
         </div>
         <button className="text-[var(--text)] opacity-80 font-bold py-3 hover:opacity-100 transition" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
@@ -2780,7 +2780,7 @@ const ImportView = ({ setView }) => {
         )}
 
         <textarea className="flex-grow border-[3px] border-[var(--text)] rounded-xl p-3 resize-none font-mono text-sm outline-none bg-[var(--bg)] text-[var(--text)]" value={text} onChange={e => setText(e.target.value)}></textarea>
-        <MotionButton className="bg-[var(--primary)] text-[var(--panel)] py-4 shrink-0 border-[3px] border-[var(--text)]" onClick={process}>読み込んで追加</MotionButton>
+        <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] py-4 shrink-0 border-[3px] border-[var(--text)]" onClick={process}>読み込んで追加</MotionButton>
       </div>
       <button className="text-[var(--text)] opacity-80 font-bold py-3 shrink-0 pb-4" onClick={() => { audioCtrl.playSE('click'); setView('manager') }}>もどる</button>
     </div>
@@ -3735,38 +3735,38 @@ export default function App() {
 
   const GlobalStyle = () => {
     let themeVars = `
-      --bg: #fffbf0; --primary: #FF6B6B; --secondary: #4ECDC4; --accent: #FFE66D; --text: #292f36; --panel: #ffffff; --primary-d: #e50000; --secondary-d: #247f79; --on-accent: #292f36;`;
-    if (stats.theme === 'dark') themeVars = `--bg: #0f172a; --primary: #f43f5e; --secondary: #0ea5e9; --accent: #f59e0b; --text: #e2e8f0; --panel: #1e293b; --primary-d: #f65c76; --secondary-d: #0ea5e9; --on-accent: #111111;`;
-    if (stats.theme === 'sakura') themeVars = `--bg: #fdf2f8; --primary: #d946ef; --secondary: #f472b6; --accent: #fbcfe8; --text: #831843; --panel: #ffffff; --primary-d: #ba12d4; --secondary-d: #d31076; --on-accent: #831843;`;
-    if (stats.theme === 'ocean') themeVars = `--bg: #f0f9ff; --primary: #0284c7; --secondary: #38bdf8; --accent: #7dd3fc; --text: #0c4a6e; --panel: #ffffff; --primary-d: #0277b3; --secondary-d: #0678ab; --on-accent: #0c4a6e;`;
-    if (stats.theme === 'forest') themeVars = `--bg: #f0fdf4; --primary: #16a34a; --secondary: #f59e0b; --accent: #bbf7d0; --text: #14532d; --panel: #ffffff; --primary-d: #11813b; --secondary-d: #9e6506; --on-accent: #14532d;`;
-    if (stats.theme === 'space') themeVars = `--bg: #17153B; --primary: #c084fc; --secondary: #2dd4bf; --accent: #4338ca; --text: #e2e8f0; --panel: #2e2b5f; --primary-d: #c084fc; --secondary-d: #2dd4bf; --on-accent: #e2e8f0;`;
-    if (stats.theme === 'gold') themeVars = `--bg: #fefce8; --primary: #b45309; --secondary: #eab308; --accent: #fef08a; --text: #713f12; --panel: #ffffff; --primary-d: #b45309; --secondary-d: #8f6d05; --on-accent: #713f12;`;
-    if (stats.theme === 'mint') themeVars = `--bg: #f0fdfa; --primary: #14b8a6; --secondary: #2dd4bf; --accent: #ccfbf1; --text: #134e4a; --panel: #ffffff; --primary-d: #0e7e72; --secondary-d: #1a7f72; --on-accent: #134e4a;`;
-    if (stats.theme === 'sunset') themeVars = `--bg: #fff7ed; --primary: #ea580c; --secondary: #f97316; --accent: #fcd34d; --text: #7c2d12; --panel: #ffffff; --primary-d: #c3490a; --secondary-d: #bb5005; --on-accent: #7c2d12;`;
-    if (stats.theme === 'cyber') themeVars = `--bg: #000000; --primary: #39ff14; --secondary: #ff00ff; --accent: #0ff0fc; --text: #ffffff; --panel: #111111; --primary-d: #39ff14; --secondary-d: #ff00ff; --on-accent: #111111;`;
-    if (stats.theme === 'choco') themeVars = `--bg: #fdf8f5; --primary: #92400e; --secondary: #d97706; --accent: #fde68a; --text: #451a03; --panel: #ffffff; --primary-d: #92400e; --secondary-d: #aa5d05; --on-accent: #451a03;`;
-    if (stats.theme === 'retro') themeVars = `--bg: #f5eedc; --primary: #c25953; --secondary: #6a7f72; --accent: #e0b469; --text: #3d312d; --panel: #faf6ee; --primary-d: #b44640; --secondary-d: #5c6e63; --on-accent: #3d312d;`;
-    if (stats.theme === 'monochrome') themeVars = `--bg: #f8f9fa; --primary: #000000; --secondary: #666666; --accent: #d4d4d4; --text: #1a1a1a; --panel: #ffffff; --primary-d: #000000; --secondary-d: #666666; --on-accent: #1a1a1a;`;
-    if (stats.theme === 'lavender') themeVars = `--bg: #f5f3ff; --primary: #7c3aed; --secondary: #a78bfa; --accent: #ddd6fe; --text: #4c1d95; --panel: #ffffff; --primary-d: #7c3aed; --secondary-d: #774bf7; --on-accent: #4c1d95;`;
-    if (stats.theme === 'candy') themeVars = `--bg: #fff0f6; --primary: #ec4899; --secondary: #60a5fa; --accent: #a5f3fc; --text: #9d174d; --panel: #ffffff; --primary-d: #d21673; --secondary-d: #0768e0; --on-accent: #9d174d;`;
-    if (stats.theme === 'soda') themeVars = `--bg: #eff6ff; --primary: #2563eb; --secondary: #22d3ee; --accent: #bfdbfe; --text: #1e3a8a; --panel: #ffffff; --primary-d: #2563eb; --secondary-d: #0b7a8b; --on-accent: #1e3a8a;`;
-    if (stats.theme === 'matcha') themeVars = `--bg: #f7fee7; --primary: #4d7c0f; --secondary: #84cc16; --accent: #d9f99d; --text: #365314; --panel: #ffffff; --primary-d: #4d7c0f; --secondary-d: #517e0e; --on-accent: #365314;`;
-    if (stats.theme === 'ruby') themeVars = `--bg: #fff1f2; --primary: #be123c; --secondary: #fb7185; --accent: #fecdd3; --text: #881337; --panel: #ffffff; --primary-d: #be123c; --secondary-d: #dc0625; --on-accent: #881337;`;
-    if (stats.theme === 'hero') themeVars = `--bg: #f8fafc; --primary: #dc2626; --secondary: #2563eb; --accent: #fde047; --text: #111827; --panel: #ffffff; --primary-d: #dc2626; --secondary-d: #2563eb; --on-accent: #111827;`;
-    if (stats.theme === 'aurora') themeVars = `--bg: #042f2e; --primary: #34d399; --secondary: #818cf8; --accent: #115e59; --text: #ccfbf1; --panel: #134e4a; --primary-d: #34d399; --secondary-d: #aab1fa; --on-accent: #ccfbf1;`;
-    if (stats.theme === 'hanabi') themeVars = `--bg: #1e1b4b; --primary: #f472b6; --secondary: #facc15; --accent: #6d28d9; --text: #ede9fe; --panel: #312e81; --primary-d: #f57ebc; --secondary-d: #facc15; --on-accent: #ede9fe;`;
-    if (stats.theme === 'midnight') themeVars = `--bg: #020617; --primary: #38bdf8; --secondary: #818cf8; --accent: #1e293b; --text: #e0f2fe; --panel: #0f172a; --primary-d: #38bdf8; --secondary-d: #818cf8; --on-accent: #e0f2fe;`;
-    if (stats.theme === 'ninja') themeVars = `--bg: #18181b; --primary: #ef4444; --secondary: #a1a1aa; --accent: #3f3f46; --text: #f4f4f5; --panel: #27272a; --primary-d: #f15e5e; --secondary-d: #a1a1aa; --on-accent: #f4f4f5;`;
-    if (stats.theme === 'royal') themeVars = `--bg: #faf5ff; --primary: #7e22ce; --secondary: #eab308; --accent: #e9d5ff; --text: #581c87; --panel: #ffffff; --primary-d: #7e22ce; --secondary-d: #8c6b05; --on-accent: #581c87;`;
-    if (stats.theme === 'rainbow') themeVars = `--bg: #fdf4ff; --primary: #e11d48; --secondary: #0ea5e9; --accent: #fde047; --text: #3b0764; --panel: #ffffff; --primary-d: #da1c46; --secondary-d: #0a77a8; --on-accent: #3b0764;`;
-    if (stats.theme === 'sunflower') themeVars = `--bg: #fefce8; --primary: #ca8a04; --secondary: #22c55e; --accent: #fde047; --text: #422006; --panel: #ffffff; --primary-d: #986803; --secondary-d: #17843f; --on-accent: #422006;`;
-    if (stats.theme === 'watermelon') themeVars = `--bg: #f0fdf4; --primary: #ef4444; --secondary: #22c55e; --accent: #fecaca; --text: #14532d; --panel: #ffffff; --primary-d: #e21313; --secondary-d: #16823e; --on-accent: #14532d;`;
-    if (stats.theme === 'milktea') themeVars = `--bg: #f5f0e8; --primary: #a16207; --secondary: #78716c; --accent: #e7d8c0; --text: #44403c; --panel: #fffaf3; --primary-d: #9a5e07; --secondary-d: #716b66; --on-accent: #44403c;`;
-    if (stats.theme === 'tropical') themeVars = `--bg: #ecfeff; --primary: #f59e0b; --secondary: #06b6d4; --accent: #a7f3d0; --text: #164e63; --panel: #ffffff; --primary-d: #9e6506; --secondary-d: #047d91; --on-accent: #164e63;`;
-    if (stats.theme === 'halloween') themeVars = `--bg: #1c1917; --primary: #f97316; --secondary: #a855f7; --accent: #78350f; --text: #fed7aa; --panel: #292524; --primary-d: #f97316; --secondary-d: #b36bf8; --on-accent: #fed7aa;`;
-    if (stats.theme === 'christmas') themeVars = `--bg: #fef2f2; --primary: #dc2626; --secondary: #16a34a; --accent: #fde68a; --text: #7f1d1d; --panel: #ffffff; --primary-d: #d82323; --secondary-d: #117f3a; --on-accent: #7f1d1d;`;
-    if (stats.theme === 'prism') themeVars = `--bg: #f5fffa; --primary: #8b5cf6; --secondary: #ec4899; --accent: #99f6e4; --text: #1e1b4b; --panel: #ffffff; --primary-d: #8250f5; --secondary-d: #db1778; --on-accent: #1e1b4b;`;
+      --bg: #fffbf0; --primary: #FF6B6B; --secondary: #4ECDC4; --accent: #FFE66D; --text: #292f36; --panel: #ffffff; --primary-d: #e50000; --secondary-d: #247f79; --on-accent: #292f36; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'dark') themeVars = `--bg: #0f172a; --primary: #f43f5e; --secondary: #0ea5e9; --accent: #f59e0b; --text: #e2e8f0; --panel: #1e293b; --primary-d: #f65c76; --secondary-d: #0ea5e9; --on-accent: #111111; --on-primary: #111111; --on-secondary: #1e293b;`;
+    if (stats.theme === 'sakura') themeVars = `--bg: #fdf2f8; --primary: #d946ef; --secondary: #f472b6; --accent: #fbcfe8; --text: #831843; --panel: #ffffff; --primary-d: #ba12d4; --secondary-d: #d31076; --on-accent: #831843; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'ocean') themeVars = `--bg: #f0f9ff; --primary: #0284c7; --secondary: #38bdf8; --accent: #7dd3fc; --text: #0c4a6e; --panel: #ffffff; --primary-d: #0277b3; --secondary-d: #0678ab; --on-accent: #0c4a6e; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'forest') themeVars = `--bg: #f0fdf4; --primary: #16a34a; --secondary: #f59e0b; --accent: #bbf7d0; --text: #14532d; --panel: #ffffff; --primary-d: #11813b; --secondary-d: #9e6506; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'space') themeVars = `--bg: #17153B; --primary: #c084fc; --secondary: #2dd4bf; --accent: #4338ca; --text: #e2e8f0; --panel: #2e2b5f; --primary-d: #c084fc; --secondary-d: #2dd4bf; --on-accent: #e2e8f0; --on-primary: #2e2b5f; --on-secondary: #2e2b5f;`;
+    if (stats.theme === 'gold') themeVars = `--bg: #fefce8; --primary: #b45309; --secondary: #eab308; --accent: #fef08a; --text: #713f12; --panel: #ffffff; --primary-d: #b45309; --secondary-d: #8f6d05; --on-accent: #713f12; --on-primary: #ffffff; --on-secondary: #111111;`;
+    if (stats.theme === 'mint') themeVars = `--bg: #f0fdfa; --primary: #14b8a6; --secondary: #2dd4bf; --accent: #ccfbf1; --text: #134e4a; --panel: #ffffff; --primary-d: #0e7e72; --secondary-d: #1a7f72; --on-accent: #134e4a; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'sunset') themeVars = `--bg: #fff7ed; --primary: #ea580c; --secondary: #f97316; --accent: #fcd34d; --text: #7c2d12; --panel: #ffffff; --primary-d: #c3490a; --secondary-d: #bb5005; --on-accent: #7c2d12; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'cyber') themeVars = `--bg: #000000; --primary: #39ff14; --secondary: #ff00ff; --accent: #0ff0fc; --text: #ffffff; --panel: #111111; --primary-d: #39ff14; --secondary-d: #ff00ff; --on-accent: #111111; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'choco') themeVars = `--bg: #fdf8f5; --primary: #92400e; --secondary: #d97706; --accent: #fde68a; --text: #451a03; --panel: #ffffff; --primary-d: #92400e; --secondary-d: #aa5d05; --on-accent: #451a03; --on-primary: #ffffff; --on-secondary: #111111;`;
+    if (stats.theme === 'retro') themeVars = `--bg: #f5eedc; --primary: #c25953; --secondary: #6a7f72; --accent: #e0b469; --text: #3d312d; --panel: #faf6ee; --primary-d: #b44640; --secondary-d: #5c6e63; --on-accent: #3d312d; --on-primary: #000000; --on-secondary: #000000;`;
+    if (stats.theme === 'monochrome') themeVars = `--bg: #f8f9fa; --primary: #000000; --secondary: #666666; --accent: #d4d4d4; --text: #1a1a1a; --panel: #ffffff; --primary-d: #000000; --secondary-d: #666666; --on-accent: #1a1a1a; --on-primary: #ffffff; --on-secondary: #ffffff;`;
+    if (stats.theme === 'lavender') themeVars = `--bg: #f5f3ff; --primary: #7c3aed; --secondary: #a78bfa; --accent: #ddd6fe; --text: #4c1d95; --panel: #ffffff; --primary-d: #7c3aed; --secondary-d: #774bf7; --on-accent: #4c1d95; --on-primary: #ffffff; --on-secondary: #111111;`;
+    if (stats.theme === 'candy') themeVars = `--bg: #fff0f6; --primary: #ec4899; --secondary: #60a5fa; --accent: #a5f3fc; --text: #9d174d; --panel: #ffffff; --primary-d: #d21673; --secondary-d: #0768e0; --on-accent: #9d174d; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'soda') themeVars = `--bg: #eff6ff; --primary: #2563eb; --secondary: #22d3ee; --accent: #bfdbfe; --text: #1e3a8a; --panel: #ffffff; --primary-d: #2563eb; --secondary-d: #0b7a8b; --on-accent: #1e3a8a; --on-primary: #ffffff; --on-secondary: #111111;`;
+    if (stats.theme === 'matcha') themeVars = `--bg: #f7fee7; --primary: #4d7c0f; --secondary: #84cc16; --accent: #d9f99d; --text: #365314; --panel: #ffffff; --primary-d: #4d7c0f; --secondary-d: #517e0e; --on-accent: #365314; --on-primary: #ffffff; --on-secondary: #111111;`;
+    if (stats.theme === 'ruby') themeVars = `--bg: #fff1f2; --primary: #be123c; --secondary: #fb7185; --accent: #fecdd3; --text: #881337; --panel: #ffffff; --primary-d: #be123c; --secondary-d: #dc0625; --on-accent: #881337; --on-primary: #ffffff; --on-secondary: #111111;`;
+    if (stats.theme === 'hero') themeVars = `--bg: #f8fafc; --primary: #dc2626; --secondary: #2563eb; --accent: #fde047; --text: #111827; --panel: #ffffff; --primary-d: #dc2626; --secondary-d: #2563eb; --on-accent: #111827; --on-primary: #ffffff; --on-secondary: #ffffff;`;
+    if (stats.theme === 'aurora') themeVars = `--bg: #042f2e; --primary: #34d399; --secondary: #818cf8; --accent: #115e59; --text: #ccfbf1; --panel: #134e4a; --primary-d: #34d399; --secondary-d: #aab1fa; --on-accent: #ccfbf1; --on-primary: #134e4a; --on-secondary: #111111;`;
+    if (stats.theme === 'hanabi') themeVars = `--bg: #1e1b4b; --primary: #f472b6; --secondary: #facc15; --accent: #6d28d9; --text: #ede9fe; --panel: #312e81; --primary-d: #f57ebc; --secondary-d: #facc15; --on-accent: #ede9fe; --on-primary: #111111; --on-secondary: #312e81;`;
+    if (stats.theme === 'midnight') themeVars = `--bg: #020617; --primary: #38bdf8; --secondary: #818cf8; --accent: #1e293b; --text: #e0f2fe; --panel: #0f172a; --primary-d: #38bdf8; --secondary-d: #818cf8; --on-accent: #e0f2fe; --on-primary: #0f172a; --on-secondary: #0f172a;`;
+    if (stats.theme === 'ninja') themeVars = `--bg: #18181b; --primary: #ef4444; --secondary: #a1a1aa; --accent: #3f3f46; --text: #f4f4f5; --panel: #27272a; --primary-d: #f15e5e; --secondary-d: #a1a1aa; --on-accent: #f4f4f5; --on-primary: #111111; --on-secondary: #27272a;`;
+    if (stats.theme === 'royal') themeVars = `--bg: #faf5ff; --primary: #7e22ce; --secondary: #eab308; --accent: #e9d5ff; --text: #581c87; --panel: #ffffff; --primary-d: #7e22ce; --secondary-d: #8c6b05; --on-accent: #581c87; --on-primary: #ffffff; --on-secondary: #111111;`;
+    if (stats.theme === 'rainbow') themeVars = `--bg: #fdf4ff; --primary: #e11d48; --secondary: #0ea5e9; --accent: #fde047; --text: #3b0764; --panel: #ffffff; --primary-d: #da1c46; --secondary-d: #0a77a8; --on-accent: #3b0764; --on-primary: #ffffff; --on-secondary: #111111;`;
+    if (stats.theme === 'sunflower') themeVars = `--bg: #fefce8; --primary: #ca8a04; --secondary: #22c55e; --accent: #fde047; --text: #422006; --panel: #ffffff; --primary-d: #986803; --secondary-d: #17843f; --on-accent: #422006; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'watermelon') themeVars = `--bg: #f0fdf4; --primary: #ef4444; --secondary: #22c55e; --accent: #fecaca; --text: #14532d; --panel: #ffffff; --primary-d: #e21313; --secondary-d: #16823e; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'milktea') themeVars = `--bg: #f5f0e8; --primary: #a16207; --secondary: #78716c; --accent: #e7d8c0; --text: #44403c; --panel: #fffaf3; --primary-d: #9a5e07; --secondary-d: #716b66; --on-accent: #44403c; --on-primary: #fffaf3; --on-secondary: #fffaf3;`;
+    if (stats.theme === 'tropical') themeVars = `--bg: #ecfeff; --primary: #f59e0b; --secondary: #06b6d4; --accent: #a7f3d0; --text: #164e63; --panel: #ffffff; --primary-d: #9e6506; --secondary-d: #047d91; --on-accent: #164e63; --on-primary: #111111; --on-secondary: #111111;`;
+    if (stats.theme === 'halloween') themeVars = `--bg: #1c1917; --primary: #f97316; --secondary: #a855f7; --accent: #78350f; --text: #fed7aa; --panel: #292524; --primary-d: #f97316; --secondary-d: #b36bf8; --on-accent: #fed7aa; --on-primary: #292524; --on-secondary: #111111;`;
+    if (stats.theme === 'christmas') themeVars = `--bg: #fef2f2; --primary: #dc2626; --secondary: #16a34a; --accent: #fde68a; --text: #7f1d1d; --panel: #ffffff; --primary-d: #d82323; --secondary-d: #117f3a; --on-accent: #7f1d1d; --on-primary: #ffffff; --on-secondary: #111111;`;
+    if (stats.theme === 'prism') themeVars = `--bg: #f5fffa; --primary: #8b5cf6; --secondary: #ec4899; --accent: #99f6e4; --text: #1e1b4b; --panel: #ffffff; --primary-d: #8250f5; --secondary-d: #db1778; --on-accent: #1e1b4b; --on-primary: #000000; --on-secondary: #111111;`;
 
     return (
       <style>{`
@@ -3805,7 +3805,7 @@ export default function App() {
           style={{ paddingTop: 'calc(0.75rem + var(--safe-t))' }}
         >
           <div className="flex items-center cursor-pointer gap-2" onClick={handleHomeClick}>
-            <div className="bg-[var(--secondary)] p-1.5 rounded-lg text-[var(--panel)] shadow-sm border-2 border-[var(--text)]"><Calculator size={22} strokeWidth={3} /></div>
+            <div className="bg-[var(--secondary)] p-1.5 rounded-lg text-[var(--on-secondary)] shadow-sm border-2 border-[var(--text)]"><Calculator size={22} strokeWidth={3} /></div>
             <h1 className="text-2xl font-black text-[var(--text)] tracking-wide">Qalc<span className="text-[var(--primary-d)]">.</span></h1>
           </div>
           <div className="flex items-center gap-3">
@@ -3880,7 +3880,7 @@ export default function App() {
               </p>
               <div className="flex w-full gap-3">
                 <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => setLeaveConfirm(false)}>やめる</MotionButton>
-                <MotionButton className="bg-[var(--primary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 flex-1 ruby-text" onClick={() => { setLeaveConfirm(false); leaveRoom(); }}><R c="出" r="で" />る</MotionButton>
+                <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 flex-1 ruby-text" onClick={() => { setLeaveConfirm(false); leaveRoom(); }}><R c="出" r="で" />る</MotionButton>
               </div>
             </motion.div>
           </motion.div>
