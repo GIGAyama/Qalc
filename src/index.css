@@ -24,6 +24,18 @@
     --fs-hero: clamp(40px, 9vw, 120px);
 
     color-scheme: light;
+
+    /* 本文フォント（Part I §2-7）。
+     * Zen Maru Gothic は自分のサイトから配るが、届くまでのあいだと、
+     * 通信が細くて落ちてこなかったときに備えて、同じ系統の端末内蔵フォントを並べる。
+     * ここを generic な sans-serif だけにしていると、届いた瞬間に
+     * 角ゴシック→丸ゴシックへ大きく字形が変わって、児童の目に「ガタッ」と映る。
+     *   Hiragino Maru Gothic ProN … iPad/Mac の丸ゴシック
+     *   Kosugi Maru               … Android の丸ゴシック
+     *   Zen Kaku Gothic New / Noto Sans JP … 丸が無い端末むけ（字幅が近い） */
+    --font-ui: 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', 'Kosugi Maru',
+               'Zen Kaku Gothic New', 'Noto Sans JP', 'Hiragino Kaku Gothic ProN',
+               system-ui, sans-serif;
 }
 
 /* 端末の文字サイズ設定で横向きだけ勝手に拡大される（iOS）のを止める */
@@ -34,9 +46,7 @@ html {
 
 body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-        sans-serif;
+    font-family: var(--font-ui);
     font-size: var(--fs-body);
     line-height: 1.8; /* 児童向けは行間を広くとる（Part I §2-4） */
     -webkit-font-smoothing: antialiased;

@@ -3766,7 +3766,7 @@ export default function App() {
       <style>{`
         /* フォントの読みこみは main.jsx (同梱の woff2)。外部への通信はない */
         :root { ${themeVars} }
-        body { font-family: 'Zen Maru Gothic', sans-serif; background-color: var(--bg); color: var(--text); touch-action: manipulation; transition: background-color 0.3s ease; }
+        body { font-family: var(--font-ui); background-color: var(--bg); color: var(--text); touch-action: manipulation; transition: background-color 0.3s ease; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         ::selection { background-color: var(--accent); color: var(--text); }
