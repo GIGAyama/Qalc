@@ -167,13 +167,13 @@ export const parseArrayFig = (q) => {
 // 分数: 同分母・異分母のたしひき、○つに分けた1つ分、仮分数と帯分数、通分、分数と小数
 export const parseFraction = (q) => {
   const s = String(q).replace(/\s/g, '');
-  let m = s.match(/^(\d+)\/(\d+)([+\-])(\d+)\/(\d+)$/);
+  let m = s.match(/^(\d+)\/(\d+)([+-])(\d+)\/(\d+)$/);
   if (m) {
     const spec = { type: 'op', n1: +m[1], d1: +m[2], op: m[3], n2: +m[4], d2: +m[5] };
     if (spec.d1 <= 12 && spec.d2 <= 12 && spec.n1 <= 24 && spec.n2 <= 24) return spec;
     return null;
   }
-  m = s.match(/^1([+\-])(\d+)\/(\d+)$/);
+  m = s.match(/^1([+-])(\d+)\/(\d+)$/);
   if (m && +m[3] <= 12) return { type: 'op', n1: +m[3], d1: +m[3], op: m[1], n2: +m[2], d2: +m[3] };
   // 仮分数 ⇔ 帯分数（4年）
   m = s.match(/^(\d+)\/(\d+)を帯分数にすると/);

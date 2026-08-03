@@ -49,8 +49,18 @@ jobs:
       # 学習ログと、へやの入室まわり(だれを入れるか・何を配るか)のテスト
       - name: Test
         run: npm test
+      # 書きまちがい(使っていない変数・useEffect の依存もれ)を止める。
+      # 設定ファイルが無いまま lint スクリプトだけがあり、ずっと動いていなかった
+      - name: Lint
+        run: npm run lint
       - name: Build
         run: npm run build
+      # GIGA Standard v4 の品質ゲート。
+      # LICENSE・CSP・PWA一式・画像の大きさ・1ファイルの行数・初回JSの大きさなどを
+      # 毎回たしかめる。dist の大きさを測るので build のあとに置く。
+      # 落ちたら検査をゆるめず、quality.config.json に理由を書いて明示的に許可すること
+      - name: Quality gate
+        run: npm run check
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
