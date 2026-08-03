@@ -390,8 +390,10 @@ const CustomToast = () => {
     return () => toastEvent.removeEventListener('show', handleShow);
   }, []);
 
+  // 保存できた・つながらない などのお知らせを読み上げてもらう。
+  // 割りこまずに読ませたいので polite（Part I §4）
   return (
-    <div className="fixed top-20 right-4 z-[9999] flex flex-col gap-2 pointer-events-none w-[90%] max-w-xs">
+    <div role="status" aria-live="polite" className="fixed top-20 right-4 z-[9999] flex flex-col gap-2 pointer-events-none w-[90%] max-w-xs">
       <AnimatePresence>
         {toasts.map(t => (
           <motion.div
@@ -1331,7 +1333,7 @@ const ShopView = ({ setView, stats, setStats }) => {
       <AnimatePresence>
         {confirmItem && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="かうかどうかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
               <div className="text-5xl mb-3 h-16 flex items-center justify-center">
                 {confirmItem.category === 'themes'
                   ? (confirmItem.item.c ? <div className="flex gap-1">{confirmItem.item.c.map((col, i) => <span key={i} className="w-8 h-8 rounded-full border-[3px] border-[var(--text)]" style={{ background: col }} />)}</div> : <PaintBucket size={48} className="text-[var(--text)]" />)
@@ -1349,7 +1351,7 @@ const ShopView = ({ setView, stats, setStats }) => {
 
         {gachaResult && (
           <motion.div key="gachaModal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="ふしぎなたまごガチャ" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
               {!gachaResult.revealed ? (
                 <>
                   <motion.div animate={{ rotate: [0, -15, 15, -15, 15, 0], scale: [1, 1.05, 1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 0.7 }} className="text-7xl mb-4">🥚</motion.div>
@@ -2123,6 +2125,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     // 学習ログ: 初回正答（firstTryCorrect）を出すため、正解・誤答の両方を1回の解答として数える
     studyRef.current?.answer(isCorrect, ans);
 
+    setAnswerAnnounce(isCorrect ? 'せいかい' : 'ちがうよ、もういちど');
+
     if (isCorrect) {
       // じんとりでは正解音を「インクをぬる音」に差しかえて、ぬった手ごたえを出す
       const newC = combo + 1; audioCtrl.playSE(isTerritory ? 'splat' : 'correct'); if (newC > 1) audioCtrl.playSE('combo', newC);
@@ -2219,6 +2223,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   // ゲームに入ったらすぐ、どうぐの絵と紙ふぶきを裏で取ってくる。
   // 電球を押したとき・正解したときに待たされないようにするため。
   // 取れるまでパネルは出さない(toolsReady)ので、ちらつきも起きない
+  // 正誤は「色＋形＋ことば」に加えて読み上げでも伝える（Part I §2-8, §4）。
+  // 画面上は◯×とスコアの動きで分かるが、それだけだと目で追えない児童に届かない
+  const [answerAnnounce, setAnswerAnnounce] = useState('');
   const [toolsReady, setToolsReady] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -2352,6 +2359,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         </div>
       </div>
 
+      {/* 画面には出さず、読み上げにだけ渡す。assertive にしないのは
+          連続で解いたときに前の読み上げを切ってしまわないようにするため */}
+      <div aria-live="polite" role="status" className="sr-only">{answerAnnounce}</div>
+
       {toolsReady && (
         <Suspense fallback={null}>
           <LearningToolPanel open={showTools} onClose={() => { audioCtrl.playSE('click'); setShowTools(false); }} courseName={state.courseName} qText={q.q} onFx={() => audioCtrl.playSE('click')} onToolUse={handleToolUse} />
@@ -2375,7 +2386,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       <AnimatePresence>
         {quitDialog && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-sm flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="とちゅうで やめるかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-sm flex flex-col items-center text-center">
               <XCircle size={48} className="text-[var(--primary)] mb-3" />
               <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text"><R c="途" r="と" /><R c="中" r="ちゅう" />で やめますか？</h3>
               <p className="text-sm text-[var(--text)] opacity-70 mb-5 ruby-text">
@@ -2651,7 +2662,7 @@ const ManagerView = ({ setView }) => {
         <AnimatePresence>
           {confirmDelete && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="さくじょの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
                 <Trash2 size={48} className="text-[var(--primary)] mb-3" />
                 <h3 className="font-black text-xl text-[var(--text)] mb-6 leading-snug">「{editTarget}」を<br />本当に削除しますか？</h3>
                 <div className="flex w-full gap-3">
@@ -3845,7 +3856,7 @@ export default function App() {
       <AnimatePresence>
         {leaveConfirm && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="へやから 出るかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
               <Users size={48} className="text-[var(--primary)] mb-3" />
               <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text">へやから<R c="出" r="で" />ますか？</h3>
               <p className="text-sm text-[var(--text)] opacity-70 mb-5 ruby-text">
