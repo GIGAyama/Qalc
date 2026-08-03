@@ -9,6 +9,7 @@ import '@fontsource/zen-maru-gothic/500.css'
 import '@fontsource/zen-maru-gothic/700.css'
 import '@fontsource/zen-maru-gothic/900.css'
 import './index.css'
+import { registerServiceWorker } from './pwa.jsx'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
@@ -16,8 +17,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </React.StrictMode>,
 )
 
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/Qalc/sw.js').catch(() => {})
-    })
-}
+// 登録するだけでなく、あたらしい版が待機したことも見張る。
+// 前は register するだけだったので、直したものを出しても
+// 児童の端末は古いままで、本人にはそれが分からなかった（Part I §3-4）
+registerServiceWorker()

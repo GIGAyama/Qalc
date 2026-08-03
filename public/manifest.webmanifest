@@ -8,10 +8,24 @@
   "scope": "/Qalc/",
   "id": "/Qalc/",
   "display": "standalone",
+  "display_override": [
+    "standalone",
+    "fullscreen",
+    "minimal-ui"
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  },
   "orientation": "portrait",
   "background_color": "#fffbf0",
   "theme_color": "#FF6B6B",
-  "categories": ["education", "games"],
+  "categories": [
+    "education",
+    "games"
+  ],
   "icons": [
     {
       "src": "/Qalc/icon-192.png",

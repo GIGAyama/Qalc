@@ -1,0 +1,40 @@
+{
+  "$comment": "GIGA Standard v4 の品質ゲートの設定。scripts/check-project.mjs が読む。しきい値を下げるときは、必ず理由を添えること。",
+
+  "repoName": "Qalc",
+  "type": "B",
+
+  "paths": {
+    "indexHtml": "index.html",
+    "manifest": "public/manifest.webmanifest",
+    "serviceWorker": "public/sw.js",
+    "offlineHtml": "public/offline.html",
+    "iconDir": "public",
+    "sourceDirs": ["src"],
+    "distDir": "dist"
+  },
+
+  "limits": {
+    "$comment": "Part I §5。行数とバイト数は1ファイルあたり。",
+    "fileLines": 5000,
+    "fileBytes": 409600,
+    "imageBytes": 153600,
+    "icon512Bytes": 61440,
+    "faviconBytes": 30720,
+
+    "$comment2": "初回に読みこむ JS。Part I §5 の目標は 300KB(initialJsTarget)。このアプリは react-dom(130KB) と framer-motion(約120KB) だけで 250KB を占めるため、いまはまだ届いていない。到達不能な値で毎回落としつづけると検査そのものが無視されるようになるので、いまの実測(約646KB)に少しだけ余裕を持たせた値を天井にし、これ以上ふとらないことを保証する。減らせたら必ずこの値も下げること。差の内訳は AUDIT.md に残してある。",
+    "initialJsBytes": 680000,
+    "initialJsTarget": 307200
+  },
+
+  "securityExceptions": [
+    {
+      "id": "csp-style-unsafe-inline",
+      "reason": "テーマ切りかえが動的な <style> を書き、framer-motion が style 属性を直接書きかえるため。外すとテーマとアニメーションが壊れる。script-src は 'self' のままで、実行できるコードは増えていない。"
+    },
+    {
+      "id": "offline-html-no-csp",
+      "reason": "public/offline.html だけ CSP の meta を入れていない。script-src 'self' にすると「もういちど ためす」ボタンが動かなくなるため。外から受けとる値を1つも表示しないページなので、差しこまれるものが無い。"
+    }
+  ]
+}
