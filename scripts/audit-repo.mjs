@@ -127,9 +127,26 @@ for (const t of texts) {
 const usesCanvas = hit(/getContext\(\s*['"]2d['"]/);
 const hasDpr = hitCode(/devicePixelRatio/);
 
-/* ── 画像 ───────────────────────────────── */
-const over150 = images.filter((i) => i.size > 153600).sort((a, b) => b.size - a.size);
-const imgTotal = images.reduce((s, i) => s + i.size, 0);
+/* ── 画像 ───────────────────────────────────
+ *
+ * 「児童の端末に配られる画像」だけを数える。
+ * B型(Vite)はビルド時に public/ の中身と、src/ から import したものだけが出力される。
+ * リポジトリ直下に置いてある元データ（アイコンを作るための 1024px の版など）は
+ * 配られないので、数に入れると実態より重く見える。
+ *
+ * 実際、最初にこの区別をせずに測ったとき Quoridor を「favicon 1,102KB を配信」と
+ * 報告してしまった。1,102KB はリポジトリ直下の元データで、配られているのは
+ * public/favicon.png の 8KB のほうだった。 */
+const isShipped = (p) => {
+  if (type !== 'B') return true;                 // A型・C型は置いてあるものがそのまま配られる
+  const r = rel(p);
+  return r.startsWith('public/') || r.startsWith('src/') || r.startsWith('docs/');
+};
+const shipped = images.filter((i) => isShipped(i.path));
+const notShipped = images.filter((i) => !isShipped(i.path));
+const over150 = shipped.filter((i) => i.size > 153600).sort((a, b) => b.size - a.size);
+const imgTotal = shipped.reduce((s, i) => s + i.size, 0);
+const heavySource = notShipped.filter((i) => i.size > 153600).sort((a, b) => b.size - a.size);
 
 /* ── 大きすぎるファイル ───────────────────── */
 const bigFiles = texts
@@ -175,7 +192,8 @@ const result = {
     更新通知: hitCode(/SKIP_WAITING/),
   },
   性能: {
-    画像合計: imgTotal, 画像枚数: images.length,
+    画像合計: imgTotal, 画像枚数: shipped.length,
+    配信されない元データ: heavySource.map((i) => `${rel(i.path)} ${kb(i.size)}`),
     超過150KB: over150.length,
     最大画像: over150[0] ? `${rel(over150[0].path)} ${kb(over150[0].size)}` : null,
     巨大ファイル: bigFiles.slice(0, 2).map((f) => `${f.path} ${f.lines}行/${kb(f.bytes)}`),
@@ -201,6 +219,7 @@ console.log(`  表示      viewport-fit ${mark(result.表示.viewport_fit)}  100
 console.log(`            Canvas ${result.表示.canvas使用 ? `あり → dpr補正 ${mark(result.表示.dpr補正)}` : 'なし'}  動きの配慮 ${mark(result.表示.reduced_motion)}`);
 console.log(`  PWA       manifest ${result.PWA.manifest || '—'}  sw ${result.PWA.sw || '—'}  offline ${mark(result.PWA.offline_html)}  install導線 ${mark(result.PWA.beforeinstallprompt)}  更新通知 ${mark(result.PWA.更新通知)}`);
 if (result.PWA.manifest詳細) console.log(`            ${result.PWA.manifest詳細}`);
-console.log(`  性能      画像 ${result.性能.画像枚数}枚 計${mb(result.性能.画像合計)}  150KB超 ${result.性能.超過150KB}枚  ${result.性能.最大画像 || ''}`);
+console.log(`  性能      配信画像 ${result.性能.画像枚数}枚 計${mb(result.性能.画像合計)}  150KB超 ${result.性能.超過150KB}枚  ${result.性能.最大画像 || ''}`);
+if (result.性能.配信されない元データ.length) console.log(`            (配信されない元データ: ${result.性能.配信されない元データ.join(' / ')})`);
 if (result.性能.巨大ファイル.length) console.log(`            巨大: ${result.性能.巨大ファイル.join(' / ')}`);
 console.log(`  学習ログ  ${result.学習ログ.使用 ? 'study.records.v1 を使用' : '未使用'}`);
