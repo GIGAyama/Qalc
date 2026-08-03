@@ -480,7 +480,7 @@ export const TerritoryScoreBar = ({ terrState, myTeam, lastSpurt }) => {
         {myTeam && <span style={{ color: TEAMS[myTeam].color }}>あなたは {TEAMS[myTeam].label}チーム！</span>}
         {!hasCells || neutral > 0
           ? <span className="text-[var(--text)] opacity-80">しろいマス のこり {neutral}</span>
-          : <span className="text-[var(--primary)]">⚔ ぜんめん うばいあい！</span>}
+          : <span className="text-[var(--primary-d)]">⚔ ぜんめん うばいあい！</span>}
         {lastSpurt && <span className="text-red-500">⏰ ラストスパート ぬり2ばい！</span>}
       </div>
     </div>
@@ -590,7 +590,7 @@ export const TerritoryBoard = ({ terrState, myTeam, myId, targetIdx, onSelect, l
                   <motion.span className="text-[10px] md:text-xs font-black" style={{ color: '#D946EF' }}
                     animate={{ scale: [1, 1.25, 1], rotate: [-8, 8, -8] }} transition={{ duration: 1.4, repeat: Infinity }}>？</motion.span>
                 )}
-                <span className={`font-black tabular-nums ${def.star || def.lucky ? 'text-[10px] md:text-xs' : 'text-[11px] md:text-sm'} ${cell.owner ? 'text-white' : almost ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'}`}>
+                <span className={`font-black tabular-nums ${def.star || def.lucky ? 'text-[10px] md:text-xs' : 'text-[11px] md:text-sm'} ${cell.owner ? 'text-white' : almost ? 'text-[var(--primary-d)]' : 'text-[var(--text)] opacity-80'}`}>
                   {stealing ? '⚡' : ''}{remain}
                 </span>
               </span>
@@ -910,7 +910,7 @@ export const TerritoryResultPanel = ({ territoryResult, myId }) => {
         <div className="flex flex-wrap justify-center gap-2 mb-4 w-full relative">
           {mvps.map((m, i) => (
             <motion.div key={m.key} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', bounce: 0.5, delay: 0.4 + i * 0.1 }}
-              className="bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-3 py-1.5 font-black text-xs text-[var(--text)] flex items-center gap-1">
+              className="bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-3 py-1.5 font-black text-xs text-[var(--on-accent)] flex items-center gap-1">
               {m.emoji} {m.label}: <PupilName name={m.winner.name} />
             </motion.div>
           ))}
@@ -922,7 +922,7 @@ export const TerritoryResultPanel = ({ territoryResult, myId }) => {
           <div key={p.id} className={`rounded-xl border-2 px-3 py-2 bg-[var(--bg)] ${p.id === myId ? 'border-[var(--primary)]' : 'border-[var(--text)]'}`}>
             <div className="flex items-center gap-2 mb-1">
               <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-[var(--text)]" style={{ background: TEAMS[p.team]?.color || '#999' }} />
-              <span className="font-bold text-sm truncate flex-grow"><PupilName name={p.name} />{p.id === myId && <span className="text-[10px] text-[var(--primary)] ml-1">(あなた)</span>}</span>
+              <span className="font-bold text-sm truncate flex-grow"><PupilName name={p.name} />{p.id === myId && <span className="text-[10px] text-[var(--primary-d)] ml-1">(あなた)</span>}</span>
               <span className="font-black text-sm text-[var(--text)] shrink-0">🖌{p.captures || 0}</span>
               <span className="font-black text-xs shrink-0" style={{ color: TEAMS[p.team]?.color }}>⚡{p.steals || 0}</span>
               <span className="font-black text-xs text-purple-500 shrink-0">💥{p.specials || 0}</span>

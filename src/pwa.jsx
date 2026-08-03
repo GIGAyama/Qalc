@@ -93,7 +93,7 @@ export const UpdateNotice = () => {
             style={{ bottom: 'calc(16px + var(--safe-b))' }}
         >
             <div className="pointer-events-auto flex items-center gap-3 bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-2xl shadow-[3px_3px_0_var(--text)] px-4 py-3 max-w-md w-full">
-                <RefreshCw size={22} className="text-[var(--primary)] shrink-0" />
+                <RefreshCw size={22} className="text-[var(--primary-d)] shrink-0" />
                 <span className="font-bold text-sm text-[var(--text)] flex-grow leading-snug">
                     あたらしい バージョンが あります
                 </span>
@@ -192,15 +192,15 @@ export const InstallButton = ({ onSound }) => {
                         </div>
                         <ol className="text-sm text-[var(--text)] flex flex-col gap-2 leading-snug">
                             <li className="flex items-start gap-2">
-                                <Share size={18} className="shrink-0 mt-0.5 text-[var(--primary)]" />
+                                <Share size={18} className="shrink-0 mt-0.5 text-[var(--primary-d)]" />
                                 <span>下（または右上）の <b>きょうゆう</b> ボタンを おす</span>
                             </li>
                             <li className="flex items-start gap-2">
-                                <PlusSquare size={18} className="shrink-0 mt-0.5 text-[var(--primary)]" />
+                                <PlusSquare size={18} className="shrink-0 mt-0.5 text-[var(--primary-d)]" />
                                 <span><b>「ホーム画面に追加」</b> を えらぶ</span>
                             </li>
                             <li className="flex items-start gap-2">
-                                <span className="shrink-0 mt-0.5 w-[18px] text-center font-black text-[var(--primary)]">3</span>
+                                <span className="shrink-0 mt-0.5 w-[18px] text-center font-black text-[var(--primary-d)]">3</span>
                                 <span>右上の <b>「追加」</b> を おす</span>
                             </li>
                         </ol>

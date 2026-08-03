@@ -633,7 +633,7 @@ export const SupportButton = ({ gauge, onFire }) => {
         <circle cx="30" cy="30" r={RADIUS} fill="none" stroke={ready ? 'var(--primary)' : 'var(--secondary)'} strokeWidth="4" strokeLinecap="round"
           strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - ratio)} style={{ transition: 'stroke-dashoffset 0.3s' }} />
       </svg>
-      <Sparkles size={20} className={ready ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'} />
+      <Sparkles size={20} className={ready ? 'text-[var(--primary-d)]' : 'text-[var(--text)] opacity-80'} />
       <span className={`text-[9px] font-black ${ready ? 'text-[var(--text)]' : 'text-[var(--text)] opacity-80'}`}>おうえん</span>
     </motion.button>
   );
@@ -832,7 +832,7 @@ export const RaidEventOverlay = ({ lastEvent }) => {
           <BossAvatar bossIndex={info.bossIndex} superMode={info.superMode} className="w-44 h-44 md:w-60 md:h-60 drop-shadow-[0_0_25px_rgba(0,0,0,0.7)]" />
           <div className="mt-1 bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl px-5 py-2 shadow-[4px_4px_0_var(--text)] text-center">
             <div className="font-black text-lg md:text-2xl text-[var(--text)]">{info.name}</div>
-            <div className="font-black text-xs md:text-sm text-[var(--primary)]">があらわれた！</div>
+            <div className="font-black text-xs md:text-sm text-[var(--primary-d)]">があらわれた！</div>
           </div>
         </motion.div>
       </motion.div>
@@ -860,8 +860,8 @@ export const RaidEventOverlay = ({ lastEvent }) => {
     <AnimatePresence>
       {show && kind === 'boss_enter' && intro()}
       {show && kind === 'boss_enrage' && enrageCut()}
-      {show && kind === 'boss_defeated' && banner('bg-[var(--accent)] text-[var(--text)]', <>👑 たおした！！</>)}
-      {show && kind === 'team_down' && banner('bg-[var(--panel)] text-[var(--primary)]', <><span className="ruby-text">💥 たいせいを たてなおせ！</span></>)}
+      {show && kind === 'boss_defeated' && banner('bg-[var(--accent)] text-[var(--on-accent)]', <>👑 たおした！！</>)}
+      {show && kind === 'team_down' && banner('bg-[var(--panel)] text-[var(--primary-d)]', <><span className="ruby-text">💥 たいせいを たてなおせ！</span></>)}
       {show && kind === 'support' && banner('bg-pink-100 text-pink-600', <>💝 <PupilName name={lastEvent.name} /> さんの おうえん！</>)}
       {show && kind === 'bomb_defused' && banner('bg-emerald-100 text-emerald-600', <>✅ バクダン かいじょ！</>)}
       {show && kind === 'bomb_blast' && banner('bg-red-100 text-red-600', <>💣 ばくはつした！</>)}
@@ -893,7 +893,7 @@ export const RaidResultPanel = ({ raidResult, myId }) => {
   return (
     <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] p-4 w-full mb-6 shrink-0 relative overflow-hidden flex flex-col items-center shadow-[4px_4px_0_var(--text)]">
       <h3 className="font-black text-xl mb-2 text-[var(--text)] flex items-center gap-2">
-        <Crown size={24} className="text-yellow-400" /> ボスを <span className="text-4xl text-[var(--primary)]">{defeated}</span> たい たおした！
+        <Crown size={24} className="text-yellow-400" /> ボスを <span className="text-4xl text-[var(--primary-d)]">{defeated}</span> たい たおした！
       </h3>
       {defeated > 0 && (
         <div className="flex justify-center gap-1 mb-4 flex-wrap">
@@ -909,7 +909,7 @@ export const RaidResultPanel = ({ raidResult, myId }) => {
         <div className="flex flex-wrap justify-center gap-2 mb-4 w-full">
           {mvps.map(m => (
             <motion.div key={m.key} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', bounce: 0.5, delay: 0.3 }}
-              className="bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-3 py-1.5 font-black text-xs text-[var(--text)] flex items-center gap-1">
+              className="bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-3 py-1.5 font-black text-xs text-[var(--on-accent)] flex items-center gap-1">
               {m.emoji} {m.label}: <PupilName name={m.winner.name} />
             </motion.div>
           ))}
@@ -921,7 +921,7 @@ export const RaidResultPanel = ({ raidResult, myId }) => {
           <div key={p.id} className={`rounded-xl border-2 px-3 py-2 ${p.id === myId ? 'border-[var(--primary)] bg-[var(--bg)]' : 'border-[var(--text)] bg-[var(--bg)]'}`}>
             <div className="flex items-center gap-2 mb-1">
               <span className="font-black text-xs text-[var(--text)] opacity-80 w-6">#{idx + 1}</span>
-              <span className="font-bold text-sm truncate flex-grow"><PupilName name={p.name} />{p.id === myId && <span className="text-[10px] text-[var(--primary)] ml-1">(あなた)</span>}</span>
+              <span className="font-bold text-sm truncate flex-grow"><PupilName name={p.name} />{p.id === myId && <span className="text-[10px] text-[var(--primary-d)] ml-1">(あなた)</span>}</span>
               <span className="font-black text-sm text-[var(--text)] shrink-0">⚔{p.damage}</span>
               <span className="font-black text-xs text-pink-500 shrink-0">💝{p.supports || 0}</span>
               <span className="font-black text-xs text-orange-500 shrink-0">🔥{p.maxCombo || 0}</span>

@@ -61,15 +61,22 @@ const CASES = [
   // 補足の文字は opacity-80 が下限（77% で全テーマが 4.5:1 を満たすので、切りのよい 80 にした）
   { label: '補足 text/80% on panel', fg: 'text', bg: 'panel', alpha: 0.8, min: 4.5 },
   { label: '補足 text/80% on bg', fg: 'text', bg: 'bg', alpha: 0.8, min: 4.5 },
-  /* ここから下は opacity では直せない。色そのものの組み合わせの問題。
-   * --primary / --secondary を文字に使っているのは、ほぼ「大きな数字」「見出し」「アイコン」で、
-   * 実際のソースを見ると text-2xl〜text-6xl の font-black か lucide のアイコンだった。
-   * WCAG では 18.66px 太字以上の文字とアイコンは 3:1 でよいので、その基準で測る。
-   * 3:1 も割っているものは、大きくしても足りない＝配色を直すしかない。 */
-  { label: '強調 primary on panel', fg: 'primary', bg: 'panel', alpha: 1, min: 3 },
-  { label: '強調 primary on bg', fg: 'primary', bg: 'bg', alpha: 1, min: 3 },
-  { label: '強調 secondary on panel', fg: 'secondary', bg: 'panel', alpha: 1, min: 3 },
-  { label: '見出し text on accent', fg: 'text', bg: 'accent', alpha: 1, min: 3 },
+  /* 強調の文字は --primary-d / --secondary-d（文字用の濃いほう）を使う。
+   * --primary / --secondary は「面」用で、そのまま文字にすると読めない（Part I §2-8）。
+   * ソース側も text-[var(--primary-d)] に置きかえてある。 */
+  { label: '強調 primary-d on panel', fg: 'primary-d', bg: 'panel', alpha: 1, min: 4.5 },
+  { label: '強調 primary-d on bg', fg: 'primary-d', bg: 'bg', alpha: 1, min: 4.5 },
+  { label: '強調 secondary-d on panel', fg: 'secondary-d', bg: 'panel', alpha: 1, min: 4.5 },
+  { label: '強調 secondary-d on bg', fg: 'secondary-d', bg: 'bg', alpha: 1, min: 4.5 },
+  // accent の面の上に載る文字。もとの文字色で足りているテーマでは --text と同じ値になる
+  { label: '見出し on-accent on accent', fg: 'on-accent', bg: 'accent', alpha: 1, min: 4.5 },
+  /* 塗りつぶしたボタンの上に載る文字。
+   * 「面の色 vs ページの背景」は測っていない。このアプリのボタンは
+   * border-[3px] border-[var(--text)] で濃い枠がついており、
+   * どこからどこまでがボタンかは枠で分かるため（WCAG 1.4.11 は枠でも満たせる）。
+   * 実際に読めるかどうかを決めるのは、塗りの上に載る文字のほう。 */
+  { label: 'ボタン panel文字 on primary', fg: 'panel', bg: 'primary', alpha: 1, min: 4.5 },
+  { label: 'ボタン panel文字 on secondary', fg: 'panel', bg: 'secondary', alpha: 1, min: 4.5 },
 ];
 
 const rows = [];
@@ -115,7 +122,13 @@ console.log(`合格 ${rows.length - bad.length} / 要確認 ${large.length} / �
  * これは配色の変更にあたり、改修モードの規則6で禁じられている（別途、人の判断が要る）。
  * 毎回 CI を落としても直せないので、報告だけして終了コードには反映しない。
  * 直すときは Part I §2-8 のとおり、面用と文字用の2段階を用意する。 */
-const textFailures = bad.filter((r) => r.fg === 'text' && r.bg !== 'accent');
+/* 終了コードに反映するのは「こちらの直しかたが確立していて、落ちている＝直しわすれ」のものだけ。
+ *   - 本文と補足   → opacity を上げれば必ず満たせる
+ *   - 強調の文字   → --primary-d / --secondary-d を使えば満たせる
+ *   - accent の上  → --on-accent を使えば満たせる
+ * ボタンの塗りの上の文字は、塗りの色そのものか文字の色を変えることになり、
+ * アプリの見た目が大きく変わる。人の判断が要るので報告だけにする（規則6）。 */
+const textFailures = bad.filter((r) => r.bg !== 'primary' && r.bg !== 'secondary');
 
 if (bad.length) {
   const themesBad = [...new Set(bad.map((r) => r.theme))];
@@ -124,9 +137,10 @@ if (bad.length) {
   if (textCases.length) {
     console.log('補足の文字が落ちている → opacity を上げれば直る（配色は据えおきでよい）。');
   } else {
-    console.log('落ちているのは --primary / --secondary / --accent の組み合わせだけ。');
-    console.log('opacity では直せず、その色そのものを濃くする必要がある（＝配色の変更）。');
-    console.log('Part III の規則6により、ここは報告に留めている。');
+    console.log('落ちているのは「塗りつぶしたボタンの上に載る文字」だけ。');
+    console.log('--panel（ほぼ白）の文字を、明るい塗りの上に置いているため。');
+    console.log('直すには 塗りの色を濃くするか、文字を濃い色にするかのどちらかで、');
+    console.log('どちらもアプリの見た目が変わる。人の判断が要るため報告に留めている（規則6）。');
   }
 }
 

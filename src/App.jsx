@@ -403,8 +403,8 @@ const CustomToast = () => {
             exit={{ opacity: 0, scale: 0.9, x: 50 }}
             className={`bg-[var(--panel)] border-[3px] ${t.icon === 'error' || t.icon === 'warning' ? 'border-[var(--primary)]' : 'border-[var(--secondary)]'} text-[var(--text)] px-4 py-3 rounded-2xl shadow-[4px_4px_0_rgba(0,0,0,0.15)] flex items-center gap-3 font-black text-sm`}
           >
-            {t.icon === 'success' && <CheckCircle2 className="text-[var(--secondary)] shrink-0" size={24} />}
-            {(t.icon === 'error' || t.icon === 'warning') && <HeartCrack className="text-[var(--primary)] shrink-0" size={24} />}
+            {t.icon === 'success' && <CheckCircle2 className="text-[var(--secondary-d)] shrink-0" size={24} />}
+            {(t.icon === 'error' || t.icon === 'warning') && <HeartCrack className="text-[var(--primary-d)] shrink-0" size={24} />}
             <span className="leading-tight break-words flex-grow">{t.title}</span>
           </motion.div>
         ))}
@@ -611,12 +611,12 @@ const DEFAULT_DIGIT_LAYOUT = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0'];
 const Keypad = React.memo(({ onAppend, onClear, onSubmit, digitLayout = DEFAULT_DIGIT_LAYOUT }) => (
   <div className="flex-grow flex flex-col gap-2 z-30 min-h-[30vh]">
     <div className="flex h-14 gap-2 shrink-0">
-      {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }}>{c}</motion.button>)}
+      {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary-d)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }}>{c}</motion.button>)}
     </div>
     <div className="grid grid-cols-3 gap-2 flex-grow">
-      {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
+      {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
       <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }}>C</motion.button>
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
       <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--panel)] border-[3px] border-[var(--text)] font-black text-3xl rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }}>OK</motion.button>
     </div>
   </div>
@@ -670,7 +670,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
   return (
     <div className="flex flex-col items-center relative gap-4 pb-10">
       <div className="text-center">
-        <h2 className="font-black text-5xl mb-1 text-[var(--text)] tracking-wider">Qalc<span className="text-[var(--primary)]">.</span></h2>
+        <h2 className="font-black text-5xl mb-1 text-[var(--text)] tracking-wider">Qalc<span className="text-[var(--primary-d)]">.</span></h2>
         <p className="text-[var(--text)] opacity-80 font-bold">めざせ、計算マスター！</p>
       </div>
 
@@ -682,7 +682,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
               <Flame size={16} /> {stats.streak}<span className="text-[10px]">日</span>
             </div>
           )}
-          <div className="flex items-center gap-1 font-black text-sm text-[var(--text)] bg-[var(--accent)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm"><Coins size={16} /> {stats.coins}</div>
+          <div className="flex items-center gap-1 font-black text-sm text-[var(--on-accent)] bg-[var(--accent)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm"><Coins size={16} /> {stats.coins}</div>
         </div>
         <div className="flex items-center gap-4 mt-2">
           <div className="bg-[var(--bg)] rounded-2xl w-[80px] h-[80px] border-[3px] border-[var(--text)] overflow-hidden">
@@ -729,16 +729,16 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
           <Award size={28} className="text-[var(--accent)]" /> <span className="text-xs leading-tight">スコア<br />アタック</span>
         </MotionButton>
         <MotionButton className="bg-[var(--panel)] text-[var(--text)] border-[3px] border-[var(--text)] p-3 flex-col gap-1 h-auto" onClick={() => { setConfigMode('TIME_ATTACK'); setView('singleConfig'); }}>
-          <Timer size={28} className="text-[var(--secondary)]" /> <span className="text-xs leading-tight">タイム<br />アタック</span>
+          <Timer size={28} className="text-[var(--secondary-d)]" /> <span className="text-xs leading-tight">タイム<br />アタック</span>
         </MotionButton>
         <MotionButton className="bg-[var(--panel)] text-[var(--text)] border-[3px] border-[var(--text)] p-3 flex-col gap-1 h-auto" onClick={() => { setConfigMode('SUDDEN_DEATH'); setView('singleConfig'); }}>
-          <Swords size={28} className="text-[var(--primary)]" /> <span className="text-xs leading-tight">サドン<br />デス</span>
+          <Swords size={28} className="text-[var(--primary-d)]" /> <span className="text-xs leading-tight">サドン<br />デス</span>
         </MotionButton>
       </div>
 
       {/* マルチプレイ ボタン */}
       <div className="w-full flex flex-col gap-2">
-        <MotionButton className="bg-[var(--accent)] text-[var(--text)] w-full py-4 text-xl border-[4px] border-[var(--text)]" onClick={initHost}>
+        <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] w-full py-4 text-xl border-[4px] border-[var(--text)]" onClick={initHost}>
           <Users size={24} /> みんなであそぶ（へやをつくる）
         </MotionButton>
         <MotionButton className="bg-[var(--secondary)] text-[var(--panel)] w-full py-4 text-xl border-[4px] border-[var(--text)]" onClick={() => setView('clientJoin')}>
@@ -748,19 +748,19 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
 
       {/* ミッションパネル */}
       <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-4">
-        <h4 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text"><CheckCircle2 size={20} className="text-[var(--secondary)]" /> <R c="今" r="きょ" /><R c="日" r="う" />のミッション</h4>
+        <h4 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text"><CheckCircle2 size={20} className="text-[var(--secondary-d)]" /> <R c="今" r="きょ" /><R c="日" r="う" />のミッション</h4>
         <div className="flex flex-col gap-2">
           {stats.missions?.list.map(m => {
             const isCleared = m.current >= m.target;
             return (
               <div key={m.id} className="flex items-center justify-between bg-[var(--bg)] p-2 rounded-xl border-2 border-transparent">
                 <div className="flex flex-col flex-grow pr-2">
-                  <span className={`text-sm font-bold ${isCleared ? 'text-[var(--secondary)] line-through' : 'text-[var(--text)]'}`}>{m.desc}</span>
+                  <span className={`text-sm font-bold ${isCleared ? 'text-[var(--secondary-d)] line-through' : 'text-[var(--text)]'}`}>{m.desc}</span>
                   <span className="text-xs text-[var(--text)] opacity-80 font-bold">{Math.min(m.current, m.target)} / {m.target}</span>
                 </div>
                 {isCleared ? (
                   m.claimed ? <span className="text-[var(--text)] opacity-80 font-bold text-xs flex items-center"><CheckCircle2 size={16} /> 完了</span>
-                    : <button onClick={() => claimMission(m.id)} className="bg-[var(--accent)] text-[var(--text)] font-bold text-xs px-3 py-1.5 rounded-lg border-2 border-[var(--text)] active:scale-95 whitespace-nowrap">うけとる</button>
+                    : <button onClick={() => claimMission(m.id)} className="bg-[var(--accent)] text-[var(--on-accent)] font-bold text-xs px-3 py-1.5 rounded-lg border-2 border-[var(--text)] active:scale-95 whitespace-nowrap">うけとる</button>
                 ) : (
                   <span className="flex items-center gap-1 font-bold text-xs text-[var(--text)] opacity-80"><Coins size={14} /> {m.reward}</span>
                 )}
@@ -798,11 +798,11 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
               <div className="text-[10px] font-bold text-[var(--text)] opacity-80 ruby-text"><R c="回" r="かい" />あそんだ</div>
             </div>
             <div className="bg-[var(--bg)] rounded-xl border-2 border-[var(--text)] p-2 text-center">
-              <div className="text-2xl font-black text-[var(--secondary)]">{study.summary.minutes}<span className="text-xs ml-0.5 ruby-text"><R c="分" r="ふん" /></span></div>
+              <div className="text-2xl font-black text-[var(--secondary-d)]">{study.summary.minutes}<span className="text-xs ml-0.5 ruby-text"><R c="分" r="ふん" /></span></div>
               <div className="text-[10px] font-bold text-[var(--text)] opacity-80 ruby-text"><R c="集" r="しゅう" /><R c="中" r="ちゅう" />した<R c="時" r="じ" /><R c="間" r="かん" /></div>
             </div>
             <div className="bg-[var(--bg)] rounded-xl border-2 border-[var(--text)] p-2 text-center">
-              <div className="text-2xl font-black text-[var(--primary)]">
+              <div className="text-2xl font-black text-[var(--primary-d)]">
                 {study.summary.firstTryRate == null ? '—' : `${Math.round(study.summary.firstTryRate * 100)}%`}
               </div>
               <div className="text-[10px] font-bold text-[var(--text)] opacity-80 ruby-text">1<R c="回" r="かい" />めで<R c="正" r="せい" /><R c="解" r="かい" /></div>
@@ -978,20 +978,20 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
   return (
     <div className="flex flex-col h-[85vh] gap-4">
       <div className="flex justify-between items-center bg-[var(--panel)] p-3 rounded-2xl border-[3px] border-[var(--text)] shrink-0 shadow-sm">
-        <h3 className="font-black text-xl flex items-center gap-2 text-[var(--text)]"><Users size={24} className="text-[var(--secondary)]" /> みんなのへや</h3>
+        <h3 className="font-black text-xl flex items-center gap-2 text-[var(--text)]"><Users size={24} className="text-[var(--secondary-d)]" /> みんなのへや</h3>
         <div className="font-bold bg-[var(--secondary)] text-white px-3 py-1 rounded-full border-2 border-[var(--text)]">{Object.keys(peerState.participants).length} <R c="人" r="にん" /></div>
       </div>
 
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-5 flex flex-col gap-6 overflow-y-auto flex-grow shadow-sm">
         <div className="flex flex-col items-center justify-center p-4 bg-[var(--bg)] rounded-xl border-2 border-dashed border-[var(--text)] shrink-0">
-          <p className="font-bold text-[var(--primary)] mb-1 text-sm ruby-text">ルーム<R c="番" r="ばん" /><R c="号" r="ごう" /></p>
+          <p className="font-bold text-[var(--primary-d)] mb-1 text-sm ruby-text">ルーム<R c="番" r="ばん" /><R c="号" r="ごう" /></p>
           {/* 10けたは長いので 4-3-3 に区切って見せる。打つときは数字だけでよい（すきまは読みやすさのため） */}
           <h4 className="font-black text-3xl sm:text-4xl text-[var(--text)] mb-4 tracking-wider tabular-nums">{formatRoomId(peerState.hostId)}</h4>
           <p className="font-bold text-sm text-[var(--text)] mb-3 ruby-text">この<R c="数" r="すう" /><R c="字" r="じ" />を<R c="入" r="にゅう" /><R c="力" r="りょく" />するか、QRコードを<R c="読" r="よ" />みこんでね</p>
           <canvas ref={qrRef} className="bg-white p-3 rounded-xl mb-3 shadow-inner" />
           <div className="w-full flex items-center bg-white border-2 border-gray-200 rounded-lg p-2">
             <input type="text" readOnly value={`${window.location.origin}${window.location.pathname}?host=${peerState.hostId}`} className="text-xs font-mono w-full outline-none bg-transparent" />
-            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?host=${peerState.hostId}`); showToast('success', 'コピーしました'); }} className="text-gray-500 hover:text-[var(--primary)] ml-2"><Share2 size={16} /></button>
+            <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?host=${peerState.hostId}`); showToast('success', 'コピーしました'); }} className="text-gray-500 hover:text-[var(--primary-d)] ml-2"><Share2 size={16} /></button>
           </div>
         </div>
 
@@ -1012,13 +1012,13 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
               <div className="flex items-center gap-2 mb-2">
                 <BossAvatar bossIndex={0} className="w-16 h-16 shrink-0" />
                 <div className="font-black text-sm text-[var(--text)] leading-snug">
-                  みんなで <span className="text-[var(--primary)]"><R c="力" r="ちから" /></span>を あわせて、<br className="hidden sm:block" />ボスを たおそう！
+                  みんなで <span className="text-[var(--primary-d)]"><R c="力" r="ちから" /></span>を あわせて、<br className="hidden sm:block" />ボスを たおそう！
                 </div>
               </div>
               <div className="bg-[var(--bg)] border-2 border-dashed border-[var(--text)] rounded-xl p-3 text-xs font-bold text-[var(--text)] opacity-90 mb-3 leading-relaxed flex flex-col gap-1">
-                <span>👑 <R c="全" r="ぜん" /><R c="員" r="いん" />で 1<R c="体" r="たい" />のボスに ちょうせんする <R c="協" r="きょう" /><R c="力" r="りょく" />モード！<R c="正" r="せい" /><R c="解" r="かい" />すると ボスにダメージ、コンボが つづくほど <span className="text-[var(--primary)]">大ダメージ</span></span>
+                <span>👑 <R c="全" r="ぜん" /><R c="員" r="いん" />で 1<R c="体" r="たい" />のボスに ちょうせんする <R c="協" r="きょう" /><R c="力" r="りょく" />モード！<R c="正" r="せい" /><R c="解" r="かい" />すると ボスにダメージ、コンボが つづくほど <span className="text-[var(--primary-d)]">大ダメージ</span></span>
                 <span>💗 <R c="体" r="たい" /><R c="力" r="りょく" />は みんなで1つ。ボスの こうげきで へって 0になると たてなおし（ボスも かいふくしてしまう）</span>
-                <span>✨ <span className="text-[var(--primary)]">おうえん</span>… ゲージが たまると はつどう！ 8<R c="秒" r="びょう" />かん <R c="全" r="ぜん" /><R c="員" r="いん" />のダメージ2ばい＋<R c="体" r="たい" /><R c="力" r="りょく" />かいふく</span>
+                <span>✨ <span className="text-[var(--primary-d)]">おうえん</span>… ゲージが たまると はつどう！ 8<R c="秒" r="びょう" />かん <R c="全" r="ぜん" /><R c="員" r="いん" />のダメージ2ばい＋<R c="体" r="たい" /><R c="力" r="りょく" />かいふく</span>
                 <span>⚡ ボスは <R c="問" r="もん" /><R c="題" r="だい" />かくし・テンキーシャッフル・こおり などで じゃまをしてくる。<span className="text-red-500">💣バクダン</span>は みんなの<R c="正" r="せい" /><R c="解" r="かい" />で かいじょ！</span>
                 <span>🔥 ボスの<R c="体" r="たい" /><R c="力" r="りょく" />が へると <span className="text-red-500">げきおこ</span>で こうげきが はげしくなる。たおすと つぎのボスが とうじょう！</span>
               </div>
@@ -1032,14 +1032,14 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
               <div className="flex items-center gap-2 mb-2">
                 <TerritoryCharacter mood="fight" bubble={false} className="w-16 shrink-0" />
                 <div className="font-black text-sm text-[var(--text)] leading-snug">
-                  あいぼうの <span className="text-[var(--primary)]">{TERRITORY_CHARACTER_NAME}</span> と いっしょに、<br className="hidden sm:block" />ばんめんを ぬりつぶそう！
+                  あいぼうの <span className="text-[var(--primary-d)]">{TERRITORY_CHARACTER_NAME}</span> と いっしょに、<br className="hidden sm:block" />ばんめんを ぬりつぶそう！
                 </div>
               </div>
               <div className="bg-[var(--bg)] border-2 border-dashed border-[var(--text)] rounded-xl p-3 text-xs font-bold text-[var(--text)] opacity-90 mb-3 leading-relaxed flex flex-col gap-1">
                 <span>🚩 2チームに<R c="分" r="わ" />かれて、7×7の ばんめんを ぬりあうチーム<R c="戦" r="せん" />！<R c="正" r="せい" /><R c="解" r="かい" />すると ねらったマスに ぬれるよ。</span>
-                <span>🌊 マスをぬると となりにも インクがはねて <span className="text-[var(--primary)]">れんさ</span>が おきる！★マスは ポイントが<R c="大" r="おお" />きい</span>
-                <span>💥 <span className="text-[var(--primary)]">スペシャル</span>… ゲージが たまると スーパーチャクチ・スプラッシュライン・インクラッシュ が うてる</span>
-                <span>🎁 <span className="text-[var(--primary)]">？マス</span>… とるとラッキー！ ⏰ のこり30<R c="秒" r="びょう" />は <span className="text-red-500">ラストスパートで ぬり2ばい</span>（さいごまで ぎゃくてんできる！）</span>
+                <span>🌊 マスをぬると となりにも インクがはねて <span className="text-[var(--primary-d)]">れんさ</span>が おきる！★マスは ポイントが<R c="大" r="おお" />きい</span>
+                <span>💥 <span className="text-[var(--primary-d)]">スペシャル</span>… ゲージが たまると スーパーチャクチ・スプラッシュライン・インクラッシュ が うてる</span>
+                <span>🎁 <span className="text-[var(--primary-d)]">？マス</span>… とるとラッキー！ ⏰ のこり30<R c="秒" r="びょう" />は <span className="text-red-500">ラストスパートで ぬり2ばい</span>（さいごまで ぎゃくてんできる！）</span>
               </div>
               <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80">チームわけ（なまえをタップで いれかえ）</label>
               <div className="grid grid-cols-2 gap-2">
@@ -1076,7 +1076,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
 
         {(configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') && (
           <div className="shrink-0 mb-2">
-            <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 flex justify-between ruby-text"><span><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary)] text-lg">{time} <R c="分" r="ふん" /></span></label>
+            <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 flex justify-between ruby-text"><span><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
             <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[var(--primary)]" />
           </div>
         )}
@@ -1098,7 +1098,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
                 : <>うけつけタイム（{ACCEPT_WINDOW_MS / 1000}<R c="秒" r="びょう" />）</>}
             </button>
             {pendingList.length > 1 && (
-              <button onClick={approveAllPending} className="px-3 py-2 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--accent)] text-[var(--text)] ruby-text">
+              <button onClick={approveAllPending} className="px-3 py-2 text-xs font-black rounded-lg border-2 border-[var(--text)] bg-[var(--accent)] text-[var(--on-accent)] ruby-text">
                 ぜんいん いれる
               </button>
             )}
@@ -1133,8 +1133,8 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
                   <span className="font-bold text-[var(--text)]"><PupilName name={p.name} /></span>
                 </div>
                 <div className="flex items-center gap-4 text-sm font-bold">
-                  <span className="text-[var(--secondary)]">🔥 {p.combo} Combo</span>
-                  <span className="text-[var(--primary)] w-16 text-right font-black">{p.score} pt</span>
+                  <span className="text-[var(--secondary-d)]">🔥 {p.combo} Combo</span>
+                  <span className="text-[var(--primary-d)] w-16 text-right font-black">{p.score} pt</span>
                 </div>
               </div>
             ))}
@@ -1192,7 +1192,7 @@ const ClientJoinView = ({ initClient, urlHostId, setView }) => {
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
         />
         {/* 本名を入れないことは技術だけでは防げない。ここで はっきり つたえる */}
-        <p className="text-[11px] font-bold text-[var(--primary)] mt-2 leading-snug ruby-text">
+        <p className="text-[11px] font-bold text-[var(--primary-d)] mt-2 leading-snug ruby-text">
           ⚠ ほんとうの<R c="名" r="な" /><R c="前" r="まえ" />（フルネーム）は<R c="入" r="い" />れないでね。<br />
           ひらがな・カタカナ・すうじで {NAME_MAX}<R c="文" r="も" /><R c="字" r="じ" />までだよ
         </p>
@@ -1218,12 +1218,12 @@ const ClientWaitView = ({ peerState, leaveRoom }) => {
   return (
     <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] p-8 text-center shadow-md flex flex-col items-center justify-center min-h-[50vh] max-w-sm mx-auto mt-10">
       <div className="animate-spin mb-6 bg-[var(--bg)] p-4 rounded-full border-2 border-[var(--text)]">
-        {approved ? <Radio size={48} className="text-[var(--secondary)]" /> : <Clock size={48} className="text-[var(--primary)]" />}
+        {approved ? <Radio size={48} className="text-[var(--secondary-d)]" /> : <Clock size={48} className="text-[var(--primary-d)]" />}
       </div>
       {approved ? (
         <>
           <h3 className="font-black text-3xl text-[var(--text)] mb-3 ruby-text"><PupilName name={peerState.myName} /> さん、<br /><R c="準" r="じゅん" /><R c="備" r="び" />OK！</h3>
-          <p className="font-bold text-[var(--text)] opacity-80 bg-[var(--accent)] px-4 py-2 rounded-lg border-2 border-[var(--text)] mb-6 ruby-text">
+          <p className="font-bold text-[var(--on-accent)] opacity-80 bg-[var(--accent)] px-4 py-2 rounded-lg border-2 border-[var(--text)] mb-6 ruby-text">
             リーダーがスタートするまで<br />このまま<R c="待" r="ま" />っていてね
           </p>
         </>
@@ -1340,10 +1340,10 @@ const ShopView = ({ setView, stats, setStats }) => {
                   : confirmItem.item.char}
               </div>
               <h3 className="font-black text-xl text-[var(--text)] mb-2 leading-snug">「{confirmItem.item.name}」を<br />買いますか？</h3>
-              <p className="font-bold text-[var(--primary)] mb-6 flex items-center gap-1 justify-center"><Coins size={20} /> {confirmItem.item.price}</p>
+              <p className="font-bold text-[var(--primary-d)] mb-6 flex items-center gap-1 justify-center"><Coins size={20} /> {confirmItem.item.price}</p>
               <div className="flex w-full gap-3">
                 <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmItem(null); }}>やめる</MotionButton>
-                <MotionButton className="bg-[var(--accent)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={executeBuy}>かう！</MotionButton>
+                <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={executeBuy}>かう！</MotionButton>
               </div>
             </motion.div>
           </motion.div>
@@ -1364,11 +1364,11 @@ const ShopView = ({ setView, stats, setStats }) => {
                   <h3 className="font-black text-xl text-[var(--text)] leading-snug">{gachaResult.item.name}</h3>
                   <p className="text-[10px] font-bold text-[var(--text)] opacity-80 mb-2">({CATEGORY_LABELS[gachaResult.category]})</p>
                   {gachaResult.isNew
-                    ? <p className="font-black text-[var(--primary)] mb-4">✨ NEW! てにいれた！</p>
+                    ? <p className="font-black text-[var(--primary-d)] mb-4">✨ NEW! てにいれた！</p>
                     : <p className="font-black text-[var(--text)] opacity-80 mb-4 flex items-center gap-1 justify-center">もってた！ <Coins size={16} /> +{gachaResult.refund} もどってきた</p>}
                   <div className="flex w-full gap-3">
                     <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setGachaResult(null); }}>とじる</MotionButton>
-                    <MotionButton className="bg-[var(--accent)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={spinGacha} disabled={stats.coins < GACHA_COST}>もう1かい</MotionButton>
+                    <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={spinGacha} disabled={stats.coins < GACHA_COST}>もう1かい</MotionButton>
                   </div>
                 </>
               )}
@@ -1379,7 +1379,7 @@ const ShopView = ({ setView, stats, setStats }) => {
 
       <div className="flex justify-between items-center mb-2 shrink-0">
         <h3 className="font-bold text-xl text-[var(--text)] flex items-center gap-2"><Store size={24} /> ショップ＆きせかえ</h3>
-        <div className="flex items-center gap-1 font-black text-sm text-[var(--text)] bg-[var(--accent)] px-3 py-1.5 rounded-full border-[3px] border-[var(--text)]"><Coins size={16} /> {stats.coins}</div>
+        <div className="flex items-center gap-1 font-black text-sm text-[var(--on-accent)] bg-[var(--accent)] px-3 py-1.5 rounded-full border-[3px] border-[var(--text)]"><Coins size={16} /> {stats.coins}</div>
       </div>
 
       {/* コレクションりつ */}
@@ -1432,7 +1432,7 @@ const ShopView = ({ setView, stats, setStats }) => {
             </div>
           </div>
           {gachaOwnedCount >= gachaPool.length ? (
-            <div className="font-black text-[var(--primary)] py-3">🎉 ガチャコンプリート！おめでとう！</div>
+            <div className="font-black text-[var(--primary-d)] py-3">🎉 ガチャコンプリート！おめでとう！</div>
           ) : (
             <MotionButton className="bg-[var(--primary)] text-[var(--panel)] w-full py-4 text-lg border-[3px] border-[var(--text)]" onClick={spinGacha}>
               🥚 ガチャをまわす（<Coins size={18} /> {GACHA_COST}）
@@ -1481,7 +1481,7 @@ const ShopView = ({ setView, stats, setStats }) => {
                       ? <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--bg)] border border-[var(--text)] px-1.5 py-0.5 rounded-full">🥚ガチャ</span>
                       : isLocked
                         ? <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--bg)] border border-[var(--text)] px-1.5 py-0.5 rounded-full">🔒Lv.{item.lv}</span>
-                        : <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--accent)] border border-[var(--text)] px-1.5 py-0.5 rounded-full flex items-center justify-center gap-0.5"><Coins size={10} />{item.price}</span>}
+                        : <span className="text-[10px] font-bold text-[var(--on-accent)] bg-[var(--accent)] border border-[var(--text)] px-1.5 py-0.5 rounded-full flex items-center justify-center gap-0.5"><Coins size={10} />{item.price}</span>}
                 </div>
               </div>
             );
@@ -1532,7 +1532,7 @@ const CourseMultiSelect = ({ filteredGroups, allGroups, selected, setSelected, m
                   {on && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
                 </span>
                 <span className="flex-grow font-bold text-sm text-[var(--text)] truncate">{g.displayName || g.name}</span>
-                {masteredSet.has(g.name) && <span className="shrink-0 text-[10px] font-black bg-[var(--accent)] text-[var(--text)] border-2 border-[var(--text)] rounded-full px-1.5 py-0.5">⭐マスター</span>}
+                {masteredSet.has(g.name) && <span className="shrink-0 text-[10px] font-black bg-[var(--accent)] text-[var(--on-accent)] border-2 border-[var(--text)] rounded-full px-1.5 py-0.5">⭐マスター</span>}
                 <span className="shrink-0 text-xs font-bold text-[var(--text)] opacity-80">{g.count}問</span>
               </button>
             );
@@ -1609,8 +1609,8 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-5 flex flex-col gap-4">
         <h3 className="font-black text-2xl text-center mb-1 text-[var(--text)] flex items-center justify-center gap-2">
           {configMode === 'SCORE_ATTACK' && <><Award size={28} className="text-[var(--accent)]" /> スコアアタック</>}
-          {configMode === 'TIME_ATTACK' && <><Timer size={28} className="text-[var(--secondary)]" /> タイムアタック</>}
-          {configMode === 'SUDDEN_DEATH' && <><Swords size={28} className="text-[var(--primary)]" /> サドンデス</>}
+          {configMode === 'TIME_ATTACK' && <><Timer size={28} className="text-[var(--secondary-d)]" /> タイムアタック</>}
+          {configMode === 'SUDDEN_DEATH' && <><Swords size={28} className="text-[var(--primary-d)]" /> サドンデス</>}
         </h3>
 
         <div>
@@ -1641,7 +1641,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
 
         {configMode === 'SCORE_ATTACK' && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-            <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 flex justify-between ruby-text"><span><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary)] text-lg">{time} <R c="分" r="ふん" /></span></label>
+            <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 flex justify-between ruby-text"><span><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
             <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[var(--primary)]" />
           </motion.div>
         )}
@@ -2276,7 +2276,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
                 <span className={`text-xs font-black px-1.5 py-0.5 rounded-sm ${idx === 0 ? 'bg-yellow-400 text-white' : idx === 1 ? 'bg-gray-400 text-white' : idx === 2 ? 'bg-orange-400 text-white' : 'text-[var(--text)] opacity-80'}`}>{idx + 1}</span>
                 <span className="text-xs font-bold truncate max-w-[60px]"><PupilName name={p.name} /></span>
               </div>
-              <span className="text-base text-[var(--primary)] font-black">{p.score}<span className="text-[10px] ml-0.5 opacity-60">pt</span></span>
+              <span className="text-base text-[var(--primary-d)] font-black">{p.score}<span className="text-[10px] ml-0.5 opacity-60">pt</span></span>
             </div>
           ))}
         </div>
@@ -2304,7 +2304,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
             <button onClick={() => { audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-3 min-h-[44px] font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center justify-center gap-1"><XCircle size={16} /> やめる</button>
             <TimerClock gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} />
-            <div className="font-black text-2xl text-[var(--primary)] flex items-center gap-2 drop-shadow-sm">
+            <div className="font-black text-2xl text-[var(--primary-d)] flex items-center gap-2 drop-shadow-sm">
               {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : state.gameMode === 'BOSS_RAID' ? <>⚔ {score} <span className="text-sm text-[var(--text)] opacity-80">ダメージ</span></> : state.gameMode === 'TERRITORY' ? <>🖌 {score} <span className="text-sm text-[var(--text)] opacity-80">ぬり</span></> : <>{score} <span className="text-sm text-[var(--text)] opacity-80">pt</span></>}
             </div>
           </div>
@@ -2312,7 +2312,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           <div className={`relative flex-grow flex flex-col justify-center items-center ${isTerritory ? 'min-h-[90px] mb-2 md:min-h-[150px] md:mb-4' : 'min-h-[150px] mb-4'}`}>
             <div className="absolute top-0 h-10 flex justify-center items-center w-full">
               <AnimatePresence>
-                {combo > 1 && <motion.div initial={{ scale: 0, y: 10 }} animate={{ scale: [0, 1.3, 1], y: 0, rotate: -6 }} exit={{ scale: 0 }} className="bg-[var(--accent)] text-[var(--text)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-sm shadow-[2px_2px_0_var(--text)] z-30">{combo} COMBO! 🔥</motion.div>}
+                {combo > 1 && <motion.div initial={{ scale: 0, y: 10 }} animate={{ scale: [0, 1.3, 1], y: 0, rotate: -6 }} exit={{ scale: 0 }} className="bg-[var(--accent)] text-[var(--on-accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-sm shadow-[2px_2px_0_var(--text)] z-30">{combo} COMBO! 🔥</motion.div>}
               </AnimatePresence>
             </div>
             <AnimatePresence mode="wait">
@@ -2335,11 +2335,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             {/* onClick で開閉する(onPointerDown だと、開いた直後に指を離したときの合成 click が
                 最前面のオーバーレイに当たって即閉じてしまい、長押ししないと開けない挙動になる) */}
             {availableTools.length > 0 && (
-              <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 touch-manipulation ${showTools ? 'bg-[var(--accent)] text-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onClick={() => { audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
+              <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 touch-manipulation ${showTools ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onClick={() => { audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
                 <Lightbulb size={24} />
               </motion.button>
             )}
-            <span className="text-5xl font-black text-[var(--secondary)] tracking-widest">{ans || <span className="text-4xl font-bold text-[var(--text)] opacity-20">?</span>}</span>
+            <span className="text-5xl font-black text-[var(--secondary-d)] tracking-widest">{ans || <span className="text-4xl font-bold text-[var(--text)] opacity-20">?</span>}</span>
             {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 w-12 h-12 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
             <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--panel)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
           </motion.div>
@@ -2387,13 +2387,13 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         {quitDialog && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="とちゅうで やめるかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-sm flex flex-col items-center text-center">
-              <XCircle size={48} className="text-[var(--primary)] mb-3" />
+              <XCircle size={48} className="text-[var(--primary-d)] mb-3" />
               <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text"><R c="途" r="と" /><R c="中" r="ちゅう" />で やめますか？</h3>
               <p className="text-sm text-[var(--text)] opacity-80 mb-5 ruby-text">
-                ここまでの<R c="正" r="せい" /><R c="解" r="かい" />: <span className="font-black text-[var(--primary)]">{correctCount}<R c="問" r="もん" /></span>
-                {state.gameMode === 'SCORE_ATTACK' && <> ／ スコア: <span className="font-black text-[var(--primary)]">{score}pt</span></>}
-                {state.gameMode === 'BOSS_RAID' && <> ／ <R c="与" r="あた" />えたダメージ: <span className="font-black text-[var(--primary)]">⚔{score}</span></>}
-                {state.gameMode === 'TERRITORY' && <> ／ ぬった<R c="回" r="かい" /><R c="数" r="すう" />: <span className="font-black text-[var(--primary)]">🖌{score}</span></>}
+                ここまでの<R c="正" r="せい" /><R c="解" r="かい" />: <span className="font-black text-[var(--primary-d)]">{correctCount}<R c="問" r="もん" /></span>
+                {state.gameMode === 'SCORE_ATTACK' && <> ／ スコア: <span className="font-black text-[var(--primary-d)]">{score}pt</span></>}
+                {state.gameMode === 'BOSS_RAID' && <> ／ <R c="与" r="あた" />えたダメージ: <span className="font-black text-[var(--primary-d)]">⚔{score}</span></>}
+                {state.gameMode === 'TERRITORY' && <> ／ ぬった<R c="回" r="かい" /><R c="数" r="すう" />: <span className="font-black text-[var(--primary-d)]">🖌{score}</span></>}
               </p>
               <div className="flex flex-col w-full gap-2">
                 <MotionButton className="bg-[var(--primary)] text-[var(--panel)] border-[3px] border-[var(--text)] py-3 w-full ruby-text" onClick={() => { setQuitDialog(false); finishGame(true); }}>
@@ -2461,19 +2461,19 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
             <div className="bg-[var(--panel)] border-[4px] border-[var(--accent)] p-8 rounded-3xl text-center shadow-2xl flex flex-col items-center w-full max-w-sm">
               <motion.div initial={{ scale: 0, rotate: -30 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.6, delay: 0.1 }} className="text-7xl mb-4">{newInfo.badge}</motion.div>
               <h3 className="text-3xl font-black text-[var(--text)] mb-2">レベルアップ！</h3>
-              <p className="text-xl font-bold text-[var(--primary)] mb-3">Lv.{oldInfo.level} <span className="opacity-50">→</span> Lv.{newInfo.level} {newInfo.title}</p>
+              <p className="text-xl font-bold text-[var(--primary-d)] mb-3">Lv.{oldInfo.level} <span className="opacity-50">→</span> Lv.{newInfo.level} {newInfo.title}</p>
               {(state.levelUpCoins || 0) > 0 && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="flex items-center gap-1.5 bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-[var(--text)] mb-6">
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="flex items-center gap-1.5 bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-[var(--on-accent)] mb-6">
                   <Coins size={18} /> ボーナス +{state.levelUpCoins} コイン！
                 </motion.div>
               )}
-              <MotionButton className="bg-[var(--accent)] text-[var(--text)] w-full py-3 text-lg border-[3px] border-[var(--text)]" onClick={() => setShowLevelUp(false)}>やったー！</MotionButton>
+              <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] w-full py-3 text-lg border-[3px] border-[var(--text)]" onClick={() => setShowLevelUp(false)}>やったー！</MotionButton>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <motion.h2 initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.6 }} className="font-black text-5xl text-center mb-4 text-[var(--primary)] shrink-0">
+      <motion.h2 initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.6 }} className="font-black text-5xl text-center mb-4 text-[var(--primary-d)] shrink-0">
         {state.gameMode === 'SUDDEN_DEATH' ? <span className="text-[var(--text)] ruby-text"><HeartCrack size={40} className="inline mr-2 text-red-500 mb-2" /><R c="終" r="しゅう" /><R c="了" r="りょう" />！</span> : state.gameMode === 'BOSS_RAID' ? '👑 バトルしゅうりょう！' : state.gameMode === 'TERRITORY' ? '🚩 じんとり しゅうりょう！' : '🎉 FINISH!'}
       </motion.h2>
 
@@ -2489,14 +2489,14 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
             {top5[1] && (
               <div className="flex flex-col items-center w-1/4 h-full justify-end">
                 <span className="font-bold text-xs sm:text-sm truncate w-full text-center"><PupilName name={top5[1].name} /></span>
-                <span className="font-black text-base sm:text-lg text-[var(--secondary)] mb-1">{top5[1].score}<span className="text-[10px] ml-0.5">pt</span></span>
+                <span className="font-black text-base sm:text-lg text-[var(--secondary-d)] mb-1">{top5[1].score}<span className="text-[10px] ml-0.5">pt</span></span>
                 <div className="w-full bg-gray-300 h-[60%] rounded-t-lg border-2 border-[var(--text)] border-b-0 flex justify-center pt-2 font-black text-xl text-white shadow-inner">2</div>
               </div>
             )}
             {top5[0] && (
               <div className="flex flex-col items-center w-1/3 h-full justify-end">
                 <span className="font-bold text-sm sm:text-base truncate w-full text-center"><PupilName name={top5[0].name} /></span>
-                <span className="font-black text-lg sm:text-2xl text-[var(--primary)] mb-1">{top5[0].score}<span className="text-xs ml-0.5">pt</span></span>
+                <span className="font-black text-lg sm:text-2xl text-[var(--primary-d)] mb-1">{top5[0].score}<span className="text-xs ml-0.5">pt</span></span>
                 <div className="w-full bg-yellow-400 h-[85%] rounded-t-lg border-2 border-[var(--text)] border-b-0 flex justify-center pt-2 font-black text-3xl text-white shadow-inner">1</div>
               </div>
             )}
@@ -2524,17 +2524,17 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
           {myRank && myRank > 0 && (
             <div className="mt-4 pt-4 border-t-2 border-dashed border-gray-200 w-full text-center bg-[var(--bg)] rounded-xl p-3">
               <span className="font-bold text-[var(--text)] text-sm ruby-text">あなたの<R c="順" r="じゅん" /><R c="位" r="い" /> </span>
-              <span className="font-black text-3xl text-[var(--primary)] ml-2">{myRank} <span className="text-lg ruby-text"><R c="位" r="い" /></span></span>
+              <span className="font-black text-3xl text-[var(--primary-d)] ml-2">{myRank} <span className="text-lg ruby-text"><R c="位" r="い" /></span></span>
             </div>
           )}
         </div>
       ) : (
         <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_var(--text)] p-6 text-center w-full mb-6 shrink-0 relative overflow-hidden">
           {state.gameMode === 'SCORE_ATTACK' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1">SCORE</h4><div className="text-6xl font-black text-[var(--text)] mb-2">{state.finalScore || 0}</div></>}
-          {state.gameMode === 'TIME_ATTACK' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1">CLEAR TIME</h4><div className="text-6xl font-black text-[var(--secondary)] mb-2">{state.finalTime.toFixed(1)} <span className="text-2xl ruby-text"><R c="秒" r="びょう" /></span></div></>}
-          {state.gameMode === 'SUDDEN_DEATH' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1 ruby-text"><R c="連" r="れん" /><R c="続" r="ぞく" /><R c="正" r="せい" /><R c="解" r="かい" /><R c="数" r="すう" /></h4><div className="text-6xl font-black text-[var(--primary)] mb-2">{state.finalCorrect} <span className="text-2xl ruby-text"><R c="問" r="もん" /></span></div></>}
+          {state.gameMode === 'TIME_ATTACK' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1">CLEAR TIME</h4><div className="text-6xl font-black text-[var(--secondary-d)] mb-2">{state.finalTime.toFixed(1)} <span className="text-2xl ruby-text"><R c="秒" r="びょう" /></span></div></>}
+          {state.gameMode === 'SUDDEN_DEATH' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1 ruby-text"><R c="連" r="れん" /><R c="続" r="ぞく" /><R c="正" r="せい" /><R c="解" r="かい" /><R c="数" r="すう" /></h4><div className="text-6xl font-black text-[var(--primary-d)] mb-2">{state.finalCorrect} <span className="text-2xl ruby-text"><R c="問" r="もん" /></span></div></>}
 
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="text-xl font-black text-[var(--secondary)] mb-4 flex flex-col items-center justify-center gap-1">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="text-xl font-black text-[var(--secondary-d)] mb-4 flex flex-col items-center justify-center gap-1">
             <div className="flex items-center gap-1.5">
               ⬆ {earnedExp} EXP かくとく！
               {state.decayInfo && state.decayInfo.mult < 1 && <span className="text-sm font-bold opacity-50 line-through">{state.decayInfo.baseExp}</span>}
@@ -2547,7 +2547,7 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
               </div>
             )}
           </motion.div>
-          <div className="inline-block bg-[var(--accent)] text-[var(--text)] font-black px-5 py-2 rounded-full border-[3px] border-[var(--text)] shadow-sm">Max Combo: {state.finalCombo || 0}</div>
+          <div className="inline-block bg-[var(--accent)] text-[var(--on-accent)] font-black px-5 py-2 rounded-full border-[3px] border-[var(--text)] shadow-sm">Max Combo: {state.finalCombo || 0}</div>
 
           {/* EXPバー: 獲得EXPがレベルにどれだけ近づいたかをその場でアニメーション表示する */}
           <div className="mt-5 text-left">
@@ -2564,14 +2564,14 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
 
       {mistakes.length > 0 && (
         <div className="bg-[var(--panel)] border-[3px] border-[var(--primary)] rounded-[20px] p-4 mb-6 shrink-0 shadow-sm">
-          <h4 className="font-black text-[var(--primary)] mb-3 flex items-center justify-center gap-2 ruby-text"><PenTool size={20} /> おさらい（まちがえた<R c="問" r="もん" /><R c="題" r="だい" />）</h4>
+          <h4 className="font-black text-[var(--primary-d)] mb-3 flex items-center justify-center gap-2 ruby-text"><PenTool size={20} /> おさらい（まちがえた<R c="問" r="もん" /><R c="題" r="だい" />）</h4>
           <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2 no-scrollbar">
             {mistakes.map((m, i) => (
               <div key={i} className="flex justify-between items-center border-b-2 border-dashed border-[var(--bg)] pb-2">
                 <span className="font-bold text-lg text-[var(--text)] tracking-wider">{m.q}</span>
                 <div className="flex items-center gap-2">
                   <span className="text-[var(--text)] opacity-80">▶</span>
-                  <span className="font-black text-xl text-[var(--primary)]">{m.a.replace(/\|/g, ' または ')}</span>
+                  <span className="font-black text-xl text-[var(--primary-d)]">{m.a.replace(/\|/g, ' または ')}</span>
                 </div>
               </div>
             ))}
@@ -2588,7 +2588,7 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
               </MotionButton>
             )}
             {peerState.role === 'client' && (
-              <div className="bg-[var(--accent)] border-[3px] border-[var(--text)] rounded-xl p-4 text-center font-bold text-[var(--text)] ruby-text">
+              <div className="bg-[var(--accent)] border-[3px] border-[var(--text)] rounded-xl p-4 text-center font-bold text-[var(--on-accent)] ruby-text">
                 リーダーの<R c="画" r="が" /><R c="面" r="めん" />がかわるまで<R c="待" r="ま" />っていてね
               </div>
             )}
@@ -2663,7 +2663,7 @@ const ManagerView = ({ setView }) => {
           {confirmDelete && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
               <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="さくじょの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
-                <Trash2 size={48} className="text-[var(--primary)] mb-3" />
+                <Trash2 size={48} className="text-[var(--primary-d)] mb-3" />
                 <h3 className="font-black text-xl text-[var(--text)] mb-6 leading-snug">「{editTarget}」を<br />本当に削除しますか？</h3>
                 <div className="flex w-full gap-3">
                   <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(false); }}>やめる</MotionButton>
@@ -2683,13 +2683,13 @@ const ManagerView = ({ setView }) => {
               {probs.map((p, i) => (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} key={i} className="flex border-b-2 border-dashed border-[var(--bg)] overflow-hidden">
                   <input type="text" className="flex-grow p-3 outline-none font-bold bg-transparent text-[var(--text)]" placeholder="問題" value={p.q} onChange={e => { const n = [...probs]; n[i] = { ...n[i], q: e.target.value }; setProbs(n); }} />
-                  <input type="text" className="w-24 p-3 outline-none border-l-2 border-dashed border-[var(--bg)] text-center font-bold text-[var(--primary)] bg-transparent" placeholder="答え" value={p.a} onChange={e => { const n = [...probs]; n[i] = { ...n[i], a: e.target.value }; setProbs(n); }} />
+                  <input type="text" className="w-24 p-3 outline-none border-l-2 border-dashed border-[var(--bg)] text-center font-bold text-[var(--primary-d)] bg-transparent" placeholder="答え" value={p.a} onChange={e => { const n = [...probs]; n[i] = { ...n[i], a: e.target.value }; setProbs(n); }} />
                   <button className="w-12 border-l-2 border-dashed border-[var(--bg)] text-[var(--text)] opacity-80 hover:opacity-100 flex items-center justify-center transition-opacity" onClick={() => { audioCtrl.playSE('click'); setProbs(probs.filter((_, idx) => idx !== i)) }}><XCircle size={20} /></button>
                 </motion.div>
               ))}
             </AnimatePresence>
           </div>
-          <button className="bg-[var(--bg)] hover:bg-[var(--accent)] text-[var(--text)] font-bold p-3 border-t-2 border-[var(--text)] shrink-0 transition-colors flex items-center justify-center gap-2" onClick={() => { audioCtrl.playSE('click'); setProbs([...probs, { q: '', a: '' }]) }}><Plus size={20} /> 問題を追加</button>
+          <button className="bg-[var(--bg)] hover:bg-[var(--accent)] text-[var(--on-accent)] font-bold p-3 border-t-2 border-[var(--text)] shrink-0 transition-colors flex items-center justify-center gap-2" onClick={() => { audioCtrl.playSE('click'); setProbs([...probs, { q: '', a: '' }]) }}><Plus size={20} /> 問題を追加</button>
         </div>
         <div className="flex gap-3 shrink-0 pb-4">
           <MotionButton className="bg-[var(--bg)] text-[var(--text)] w-1/3 py-3 border-[3px] border-[var(--text)]" onClick={() => setEditTarget(null)}>キャンセル</MotionButton>
@@ -2717,7 +2717,7 @@ const ManagerView = ({ setView }) => {
       <div className="shrink-0 flex flex-col gap-3 pb-4">
         <div className="flex gap-3">
           <MotionButton className="bg-[var(--secondary)] text-[var(--panel)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={() => { audioCtrl.playSE('click'); setView('import') }}><Download size={20} /> 受信/AI</MotionButton>
-          <MotionButton className="bg-[var(--accent)] text-[var(--text)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={() => { audioCtrl.playSE('click'); openEdit('') }}><Plus size={20} /> 新規作成</MotionButton>
+          <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={() => { audioCtrl.playSE('click'); openEdit('') }}><Plus size={20} /> 新規作成</MotionButton>
         </div>
         <button className="text-[var(--text)] opacity-80 font-bold py-3 hover:opacity-100 transition" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
       </div>
@@ -2769,7 +2769,7 @@ const ImportView = ({ setView }) => {
         <p className="text-sm font-bold text-[var(--text)] opacity-80 shrink-0">{mode === 'code' ? 'もらった「共有コード」を貼り付けてください。' : 'AI(ChatGPT等)が作った「問題,答え」のリストを貼り付けてください。'}</p>
 
         {mode === 'ai' && (
-          <button className="border-[3px] border-[var(--secondary)] text-[var(--secondary)] font-bold rounded-xl py-2 text-sm shrink-0 active:scale-95 transition-transform" onClick={copyPrompt}>
+          <button className="border-[3px] border-[var(--secondary)] text-[var(--secondary-d)] font-bold rounded-xl py-2 text-sm shrink-0 active:scale-95 transition-transform" onClick={copyPrompt}>
             AIへの指示(プロンプト)をコピー
           </button>
         )}
@@ -3728,39 +3728,38 @@ export default function App() {
 
   const GlobalStyle = () => {
     let themeVars = `
-      --bg: #fffbf0; --primary: #FF6B6B; --secondary: #4ECDC4; --accent: #FFE66D; --text: #292f36; --panel: #ffffff;
-    `;
-    if (stats.theme === 'dark') themeVars = `--bg: #0f172a; --primary: #f43f5e; --secondary: #0ea5e9; --accent: #f59e0b; --text: #e2e8f0; --panel: #1e293b;`;
-    if (stats.theme === 'sakura') themeVars = `--bg: #fdf2f8; --primary: #d946ef; --secondary: #f472b6; --accent: #fbcfe8; --text: #831843; --panel: #ffffff;`;
-    if (stats.theme === 'ocean') themeVars = `--bg: #f0f9ff; --primary: #0284c7; --secondary: #38bdf8; --accent: #7dd3fc; --text: #0c4a6e; --panel: #ffffff;`;
-    if (stats.theme === 'forest') themeVars = `--bg: #f0fdf4; --primary: #16a34a; --secondary: #f59e0b; --accent: #bbf7d0; --text: #14532d; --panel: #ffffff;`;
-    if (stats.theme === 'space') themeVars = `--bg: #17153B; --primary: #c084fc; --secondary: #2dd4bf; --accent: #4338ca; --text: #e2e8f0; --panel: #2e2b5f;`;
-    if (stats.theme === 'gold') themeVars = `--bg: #fefce8; --primary: #b45309; --secondary: #eab308; --accent: #fef08a; --text: #713f12; --panel: #ffffff;`;
-    if (stats.theme === 'mint') themeVars = `--bg: #f0fdfa; --primary: #14b8a6; --secondary: #2dd4bf; --accent: #ccfbf1; --text: #134e4a; --panel: #ffffff;`;
-    if (stats.theme === 'sunset') themeVars = `--bg: #fff7ed; --primary: #ea580c; --secondary: #f97316; --accent: #fcd34d; --text: #7c2d12; --panel: #ffffff;`;
-    if (stats.theme === 'cyber') themeVars = `--bg: #000000; --primary: #39ff14; --secondary: #ff00ff; --accent: #0ff0fc; --text: #ffffff; --panel: #111111;`;
-    if (stats.theme === 'choco') themeVars = `--bg: #fdf8f5; --primary: #92400e; --secondary: #d97706; --accent: #fde68a; --text: #451a03; --panel: #ffffff;`;
-    if (stats.theme === 'retro') themeVars = `--bg: #f5eedc; --primary: #c25953; --secondary: #6a7f72; --accent: #e0b469; --text: #3d312d; --panel: #faf6ee;`;
-    if (stats.theme === 'monochrome') themeVars = `--bg: #f8f9fa; --primary: #000000; --secondary: #666666; --accent: #d4d4d4; --text: #1a1a1a; --panel: #ffffff;`;
-    if (stats.theme === 'lavender') themeVars = `--bg: #f5f3ff; --primary: #7c3aed; --secondary: #a78bfa; --accent: #ddd6fe; --text: #4c1d95; --panel: #ffffff;`;
-    if (stats.theme === 'candy') themeVars = `--bg: #fff0f6; --primary: #ec4899; --secondary: #60a5fa; --accent: #a5f3fc; --text: #9d174d; --panel: #ffffff;`;
-    if (stats.theme === 'soda') themeVars = `--bg: #eff6ff; --primary: #2563eb; --secondary: #22d3ee; --accent: #bfdbfe; --text: #1e3a8a; --panel: #ffffff;`;
-    if (stats.theme === 'matcha') themeVars = `--bg: #f7fee7; --primary: #4d7c0f; --secondary: #84cc16; --accent: #d9f99d; --text: #365314; --panel: #ffffff;`;
-    if (stats.theme === 'ruby') themeVars = `--bg: #fff1f2; --primary: #be123c; --secondary: #fb7185; --accent: #fecdd3; --text: #881337; --panel: #ffffff;`;
-    if (stats.theme === 'hero') themeVars = `--bg: #f8fafc; --primary: #dc2626; --secondary: #2563eb; --accent: #fde047; --text: #111827; --panel: #ffffff;`;
-    if (stats.theme === 'aurora') themeVars = `--bg: #042f2e; --primary: #34d399; --secondary: #818cf8; --accent: #115e59; --text: #ccfbf1; --panel: #134e4a;`;
-    if (stats.theme === 'hanabi') themeVars = `--bg: #1e1b4b; --primary: #f472b6; --secondary: #facc15; --accent: #6d28d9; --text: #ede9fe; --panel: #312e81;`;
-    if (stats.theme === 'midnight') themeVars = `--bg: #020617; --primary: #38bdf8; --secondary: #818cf8; --accent: #1e293b; --text: #e0f2fe; --panel: #0f172a;`;
-    if (stats.theme === 'ninja') themeVars = `--bg: #18181b; --primary: #ef4444; --secondary: #a1a1aa; --accent: #3f3f46; --text: #f4f4f5; --panel: #27272a;`;
-    if (stats.theme === 'royal') themeVars = `--bg: #faf5ff; --primary: #7e22ce; --secondary: #eab308; --accent: #e9d5ff; --text: #581c87; --panel: #ffffff;`;
-    if (stats.theme === 'rainbow') themeVars = `--bg: #fdf4ff; --primary: #e11d48; --secondary: #0ea5e9; --accent: #fde047; --text: #3b0764; --panel: #ffffff;`;
-    if (stats.theme === 'sunflower') themeVars = `--bg: #fefce8; --primary: #ca8a04; --secondary: #22c55e; --accent: #fde047; --text: #422006; --panel: #ffffff;`;
-    if (stats.theme === 'watermelon') themeVars = `--bg: #f0fdf4; --primary: #ef4444; --secondary: #22c55e; --accent: #fecaca; --text: #14532d; --panel: #ffffff;`;
-    if (stats.theme === 'milktea') themeVars = `--bg: #f5f0e8; --primary: #a16207; --secondary: #78716c; --accent: #e7d8c0; --text: #44403c; --panel: #fffaf3;`;
-    if (stats.theme === 'tropical') themeVars = `--bg: #ecfeff; --primary: #f59e0b; --secondary: #06b6d4; --accent: #a7f3d0; --text: #164e63; --panel: #ffffff;`;
-    if (stats.theme === 'halloween') themeVars = `--bg: #1c1917; --primary: #f97316; --secondary: #a855f7; --accent: #78350f; --text: #fed7aa; --panel: #292524;`;
-    if (stats.theme === 'christmas') themeVars = `--bg: #fef2f2; --primary: #dc2626; --secondary: #16a34a; --accent: #fde68a; --text: #7f1d1d; --panel: #ffffff;`;
-    if (stats.theme === 'prism') themeVars = `--bg: #f5fffa; --primary: #8b5cf6; --secondary: #ec4899; --accent: #99f6e4; --text: #1e1b4b; --panel: #ffffff;`;
+      --bg: #fffbf0; --primary: #FF6B6B; --secondary: #4ECDC4; --accent: #FFE66D; --text: #292f36; --panel: #ffffff; --primary-d: #e50000; --secondary-d: #247f79; --on-accent: #292f36;`;
+    if (stats.theme === 'dark') themeVars = `--bg: #0f172a; --primary: #f43f5e; --secondary: #0ea5e9; --accent: #f59e0b; --text: #e2e8f0; --panel: #1e293b; --primary-d: #f65c76; --secondary-d: #0ea5e9; --on-accent: #111111;`;
+    if (stats.theme === 'sakura') themeVars = `--bg: #fdf2f8; --primary: #d946ef; --secondary: #f472b6; --accent: #fbcfe8; --text: #831843; --panel: #ffffff; --primary-d: #ba12d4; --secondary-d: #d31076; --on-accent: #831843;`;
+    if (stats.theme === 'ocean') themeVars = `--bg: #f0f9ff; --primary: #0284c7; --secondary: #38bdf8; --accent: #7dd3fc; --text: #0c4a6e; --panel: #ffffff; --primary-d: #0277b3; --secondary-d: #0678ab; --on-accent: #0c4a6e;`;
+    if (stats.theme === 'forest') themeVars = `--bg: #f0fdf4; --primary: #16a34a; --secondary: #f59e0b; --accent: #bbf7d0; --text: #14532d; --panel: #ffffff; --primary-d: #11813b; --secondary-d: #9e6506; --on-accent: #14532d;`;
+    if (stats.theme === 'space') themeVars = `--bg: #17153B; --primary: #c084fc; --secondary: #2dd4bf; --accent: #4338ca; --text: #e2e8f0; --panel: #2e2b5f; --primary-d: #c084fc; --secondary-d: #2dd4bf; --on-accent: #e2e8f0;`;
+    if (stats.theme === 'gold') themeVars = `--bg: #fefce8; --primary: #b45309; --secondary: #eab308; --accent: #fef08a; --text: #713f12; --panel: #ffffff; --primary-d: #b45309; --secondary-d: #8f6d05; --on-accent: #713f12;`;
+    if (stats.theme === 'mint') themeVars = `--bg: #f0fdfa; --primary: #14b8a6; --secondary: #2dd4bf; --accent: #ccfbf1; --text: #134e4a; --panel: #ffffff; --primary-d: #0e7e72; --secondary-d: #1a7f72; --on-accent: #134e4a;`;
+    if (stats.theme === 'sunset') themeVars = `--bg: #fff7ed; --primary: #ea580c; --secondary: #f97316; --accent: #fcd34d; --text: #7c2d12; --panel: #ffffff; --primary-d: #c3490a; --secondary-d: #bb5005; --on-accent: #7c2d12;`;
+    if (stats.theme === 'cyber') themeVars = `--bg: #000000; --primary: #39ff14; --secondary: #ff00ff; --accent: #0ff0fc; --text: #ffffff; --panel: #111111; --primary-d: #39ff14; --secondary-d: #ff00ff; --on-accent: #111111;`;
+    if (stats.theme === 'choco') themeVars = `--bg: #fdf8f5; --primary: #92400e; --secondary: #d97706; --accent: #fde68a; --text: #451a03; --panel: #ffffff; --primary-d: #92400e; --secondary-d: #aa5d05; --on-accent: #451a03;`;
+    if (stats.theme === 'retro') themeVars = `--bg: #f5eedc; --primary: #c25953; --secondary: #6a7f72; --accent: #e0b469; --text: #3d312d; --panel: #faf6ee; --primary-d: #b44640; --secondary-d: #5c6e63; --on-accent: #3d312d;`;
+    if (stats.theme === 'monochrome') themeVars = `--bg: #f8f9fa; --primary: #000000; --secondary: #666666; --accent: #d4d4d4; --text: #1a1a1a; --panel: #ffffff; --primary-d: #000000; --secondary-d: #666666; --on-accent: #1a1a1a;`;
+    if (stats.theme === 'lavender') themeVars = `--bg: #f5f3ff; --primary: #7c3aed; --secondary: #a78bfa; --accent: #ddd6fe; --text: #4c1d95; --panel: #ffffff; --primary-d: #7c3aed; --secondary-d: #774bf7; --on-accent: #4c1d95;`;
+    if (stats.theme === 'candy') themeVars = `--bg: #fff0f6; --primary: #ec4899; --secondary: #60a5fa; --accent: #a5f3fc; --text: #9d174d; --panel: #ffffff; --primary-d: #d21673; --secondary-d: #0768e0; --on-accent: #9d174d;`;
+    if (stats.theme === 'soda') themeVars = `--bg: #eff6ff; --primary: #2563eb; --secondary: #22d3ee; --accent: #bfdbfe; --text: #1e3a8a; --panel: #ffffff; --primary-d: #2563eb; --secondary-d: #0b7a8b; --on-accent: #1e3a8a;`;
+    if (stats.theme === 'matcha') themeVars = `--bg: #f7fee7; --primary: #4d7c0f; --secondary: #84cc16; --accent: #d9f99d; --text: #365314; --panel: #ffffff; --primary-d: #4d7c0f; --secondary-d: #517e0e; --on-accent: #365314;`;
+    if (stats.theme === 'ruby') themeVars = `--bg: #fff1f2; --primary: #be123c; --secondary: #fb7185; --accent: #fecdd3; --text: #881337; --panel: #ffffff; --primary-d: #be123c; --secondary-d: #dc0625; --on-accent: #881337;`;
+    if (stats.theme === 'hero') themeVars = `--bg: #f8fafc; --primary: #dc2626; --secondary: #2563eb; --accent: #fde047; --text: #111827; --panel: #ffffff; --primary-d: #dc2626; --secondary-d: #2563eb; --on-accent: #111827;`;
+    if (stats.theme === 'aurora') themeVars = `--bg: #042f2e; --primary: #34d399; --secondary: #818cf8; --accent: #115e59; --text: #ccfbf1; --panel: #134e4a; --primary-d: #34d399; --secondary-d: #aab1fa; --on-accent: #ccfbf1;`;
+    if (stats.theme === 'hanabi') themeVars = `--bg: #1e1b4b; --primary: #f472b6; --secondary: #facc15; --accent: #6d28d9; --text: #ede9fe; --panel: #312e81; --primary-d: #f57ebc; --secondary-d: #facc15; --on-accent: #ede9fe;`;
+    if (stats.theme === 'midnight') themeVars = `--bg: #020617; --primary: #38bdf8; --secondary: #818cf8; --accent: #1e293b; --text: #e0f2fe; --panel: #0f172a; --primary-d: #38bdf8; --secondary-d: #818cf8; --on-accent: #e0f2fe;`;
+    if (stats.theme === 'ninja') themeVars = `--bg: #18181b; --primary: #ef4444; --secondary: #a1a1aa; --accent: #3f3f46; --text: #f4f4f5; --panel: #27272a; --primary-d: #f15e5e; --secondary-d: #a1a1aa; --on-accent: #f4f4f5;`;
+    if (stats.theme === 'royal') themeVars = `--bg: #faf5ff; --primary: #7e22ce; --secondary: #eab308; --accent: #e9d5ff; --text: #581c87; --panel: #ffffff; --primary-d: #7e22ce; --secondary-d: #8c6b05; --on-accent: #581c87;`;
+    if (stats.theme === 'rainbow') themeVars = `--bg: #fdf4ff; --primary: #e11d48; --secondary: #0ea5e9; --accent: #fde047; --text: #3b0764; --panel: #ffffff; --primary-d: #da1c46; --secondary-d: #0a77a8; --on-accent: #3b0764;`;
+    if (stats.theme === 'sunflower') themeVars = `--bg: #fefce8; --primary: #ca8a04; --secondary: #22c55e; --accent: #fde047; --text: #422006; --panel: #ffffff; --primary-d: #986803; --secondary-d: #17843f; --on-accent: #422006;`;
+    if (stats.theme === 'watermelon') themeVars = `--bg: #f0fdf4; --primary: #ef4444; --secondary: #22c55e; --accent: #fecaca; --text: #14532d; --panel: #ffffff; --primary-d: #e21313; --secondary-d: #16823e; --on-accent: #14532d;`;
+    if (stats.theme === 'milktea') themeVars = `--bg: #f5f0e8; --primary: #a16207; --secondary: #78716c; --accent: #e7d8c0; --text: #44403c; --panel: #fffaf3; --primary-d: #9a5e07; --secondary-d: #716b66; --on-accent: #44403c;`;
+    if (stats.theme === 'tropical') themeVars = `--bg: #ecfeff; --primary: #f59e0b; --secondary: #06b6d4; --accent: #a7f3d0; --text: #164e63; --panel: #ffffff; --primary-d: #9e6506; --secondary-d: #047d91; --on-accent: #164e63;`;
+    if (stats.theme === 'halloween') themeVars = `--bg: #1c1917; --primary: #f97316; --secondary: #a855f7; --accent: #78350f; --text: #fed7aa; --panel: #292524; --primary-d: #f97316; --secondary-d: #b36bf8; --on-accent: #fed7aa;`;
+    if (stats.theme === 'christmas') themeVars = `--bg: #fef2f2; --primary: #dc2626; --secondary: #16a34a; --accent: #fde68a; --text: #7f1d1d; --panel: #ffffff; --primary-d: #d82323; --secondary-d: #117f3a; --on-accent: #7f1d1d;`;
+    if (stats.theme === 'prism') themeVars = `--bg: #f5fffa; --primary: #8b5cf6; --secondary: #ec4899; --accent: #99f6e4; --text: #1e1b4b; --panel: #ffffff; --primary-d: #8250f5; --secondary-d: #db1778; --on-accent: #1e1b4b;`;
 
     return (
       <style>{`
@@ -3800,7 +3799,7 @@ export default function App() {
         >
           <div className="flex items-center cursor-pointer gap-2" onClick={handleHomeClick}>
             <div className="bg-[var(--secondary)] p-1.5 rounded-lg text-[var(--panel)] shadow-sm border-2 border-[var(--text)]"><Calculator size={22} strokeWidth={3} /></div>
-            <h1 className="text-2xl font-black text-[var(--text)] tracking-wide">Qalc<span className="text-[var(--primary)]">.</span></h1>
+            <h1 className="text-2xl font-black text-[var(--text)] tracking-wide">Qalc<span className="text-[var(--primary-d)]">.</span></h1>
           </div>
           <div className="flex items-center gap-3">
             {peerState.role && <span className="font-bold text-xs bg-[var(--accent)] px-2 py-1 rounded border-2 border-[var(--text)]">{peerState.role === 'host' ? 'リーダー' : 'メンバー'}</span>}
@@ -3813,7 +3812,7 @@ export default function App() {
               aria-label={isMuted ? 'おとを出す' : 'おとを消す'}
               className="text-[var(--text)] opacity-80 hover:opacity-100 p-2 rounded-full transition-all border-2 border-transparent hover:border-[var(--text)] hover:bg-[var(--bg)] min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
-              {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} className="text-[var(--primary)]" />}
+              {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} className="text-[var(--primary-d)]" />}
             </button>
           </div>
         </header>
@@ -3860,7 +3859,7 @@ export default function App() {
         {leaveConfirm && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="へやから 出るかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
-              <Users size={48} className="text-[var(--primary)] mb-3" />
+              <Users size={48} className="text-[var(--primary-d)] mb-3" />
               <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text">へやから<R c="出" r="で" />ますか？</h3>
               <p className="text-sm text-[var(--text)] opacity-80 mb-5 ruby-text">
                 {peerState.role === 'host'

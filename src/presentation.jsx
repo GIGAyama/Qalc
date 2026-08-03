@@ -138,7 +138,7 @@ export const PresentationControl = ({ onSound }) => {
                 aria-expanded={open}
                 className={`p-2 rounded-full transition-all border-2 min-w-[44px] min-h-[44px] flex items-center justify-center
                     ${big
-                        ? 'text-[var(--primary)] border-[var(--text)] bg-[var(--accent)]'
+                        ? 'text-[var(--primary-d)] border-[var(--text)] bg-[var(--accent)]'
                         : 'text-[var(--text)] opacity-80 hover:opacity-100 border-transparent hover:border-[var(--text)] hover:bg-[var(--bg)]'}`}
             >
                 <Presentation size={24} />
