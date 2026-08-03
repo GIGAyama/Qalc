@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <!--
+      インストールの合図(beforeinstallprompt)を、いちばん先に受け取る。
+      Chrome は条件がそろうと即座にこのイベントを出すため、React や CSS の
+      読みこみより後だと取りこぼし、通信が遅い端末で「インストール」ボタンが出なくなる。
+      中身と、インラインにしていない理由は public/pwa-install.js に書いてある。
+    -->
+    <script src="/pwa-install.js"></script>
+    <!--
       Content Security Policy
       GitHub Pages は HTTP レスポンスヘッダを設定できないため meta で指定する。
       この方式では frame-ancestors / report-uri / sandbox は効かないので、変更したときは
@@ -23,6 +30,8 @@
     -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; worker-src 'self'; manifest-src 'self'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'" />
     <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Qalc | カルク ～目指せ、計算マスター～</title>
     <meta name="description" content="小学生向け計算ゲーム学習アプリ。みんなで楽しく算数を学ぼう！" />

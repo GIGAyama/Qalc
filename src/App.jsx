@@ -17,6 +17,8 @@ import {
 import { LearningToolPanel, getAvailableTools, TOOL_META } from './LearningTools.jsx';
 // 提示モード(電子黒板)・児童名の伏せ字・演出をへらす設定（Part I §2-10, §2-11）
 import { PresentationControl, PupilName, usePresentation, prefersReducedMotion } from './presentation.jsx';
+// PWA のインストール導線と、あたらしい版のお知らせ（Part I §3-2, §3-4）
+import { InstallButton, UpdateNotice } from './pwa.jsx';
 import { createStudySession, STUDY_ABORT_AWAY_MS } from './studySession.js';
 import { loadStudyRecords, summarize, topMissedItems } from './studyStats.js';
 // 「だれがへやに入れるか」「だれに何を配るか」は roomAccess.js に切りだしてテストしている
@@ -5619,6 +5621,8 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             {peerState.role && <span className="font-bold text-xs bg-[var(--accent)] px-2 py-1 rounded border-2 border-[var(--text)]">{peerState.role === 'host' ? 'リーダー' : 'メンバー'}</span>}
+            {/* ホーム画面に置くための案内。入れ終わったら自分で消える */}
+            <InstallButton onSound={() => audioCtrl.playSE('click')} />
             {/* 電子黒板に映すときの拡大・全画面・名前かくし（Part I §2-11） */}
             <PresentationControl onSound={() => audioCtrl.playSE('click')} />
             <button
@@ -5691,6 +5695,9 @@ export default function App() {
 
       {/* カスタム通知コンポーネントを配置 */}
       <CustomToast />
+
+      {/* あたらしいバージョンがあります（押すまで入れかわらない） */}
+      <UpdateNotice />
     </div>
     </MotionConfig>
   );
