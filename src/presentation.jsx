@@ -135,7 +135,7 @@ export const PresentationControl = ({ onSound }) => {
                 className={`p-2 rounded-full transition-all border-2 min-w-[44px] min-h-[44px] flex items-center justify-center
                     ${big
                         ? 'text-[var(--primary)] border-[var(--text)] bg-[var(--accent)]'
-                        : 'text-[var(--text)] opacity-50 hover:opacity-100 border-transparent hover:border-[var(--text)] hover:bg-[var(--bg)]'}`}
+                        : 'text-[var(--text)] opacity-80 hover:opacity-100 border-transparent hover:border-[var(--text)] hover:bg-[var(--bg)]'}`}
             >
                 <Presentation size={24} />
             </button>
@@ -163,7 +163,7 @@ export const PresentationControl = ({ onSound }) => {
                                 type="button"
                                 onClick={click(() => setOpen(false))}
                                 aria-label="とじる"
-                                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text)] opacity-60 hover:opacity-100"
+                                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-[var(--text)] opacity-80 hover:opacity-100"
                             >
                                 <X size={20} />
                             </button>
@@ -224,7 +224,7 @@ const PanelToggle = ({ checked, onChange, label, hint }) => (
                 {label}
                 <span className="ml-1 text-[10px] opacity-60">{checked ? 'ON' : 'OFF'}</span>
             </span>
-            <span className="text-[10px] text-[var(--text)] opacity-60 leading-tight">{hint}</span>
+            <span className="text-[10px] text-[var(--text)] opacity-80 leading-tight">{hint}</span>
         </span>
     </button>
 );

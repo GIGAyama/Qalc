@@ -1,0 +1,57 @@
+# プルリクエストのときに走る検査。
+#
+# これまで deploy.yml しか無く、それは push: main にしか反応しなかった。
+# つまりテストも lint も品質ゲートも「マージしたあと」にしか走らず、
+# 壊れていることに気づくのはデプロイが失敗したときだった。
+# （そのとき main はもう壊れている）
+#
+# deploy.yml は残してある。デプロイの直前にもう一度たしかめる意味があるため。
+# こちらはマージする前に止めるためのもの。
+name: Verify
+
+on:
+  pull_request:
+  # main に直接入ったとき（緊急の修正など）も見る
+  push:
+    branches: ["main"]
+
+# デプロイはしないので、読みとりだけで足りる
+permissions:
+  contents: read
+
+# 同じブランチに続けて push したときは、古い実行を打ちきってよい
+# （デプロイと違って、途中まで走らせる意味がない）
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      # npm install ではなく npm ci。package-lock.json のとおりに入れる
+      - name: Install dependencies
+        run: npm ci
+      # 児童の端末に配られるライブラリに、既知の脆弱性がないことを確かめる。
+      # ビルド用ツールは配られないので --omit=dev で外す
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      # 学習ログと、へやの入室まわり（だれを入れるか・何を配るか）のテスト
+      - name: Test
+        run: npm test
+      # 使っていない変数・useEffect の依存もれなど、事故につながる書きまちがい
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      # GIGA Standard v4 の品質ゲート。dist の大きさを測るので build のあと。
+      # 落ちたら検査をゆるめず、quality.config.json に理由を書いて明示的に許可すること
+      - name: Quality gate
+        run: npm run check

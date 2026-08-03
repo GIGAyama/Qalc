@@ -11,7 +11,8 @@
         "test:studylog": "node scripts/studyLog.test.mjs",
         "test:room": "node scripts/roomAccess.test.mjs",
         "test": "npm run test:studylog && npm run test:room",
-        "check": "node scripts/check-project.mjs"
+        "check": "node scripts/check-project.mjs && node scripts/check-contrast.mjs",
+        "check:contrast": "node scripts/check-contrast.mjs"
     },
     "dependencies": {
         "@fontsource/zen-maru-gothic": "^5.3.0",

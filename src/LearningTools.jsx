@@ -19,7 +19,7 @@ import {
 // ==========================================
 
 const ToolHint = ({ children }) => (
-  <p className="text-center text-xs font-bold text-[var(--text)] opacity-60 leading-relaxed">{children}</p>
+  <p className="text-center text-xs font-bold text-[var(--text)] opacity-80 leading-relaxed">{children}</p>
 );
 
 // ---- 算数ブロック ----
@@ -63,7 +63,7 @@ const BlocksTool = ({ p, qText, onFx }) => {
             );
           })}
         </div>
-        <span className="font-black text-sm text-[var(--text)] opacity-70">いま {tf.known}こ はいっているよ</span>
+        <span className="font-black text-sm text-[var(--text)] opacity-80">いま {tf.known}こ はいっているよ</span>
       </div>
     );
   }
@@ -122,7 +122,7 @@ const BlocksTool = ({ p, qText, onFx }) => {
 const CherryCircle = ({ value, revealed, onReveal }) => (
   <button
     onClick={onReveal}
-    className={`w-14 h-14 rounded-full border-[3px] border-[var(--text)] font-black text-2xl flex items-center justify-center shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none transition-all touch-manipulation ${revealed ? 'bg-[var(--accent)] text-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-70'}`}
+    className={`w-14 h-14 rounded-full border-[3px] border-[var(--text)] font-black text-2xl flex items-center justify-center shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none transition-all touch-manipulation ${revealed ? 'bg-[var(--accent)] text-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`}
   >
     {revealed ? value : '?'}
   </button>
@@ -272,7 +272,7 @@ const OokiiKazuView = ({ unit }) => {
             <div className="flex">
               {Array.from({ length: 4 }).map((_, i) => <div key={i} className="flex-1 h-8 border-r border-[var(--text)] border-opacity-40 last:border-r-0" />)}
             </div>
-            <div className="py-0.5 text-[9px] font-bold text-center text-[var(--text)] opacity-70">{sub}</div>
+            <div className="py-0.5 text-[9px] font-bold text-center text-[var(--text)] opacity-80">{sub}</div>
           </div>
         ))}
       </div>
@@ -297,7 +297,7 @@ const ShosuShikumiView = ({ rows }) => (
         ))}
       </div>
     </div>
-    <span className="font-black text-sm text-[var(--text)] opacity-70">一の位の つぎに 小数点を うつよ</span>
+    <span className="font-black text-sm text-[var(--text)] opacity-80">一の位の つぎに 小数点を うつよ</span>
   </div>
 );
 
@@ -441,10 +441,10 @@ const TapeTool = ({ spec }) => {
         <div className="flex w-full">
           <div className="h-10 bg-orange-400 border-[3px] border-[var(--text)] rounded-l-xl flex items-center justify-center font-black text-white" style={{ width: `${((spec.a - spec.b) / spec.a) * 100}%` }}>?</div>
           <div className="h-10 bg-[var(--bg)] border-[3px] border-l-0 border-dashed border-[var(--text)] rounded-r-xl flex items-center justify-center" style={{ width: `${(spec.b / spec.a) * 100}%` }}>
-            <span className="font-black text-xs text-[var(--text)] opacity-70 whitespace-nowrap">✂ {spec.b}cm</span>
+            <span className="font-black text-xs text-[var(--text)] opacity-80 whitespace-nowrap">✂ {spec.b}cm</span>
           </div>
         </div>
-        <div className="flex w-full text-xs font-bold text-[var(--text)] opacity-60 mt-1">
+        <div className="flex w-full text-xs font-bold text-[var(--text)] opacity-80 mt-1">
           <div className="text-center" style={{ width: `${((spec.a - spec.b) / spec.a) * 100}%` }}>のこり</div>
           <div className="text-center" style={{ width: `${(spec.b / spec.a) * 100}%` }}>きりとる</div>
         </div>
@@ -461,7 +461,7 @@ const KasaBeaker = ({ value, denom, unit, drink = 0 }) => (
       <div className="absolute bottom-0 left-0 right-0 bg-sky-400" style={{ height: `${Math.min(100, (value / denom) * 100)}%` }}>
         {drink > 0 && (
           <div className="absolute top-0 left-0 right-0 bg-sky-200 border-b-2 border-dashed border-[var(--text)] flex items-center justify-center" style={{ height: `${(drink / value) * 100}%` }}>
-            <span className="font-black text-[10px] text-[var(--text)] opacity-70">のむ</span>
+            <span className="font-black text-[10px] text-[var(--text)] opacity-80">のむ</span>
           </div>
         )}
       </div>
@@ -493,7 +493,7 @@ const KasaTool = ({ spec }) => {
     <div className="flex flex-col items-center gap-3">
       <ToolHint>うすい ところが のむ ぶん。のこりは どれだけかな（1めもり＝1{spec.unit}）</ToolHint>
       <KasaBeaker value={spec.a} denom={denom} unit={spec.unit} drink={spec.b} />
-      <span className="font-black text-sm text-[var(--text)] opacity-70">{spec.b}{spec.unit} のむと のこりは ?{spec.unit}</span>
+      <span className="font-black text-sm text-[var(--text)] opacity-80">{spec.b}{spec.unit} のむと のこりは ?{spec.unit}</span>
     </div>
   );
 };
@@ -584,7 +584,7 @@ const ImproperFractionView = ({ n, d }) => {
       <div className="flex flex-col gap-1.5 w-full max-w-[260px]">
         {rows.map((filled, r) => (
           <div key={r} className="flex items-center gap-2">
-            <span className={`font-black text-xs w-10 text-right ${filled === d ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-60'}`}>
+            <span className={`font-black text-xs w-10 text-right ${filled === d ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'}`}>
               {filled === d ? '1' : `${filled}/${d}`}
             </span>
             <div className="flex flex-grow h-8 border-[3px] border-[var(--text)] rounded-lg overflow-hidden bg-[var(--panel)]">
@@ -650,7 +650,7 @@ const DivideFractionView = ({ n, d }) => (
         </svg>
       ))}
     </div>
-    <span className="font-black text-sm text-[var(--text)] opacity-70">きいろが 1人分の 1こ分（ぜんぶで {n}こ分）</span>
+    <span className="font-black text-sm text-[var(--text)] opacity-80">きいろが 1人分の 1こ分（ぜんぶで {n}こ分）</span>
   </div>
 );
 
@@ -711,7 +711,7 @@ const FractionAreaView = ({ spec }) => {
           </div>
         ))}
       </div>
-      <span className="font-black text-sm text-[var(--text)] opacity-70">
+      <span className="font-black text-sm text-[var(--text)] opacity-80">
         ぜんぶで {rows * cols}こ。きいろは {fillRows * fillCols}こ{over ? '（1をこえる分は図の外）' : ''}
       </span>
       <span className="font-black text-base text-[var(--text)] bg-[var(--bg)] border-2 border-[var(--text)] rounded-xl px-3 py-1.5">
@@ -744,7 +744,7 @@ const FractionTool = ({ spec }) => {
         </div>
         <div className="w-full max-w-[240px] border-t-2 border-dashed border-[var(--text)] opacity-40 my-1" />
         <div className="flex items-center gap-3 w-full justify-center">
-          <span className="font-black text-xs text-[var(--text)] opacity-70 w-12 text-right">{lcm}に そろえると</span>
+          <span className="font-black text-xs text-[var(--text)] opacity-80 w-12 text-right">{lcm}に そろえると</span>
           <div className="flex flex-col gap-1 w-full max-w-[240px]">
             <div className="flex w-full h-6 border-[3px] border-[var(--text)] rounded-lg overflow-hidden bg-[var(--panel)]">
               {Array.from({ length: lcm }).map((_, i) => (
@@ -822,7 +822,7 @@ const HayasaTool = ({ spec }) => {
         <text x="138" y="112" textAnchor="middle" fontSize="20" fontWeight="bold" fill="var(--text)">じ</text>
         <text x="138" y="136" textAnchor="middle"><Value v={spec.time} /></text>
       </svg>
-      <span className="text-xs font-bold text-[var(--text)] opacity-60">み＝みちのり ／ は＝はやさ ／ じ＝じかん</span>
+      <span className="text-xs font-bold text-[var(--text)] opacity-80">み＝みちのり ／ は＝はやさ ／ じ＝じかん</span>
     </div>
   );
 };
@@ -1074,7 +1074,7 @@ const NarabiTool = ({ spec }) => {
       <ToolHint>{note}</ToolHint>
       <div className="w-full overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-1.5 px-2 w-max mx-auto">
-          <span className="text-xs font-black text-[var(--text)] opacity-60 whitespace-nowrap mr-1">{spec.type === 'overlap' ? 'ひだり→' : 'まえ→'}</span>
+          <span className="text-xs font-black text-[var(--text)] opacity-80 whitespace-nowrap mr-1">{spec.type === 'overlap' ? 'ひだり→' : 'まえ→'}</span>
           {people.map((kind, k) => (
             <span key={k} className={`shrink-0 w-6 h-6 rounded-full border-2 border-[var(--text)] ${kind === 'me' ? 'bg-[var(--primary)]' : kind === 'other' ? 'bg-[var(--secondary)]' : 'bg-[var(--panel)]'}`} />
           ))}
@@ -1095,7 +1095,7 @@ const JunbanTool = ({ spec }) => {
         <span className="bg-[var(--accent)] border-2 border-[var(--text)] rounded-xl px-2 py-0.5 mx-0.5">{spec.expr.slice(spec.start, spec.end)}</span>
         <span>{spec.expr.slice(spec.end)}</span>
       </div>
-      <span className="text-xs font-bold text-[var(--text)] opacity-60">きいろの ところから けいさんしよう</span>
+      <span className="text-xs font-bold text-[var(--text)] opacity-80">きいろの ところから けいさんしよう</span>
     </div>
   );
 };
@@ -1107,7 +1107,7 @@ const MiniClock = ({ h, m, unknown, label }) => {
   const [hx, hy] = pt((h % 12) * 30 + m * 0.5, 24);
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="font-black text-xs text-[var(--text)] opacity-60">{label}</span>
+      <span className="font-black text-xs text-[var(--text)] opacity-80">{label}</span>
       <svg viewBox="0 0 120 120" className="w-24 h-24 sm:w-28 sm:h-28">
         <circle cx="60" cy="60" r="55" fill={unknown ? 'var(--bg)' : 'var(--panel)'} stroke="var(--text)" strokeWidth="4" strokeDasharray={unknown ? '6 5' : 'none'} />
         {Array.from({ length: 12 }).map((_, i) => {
@@ -1160,7 +1160,7 @@ const JikokuTool = ({ spec }) => {
             午前 {12 - spec.fromH}時間 ＋ 午後 {spec.toH - 12}時間
           </text>
         </svg>
-        <span className="font-black text-sm text-[var(--text)] opacity-70">2つの ぶんを たすと ぜんぶの 時間だよ</span>
+        <span className="font-black text-sm text-[var(--text)] opacity-80">2つの ぶんを たすと ぜんぶの 時間だよ</span>
       </div>
     );
   }
@@ -1178,7 +1178,7 @@ const JikokuTool = ({ spec }) => {
             ))}
             {rest > 0 && <div className="bg-sky-400 flex items-center justify-center font-black text-sm text-[var(--text)]" style={{ width: `${(rest / spec.total) * 100}%` }}>{rest}分</div>}
           </div>
-          <div className="flex justify-between text-xs font-bold text-[var(--text)] opacity-70">
+          <div className="flex justify-between text-xs font-bold text-[var(--text)] opacity-80">
             <span>0分</span><span>{spec.total}分</span>
           </div>
         </div>
@@ -1221,11 +1221,11 @@ const TaniTool = ({ spec }) => {
           <React.Fragment key={u}>
             {i > 0 && (
               <div className="flex flex-col items-center justify-center px-0.5 shrink-0">
-                <span className={`font-black text-[10px] leading-tight ${i - 1 >= from && i <= to ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-40'}`}>×{ladder.factors[i - 1]}</span>
-                <span className={`text-lg leading-none ${i - 1 >= from && i <= to ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-30'}`}>→</span>
+                <span className={`font-black text-[10px] leading-tight ${i - 1 >= from && i <= to ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'}`}>×{ladder.factors[i - 1]}</span>
+                <span className={`text-lg leading-none ${i - 1 >= from && i <= to ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'}`}>→</span>
               </div>
             )}
-            <div className={`shrink-0 w-14 py-2 rounded-xl border-[3px] flex items-center justify-center font-black text-base ${i === from || i === to ? 'bg-[var(--accent)] border-[var(--text)] text-[var(--text)]' : 'bg-[var(--bg)] border-[var(--text)] border-opacity-30 text-[var(--text)] opacity-50'}`}>
+            <div className={`shrink-0 w-14 py-2 rounded-xl border-[3px] flex items-center justify-center font-black text-base ${i === from || i === to ? 'bg-[var(--accent)] border-[var(--text)] text-[var(--text)]' : 'bg-[var(--bg)] border-[var(--text)] border-opacity-80 text-[var(--text)] opacity-80'}`}>
               {u}
             </div>
           </React.Fragment>
@@ -1234,7 +1234,7 @@ const TaniTool = ({ spec }) => {
       <div className="font-black text-lg text-[var(--text)] bg-[var(--bg)] border-2 border-[var(--text)] rounded-xl px-4 py-2">
         1{ladder.units[from]} ＝ {total.toLocaleString()}{ladder.units[to]}
       </div>
-      <span className="text-xs font-bold text-[var(--text)] opacity-60">
+      <span className="text-xs font-bold text-[var(--text)] opacity-80">
         小さい たんいへは ×{total.toLocaleString()}、大きい たんいへは ÷{total.toLocaleString()}
       </span>
     </div>
@@ -1466,7 +1466,7 @@ const KakuTool = ({ spec }) => {
           return <text key={i} x={100 + (R + 13) * Math.cos(a)} y={85 + (R + 13) * Math.sin(a) + 4} textAnchor="middle" fontSize="11" fontWeight="bold" fill="var(--text)" opacity="0.5">{d}</text>;
         })}
       </svg>
-      <span className="font-black text-sm text-[var(--text)] opacity-70">
+      <span className="font-black text-sm text-[var(--text)] opacity-80">
         {spec.askUnits ? `${deg}ど は 90ど いくつぶん？` : 'ぬられた ところの 大きさは？'}
       </span>
     </div>
@@ -1524,7 +1524,7 @@ const BaisuuTool = ({ spec }) => {
           const cls = a && b ? 'bg-[var(--accent)] text-[var(--text)]'
             : a ? 'bg-orange-400 text-[var(--text)]'
               : b ? 'bg-sky-400 text-[var(--text)]'
-                : 'bg-[var(--bg)] text-[var(--text)] opacity-40';
+                : 'bg-[var(--bg)] text-[var(--text)] opacity-80';
           return (
             <div key={n} className={`aspect-square rounded-md border-2 border-[var(--text)] flex items-center justify-center font-black text-[11px] sm:text-xs ${cls}`}>{n}</div>
           );
@@ -1662,7 +1662,7 @@ const DataTool = ({ spec }) => {
                   <span key={i} className={`w-5 h-5 rounded-full border-2 border-[var(--text)] ${hot ? 'bg-[var(--primary)]' : 'bg-[var(--secondary)]'}`} />
                 ))}
               </div>
-              <span className={`font-black text-sm ${hot ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-70'}`}>{v}</span>
+              <span className={`font-black text-sm ${hot ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'}`}>{v}</span>
             </div>
           );
         })}
@@ -1673,7 +1673,7 @@ const DataTool = ({ spec }) => {
           <span key={i} className={spec.median && i === midIdx ? 'text-[var(--primary)]' : ''}>{v}{i < sorted.length - 1 ? ', ' : ''}</span>
         ))}
       </span>
-      <span className="text-xs font-bold text-[var(--text)] opacity-60">
+      <span className="text-xs font-bold text-[var(--text)] opacity-80">
         {spec.median ? `ぜんぶで ${sorted.length}こ → まんなかは ${midIdx + 1}ばんめ` : 'たかく つみあがった ところが 最頻値'}
       </span>
     </div>
@@ -1693,13 +1693,13 @@ const BaaiTool = ({ spec }) => {
             <React.Fragment key={i}>
               {i > 0 && <span className="font-black text-xl text-[var(--text)]">×</span>}
               <div className="w-16 rounded-xl border-[3px] border-[var(--text)] bg-[var(--bg)] overflow-hidden">
-                <div className="py-1 text-[10px] font-bold text-center text-[var(--text)] opacity-70 border-b-2 border-[var(--text)]">{i + 1}ばんめ</div>
+                <div className="py-1 text-[10px] font-bold text-center text-[var(--text)] opacity-80 border-b-2 border-[var(--text)]">{i + 1}ばんめ</div>
                 <div className="py-2 font-black text-2xl text-center text-[var(--primary)]">{spec.n - i}</div>
               </div>
             </React.Fragment>
           ))}
         </div>
-        <span className="text-xs font-bold text-[var(--text)] opacity-60">それぞれの えらび方を かけ算しよう</span>
+        <span className="text-xs font-bold text-[var(--text)] opacity-80">それぞれの えらび方を かけ算しよう</span>
       </div>
     );
   }
@@ -1827,7 +1827,7 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx, onTo
             </div>
             <div className="overflow-y-auto px-4 pb-6 pt-2">
               {tools.length === 0 && (
-                <p className="text-center font-bold text-[var(--text)] opacity-60 py-8">このもんだいで つかえる どうぐは ないよ</p>
+                <p className="text-center font-bold text-[var(--text)] opacity-80 py-8">このもんだいで つかえる どうぐは ないよ</p>
               )}
               {/* key に問題文を含めて、次の問題に進んだらどうぐの状態をリセットする */}
               {active === 'tokei' && <ClockTool key={`t_${qText}`} spec={parseClock(qText)} />}

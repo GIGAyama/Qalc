@@ -469,7 +469,7 @@ export const BossPanel = ({ raidState, compact = false }) => {
 
   if (!raidState) {
     return (
-      <div className="flex justify-center items-center p-3 shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm font-bold text-sm text-[var(--text)] opacity-60">
+      <div className="flex justify-center items-center p-3 shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm font-bold text-sm text-[var(--text)] opacity-80">
         ボスがあらわれる…
       </div>
     );
@@ -564,7 +564,7 @@ export const BossPanel = ({ raidState, compact = false }) => {
 
         {/* ボスHP(遅れて追いつく白いゴーストバーで被ダメージ量を見せる) */}
         <div className="flex items-center gap-1.5 mb-1">
-          <Swords size={13} className="shrink-0 text-[var(--text)] opacity-60" />
+          <Swords size={13} className="shrink-0 text-[var(--text)] opacity-80" />
           <motion.div className="flex-grow h-3.5 bg-gray-200 rounded-full overflow-hidden border-2 border-[var(--text)] relative"
             animate={hitActive ? { x: [0, -2, 2, 0] } : { x: 0 }} transition={{ duration: 0.25 }}>
             <motion.div className="absolute inset-0 h-full origin-left bg-white/80" animate={{ scaleX: ghostRatio }} transition={{ duration: 0.55, ease: 'easeOut' }} />
@@ -633,8 +633,8 @@ export const SupportButton = ({ gauge, onFire }) => {
         <circle cx="30" cy="30" r={RADIUS} fill="none" stroke={ready ? 'var(--primary)' : 'var(--secondary)'} strokeWidth="4" strokeLinecap="round"
           strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - ratio)} style={{ transition: 'stroke-dashoffset 0.3s' }} />
       </svg>
-      <Sparkles size={20} className={ready ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-40'} />
-      <span className={`text-[9px] font-black ${ready ? 'text-[var(--text)]' : 'text-[var(--text)] opacity-40'}`}>おうえん</span>
+      <Sparkles size={20} className={ready ? 'text-[var(--primary)]' : 'text-[var(--text)] opacity-80'} />
+      <span className={`text-[9px] font-black ${ready ? 'text-[var(--text)]' : 'text-[var(--text)] opacity-80'}`}>おうえん</span>
     </motion.button>
   );
 };
@@ -920,7 +920,7 @@ export const RaidResultPanel = ({ raidResult, myId }) => {
         {list.map((p, idx) => (
           <div key={p.id} className={`rounded-xl border-2 px-3 py-2 ${p.id === myId ? 'border-[var(--primary)] bg-[var(--bg)]' : 'border-[var(--text)] bg-[var(--bg)]'}`}>
             <div className="flex items-center gap-2 mb-1">
-              <span className="font-black text-xs text-[var(--text)] opacity-50 w-6">#{idx + 1}</span>
+              <span className="font-black text-xs text-[var(--text)] opacity-80 w-6">#{idx + 1}</span>
               <span className="font-bold text-sm truncate flex-grow"><PupilName name={p.name} />{p.id === myId && <span className="text-[10px] text-[var(--primary)] ml-1">(あなた)</span>}</span>
               <span className="font-black text-sm text-[var(--text)] shrink-0">⚔{p.damage}</span>
               <span className="font-black text-xs text-pink-500 shrink-0">💝{p.supports || 0}</span>
