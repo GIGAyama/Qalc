@@ -27,7 +27,7 @@ const ToolHint = ({ children }) => (
 const Block = ({ color, marked, crossed, onClick }) => (
   <button
     onClick={onClick}
-    className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-lg border-2 border-[var(--text)] shadow-[0_2px_0_var(--text)] active:translate-y-[2px] active:shadow-none transition-all select-none touch-manipulation ${color} ${crossed ? 'opacity-30' : ''} ${marked ? 'ring-4 ring-[var(--accent)]' : ''}`}
+    className={`relative w-11 h-11 rounded-lg border-2 border-[var(--text)] shadow-[0_2px_0_var(--text)] active:translate-y-[2px] active:shadow-none transition-all select-none touch-manipulation ${color} ${crossed ? 'opacity-30' : ''} ${marked ? 'ring-4 ring-[var(--accent)]' : ''}`}
   >
     {crossed && <span className="absolute inset-0 flex items-center justify-center text-xl font-black text-[var(--text)]">✕</span>}
   </button>
@@ -1824,14 +1824,14 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx, onTo
                     <button
                       key={t}
                       onClick={() => { onFx?.(); setActive(t); }}
-                      className={`px-3 py-1.5 rounded-full font-bold text-sm whitespace-nowrap border-2 transition-colors touch-manipulation flex items-center gap-1.5 ${active === t ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] border-transparent'}`}
+                      className={`tap-44 px-3 py-1.5 rounded-full font-bold text-sm whitespace-nowrap border-2 transition-colors touch-manipulation flex items-center gap-1.5 ${active === t ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--bg)] text-[var(--text)] border-transparent'}`}
                     >
                       <Icon size={16} /> {label}
                     </button>
                   );
                 })}
               </div>
-              <button onClick={onClose} className="w-9 h-9 shrink-0 rounded-full bg-[var(--bg)] border-2 border-[var(--text)] flex items-center justify-center text-[var(--text)] active:scale-90 transition-transform touch-manipulation" aria-label="とじる">
+              <button onClick={onClose} className="tap-44 w-9 h-9 shrink-0 rounded-full bg-[var(--bg)] border-2 border-[var(--text)] flex items-center justify-center text-[var(--text)] active:scale-90 transition-transform touch-manipulation" aria-label="とじる">
                 <X size={18} />
               </button>
             </div>

@@ -1079,7 +1079,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
 
           <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 ruby-text"><R c="学" r="がく" /><R c="年" r="ねん" /></label>
           <div className="flex gap-2 overflow-x-auto pb-2 mb-3 no-scrollbar sm:flex-wrap sm:overflow-visible sm:pb-0">
-            {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-2 transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--bg)] border-transparent text-[var(--text)] hover:border-gray-400'}`}>{grade}</button>)}
+            {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`tap-44 px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-2 transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--bg)] border-transparent text-[var(--text)] hover:border-gray-400'}`}>{grade}</button>)}
           </div>
 
           <div className="mb-2">
@@ -1090,7 +1090,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
         {(configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') && (
           <div className="shrink-0 mb-2">
             <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
-            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[var(--primary)]" />
+            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full slider-44" />
           </div>
         )}
 
@@ -1218,7 +1218,7 @@ const ClientJoinView = ({ initClient, urlHostId, setView }) => {
         へやに<R c="入" r="はい" />る！
       </MotionButton>
 
-      <button className="text-[var(--text)] opacity-80 font-bold mt-4 hover:opacity-100 transition shrink-0" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
+      <button className="tap-44 text-[var(--text)] opacity-80 font-bold mt-4 hover:opacity-100 transition shrink-0" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
     </div>
   );
 };
@@ -1528,7 +1528,7 @@ const CourseMultiSelect = ({ filteredGroups, allGroups, selected, setSelected, m
       <div className="flex items-end justify-between mb-1 gap-2">
         <label className="font-bold text-sm text-[var(--text)] opacity-80">ドリル（タップで えらぶ・いくつでもOK）</label>
         {visibleNames.length > 0 && (
-          <button onClick={toggleAllVisible} className="shrink-0 text-xs font-bold px-3 py-1 rounded-full border-2 border-[var(--text)] bg-[var(--bg)] text-[var(--text)] active:scale-95 transition-transform touch-manipulation">
+          <button onClick={toggleAllVisible} className="tap-44 shrink-0 text-xs font-bold px-3 py-1 rounded-full border-2 border-[var(--text)] bg-[var(--bg)] text-[var(--text)] active:scale-95 transition-transform touch-manipulation">
             {allVisibleSelected ? 'ぜんぶ はずす' : 'ぜんぶ えらぶ'}
           </button>
         )}
@@ -1629,7 +1629,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
         <div>
           <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 ruby-text"><R c="学" r="がく" /><R c="年" r="ねん" /></label>
           <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar sm:flex-wrap sm:overflow-visible sm:pb-0">
-            {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-2 transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--bg)] border-transparent text-[var(--text)]'}`}>{grade}</button>)}
+            {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`tap-44 px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-2 transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--bg)] border-transparent text-[var(--text)]'}`}>{grade}</button>)}
           </div>
         </div>
 
@@ -1655,7 +1655,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
         {configMode === 'SCORE_ATTACK' && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
             <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
-            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[var(--primary)]" />
+            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full slider-44" />
           </motion.div>
         )}
 
@@ -1668,7 +1668,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
 
         <div className="mt-2 space-y-3">
           <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-4 text-xl border-[3px] border-[var(--text)]" onClick={start}><Gamepad2 size={24} /> スタート！</MotionButton>
-          <button className="text-[var(--text)] opacity-80 font-bold text-sm py-2 w-full hover:opacity-100 transition" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
+          <button className="tap-44 text-[var(--text)] opacity-80 font-bold text-sm py-2 w-full hover:opacity-100 transition" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
         </div>
       </div>
     </div>
@@ -2716,14 +2716,14 @@ const ManagerView = ({ setView }) => {
       <h3 className="font-bold text-xl text-center mb-4 shrink-0 flex items-center justify-center gap-2 text-[var(--text)]"><Settings size={24} /> 管理・共有</h3>
       <div className="shrink-0 mb-3">
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar sm:flex-wrap sm:overflow-visible sm:pb-0">
-          {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-[3px] transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--panel)] border-[var(--text)] text-[var(--text)]'}`}>{grade}</button>)}
+          {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`tap-44 px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-[3px] transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--panel)] border-[var(--text)] text-[var(--text)]'}`}>{grade}</button>)}
         </div>
       </div>
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl flex-grow overflow-y-auto mb-4 shadow-sm p-2">
         {filteredGroups.length === 0 ? <div className="text-center text-[var(--text)] opacity-80 py-10 font-bold">コースがありません</div> : filteredGroups.map(g => (
           <div key={g.name} className="p-3 border-b border-dashed border-[var(--bg)] cursor-pointer flex justify-between items-center transition-colors rounded-lg group" onClick={() => { audioCtrl.playSE('click'); openEdit(g.name) }}>
             <div className="flex flex-col"><span className="font-bold text-[var(--text)]">{g.name}</span><span className="text-[var(--text)] opacity-80 text-xs">{g.count}問</span></div>
-            <button className="bg-[var(--bg)] hover:bg-[var(--secondary)] hover:text-[var(--on-secondary)] text-[var(--text)] p-2 rounded-xl transition-colors border-2 border-[var(--text)] shadow-sm" onClick={(e) => copyShareCode(e, g.name)} title="共有コードをコピー"><Share2 size={18} /></button>
+            <button className="bg-[var(--bg)] hover:bg-[var(--secondary)] hover:text-[var(--on-secondary)] text-[var(--text)] p-2 rounded-xl transition-colors border-2 border-[var(--text)] shadow-sm tap-44" onClick={(e) => copyShareCode(e, g.name)} title="共有コードをコピー"><Share2 size={18} /></button>
           </div>
         ))}
       </div>
@@ -2732,7 +2732,7 @@ const ManagerView = ({ setView }) => {
           <MotionButton className="bg-[var(--secondary)] text-[var(--on-secondary)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={() => { audioCtrl.playSE('click'); setView('import') }}><Download size={20} /> 受信/AI</MotionButton>
           <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] flex-grow py-3 border-[3px] border-[var(--text)]" onClick={() => { audioCtrl.playSE('click'); openEdit('') }}><Plus size={20} /> 新規作成</MotionButton>
         </div>
-        <button className="text-[var(--text)] opacity-80 font-bold py-3 hover:opacity-100 transition" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
+        <button className="tap-44 text-[var(--text)] opacity-80 font-bold py-3 hover:opacity-100 transition" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
       </div>
     </div>
   );
@@ -2790,7 +2790,7 @@ const ImportView = ({ setView }) => {
         <textarea className="flex-grow border-[3px] border-[var(--text)] rounded-xl p-3 resize-none font-mono text-sm outline-none bg-[var(--bg)] text-[var(--text)]" value={text} onChange={e => setText(e.target.value)}></textarea>
         <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] py-4 shrink-0 border-[3px] border-[var(--text)]" onClick={process}>読み込んで追加</MotionButton>
       </div>
-      <button className="text-[var(--text)] opacity-80 font-bold py-3 shrink-0 pb-4" onClick={() => { audioCtrl.playSE('click'); setView('manager') }}>もどる</button>
+      <button className="tap-44 text-[var(--text)] opacity-80 font-bold py-3 shrink-0 pb-4" onClick={() => { audioCtrl.playSE('click'); setView('manager') }}>もどる</button>
     </div>
   );
 };
