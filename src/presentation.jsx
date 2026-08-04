@@ -226,7 +226,7 @@ const PanelToggle = ({ checked, onChange, label, hint }) => (
         <span className="flex flex-col">
             <span className="font-bold text-sm text-[var(--text)] leading-tight">
                 {label}
-                <span className="ml-1 text-[10px] opacity-60">{checked ? 'ON' : 'OFF'}</span>
+                <span className="ml-1 text-[10px] opacity-80">{checked ? 'ON' : 'OFF'}</span>
             </span>
             <span className="text-[10px] text-[var(--text)] opacity-80 leading-tight">{hint}</span>
         </span>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle, lazy, Suspense } from 'react';
+import { RANK_TEXT, TEAM_TEXT, pickOn, useLightSurface } from './readableColor.js';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 // 外部CDNからの動的読み込みはやめ、すべてバンドルに同梱する。
 // 理由: (1) CDNが改ざんされると児童端末で任意コードが動く (2) 校内フィルタでCDNが
@@ -650,7 +651,12 @@ const PEER_TIMEOUT_MS = 30000;
 
 // --- ホーム画面 ---
 const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeData, onResume, onDiscardResume }) => {
-  const { level, title, badge, color, progress, nextLevelExp } = getLevelInfo(stats.totalExp);
+  const { level, title, badge, progress, nextLevelExp } = getLevelInfo(stats.totalExp);
+  // ランクの色は面(--panel)の明るさで選び分ける。
+  // もとは1色だけを文字に使っていたが、明るい面と暗い面の両方で 4.5:1 を
+  // 満たす色は存在しない（readableColor.js に理由を書いた）
+  const lightSurface = useLightSurface(stats.theme);
+  const rankColor = pickOn(RANK_TEXT[title] ?? { light: 'var(--text)', dark: 'var(--text)' }, lightSurface);
   const chartData = Array.from({ length: 7 }).map((_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (6 - i));
     const dayData = stats.daily[d.toLocaleDateString()] || { exp: 0 };
@@ -694,7 +700,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
             <LayeredAvatar equipped={stats.equipped} size="text-5xl" className="w-full h-full" />
           </div>
           <div className="flex-grow text-left">
-            <div className="text-xs font-bold text-[var(--text)] opacity-80 mb-0.5"><span style={{ color }}>{badge} {title}</span></div>
+            <div className="text-xs font-bold mb-0.5"><span style={{ color: rankColor }}>{badge} {title}</span></div>
             <div className="text-3xl font-black text-[var(--text)] tracking-wide">Lv.{level}</div>
             {(() => {
               const t = stats.equipped?.title ? SHOP_ITEMS.titles.find(i => i.id === stats.equipped.title) : null;
@@ -846,6 +852,8 @@ const MULTI_MODES = [
   { id: 'TERRITORY', label: 'じんとり' },
 ];
 const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, configMode, setConfigMode, initRaid, initTerritory, approveMember, rejectMember }) => {
+  // チーム名の文字も面の明るさで選び分ける（TEAMS.color は面用なので文字には足りない）
+  const roomLightSurface = useLightSurface();
   const [groups, setGroups] = useState([]); const [selectedGroups, setSelectedGroups] = useState([]);
   const [time, setTime] = useState(3);
   const [selectedGrade, setSelectedGrade] = useState('すべて');
@@ -1053,7 +1061,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
                   const count = members.length + (hostTeam === team ? 1 : 0);
                   return (
                     <div key={team} className="rounded-xl border-[3px] p-2 min-h-[88px]" style={{ borderColor: TEAMS[team].color, background: TEAMS[team].soft }}>
-                      <div className="font-black text-xs mb-1.5" style={{ color: TEAMS[team].color }}>{TEAMS[team].label}チーム（{count}<R c="人" r="にん" />）</div>
+                      <div className="font-black text-xs mb-1.5" style={{ color: pickOn(TEAM_TEXT[team], roomLightSurface) }}>{TEAMS[team].label}チーム（{count}<R c="人" r="にん" />）</div>
                       <div className="flex flex-wrap gap-1.5">
                         {hostTeam === team && (
                           <button onClick={toggleHostTeam} className="text-[11px] font-black bg-[var(--panel)] border-2 border-[var(--text)] rounded-full px-2 py-0.5 active:scale-95">👑 リーダー</button>
@@ -1081,7 +1089,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
 
         {(configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') && (
           <div className="shrink-0 mb-2">
-            <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 flex justify-between ruby-text"><span><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
+            <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
             <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[var(--primary)]" />
           </div>
         )}
@@ -1365,7 +1373,7 @@ const ShopView = ({ setView, stats, setStats }) => {
               ) : (
                 <>
                   <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.5 }} className="text-7xl mb-3">{gachaResult.item.char}</motion.div>
-                  <span className="text-[10px] font-black text-white px-2 py-0.5 rounded-full mb-2" style={{ background: RARITY_INFO[getRarity(gachaResult.item)].color }}>{RARITY_INFO[getRarity(gachaResult.item)].label}</span>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full mb-2" style={{ background: RARITY_INFO[getRarity(gachaResult.item)].color, color: RARITY_INFO[getRarity(gachaResult.item)].on }}>{RARITY_INFO[getRarity(gachaResult.item)].label}</span>
                   <h3 className="font-black text-xl text-[var(--text)] leading-snug">{gachaResult.item.name}</h3>
                   <p className="text-[10px] font-bold text-[var(--text)] opacity-80 mb-2">({CATEGORY_LABELS[gachaResult.category]})</p>
                   {gachaResult.isNew
@@ -1445,7 +1453,7 @@ const ShopView = ({ setView, stats, setStats }) => {
           )}
           <div className="flex gap-2 text-[9px] font-bold">
             {Object.entries(RARITY_INFO).map(([k, v]) => (
-              <span key={k} className="text-white px-2 py-0.5 rounded-full" style={{ background: v.color }}>{v.label}{k === 'N' ? ' でやすい' : k === 'UR' ? ' ちょうレア' : ''}</span>
+              <span key={k} className="px-2 py-0.5 rounded-full" style={{ background: v.color, color: v.on }}>{v.label}{k === 'N' ? ' でやすい' : k === 'UR' ? ' ちょうレア' : ''}</span>
             ))}
           </div>
           <div className="w-full grid grid-cols-4 gap-2 mt-1">
@@ -1454,7 +1462,7 @@ const ShopView = ({ setView, stats, setStats }) => {
               const r = getRarity(item);
               return (
                 <div key={item.id} className={`relative flex flex-col items-center p-1.5 rounded-xl border-2 ${owned ? 'bg-[var(--bg)] border-[var(--text)]' : 'bg-[var(--panel)] border-gray-200'}`}>
-                  <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black text-white px-1.5 rounded-full" style={{ background: RARITY_INFO[r].color }}>{RARITY_INFO[r].label}</span>
+                  <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black px-1.5 rounded-full" style={{ background: RARITY_INFO[r].color, color: RARITY_INFO[r].on }}>{RARITY_INFO[r].label}</span>
                   <div className={`text-2xl ${owned ? '' : 'grayscale opacity-40'}`}>{owned ? item.char : '❓'}</div>
                   <div className="text-[8px] font-bold text-[var(--text)] text-center leading-tight truncate w-full">{owned ? item.name : '？？？'}</div>
                 </div>
@@ -1472,7 +1480,7 @@ const ShopView = ({ setView, stats, setStats }) => {
             const isGachaOnly = item.gacha && !isOwned;
             return (
               <div key={item.id} onClick={() => handleItemClick(item, tab)} className={`relative flex flex-col items-center p-2 rounded-xl border-[3px] cursor-pointer transition-transform active:scale-95 ${isEquipped ? 'bg-[var(--accent)] border-[var(--text)]' : isOwned ? 'bg-[var(--bg)] border-[var(--text)] opacity-80' : 'bg-[var(--panel)] border-gray-200 grayscale hover:grayscale-0'}`}>
-                {rarity !== 'N' && <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black text-white px-1.5 py-px rounded-full z-10" style={{ background: RARITY_INFO[rarity].color }}>{RARITY_INFO[rarity].label}</span>}
+                {rarity !== 'N' && <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black px-1.5 py-px rounded-full z-10" style={{ background: RARITY_INFO[rarity].color, color: RARITY_INFO[rarity].on }}>{RARITY_INFO[rarity].label}</span>}
                 <div className="text-3xl mb-1 h-10 flex items-center justify-center">
                   {tab === 'themes'
                     ? (item.c ? <div className="flex gap-0.5">{item.c.map((col, i) => <span key={i} className="w-4 h-4 rounded-full border-2 border-[var(--text)]" style={{ background: col }} />)}</div> : <PaintBucket size={28} className={isEquipped ? 'text-[var(--text)]' : 'text-gray-400'} />)
@@ -1646,7 +1654,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
 
         {configMode === 'SCORE_ATTACK' && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-            <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 flex justify-between ruby-text"><span><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
+            <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
             <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[var(--primary)]" />
           </motion.div>
         )}
@@ -2344,7 +2352,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
                 <Lightbulb size={24} />
               </motion.button>
             )}
-            <span className="text-5xl font-black text-[var(--secondary-d)] tracking-widest">{ans || <span className="text-4xl font-bold text-[var(--text)] opacity-20">?</span>}</span>
+            <span className="text-5xl font-black text-[var(--secondary-d)] tracking-widest">{ans || <span className="text-4xl font-bold text-[var(--text)] opacity-70">?</span>}</span>
             {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 w-12 h-12 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
             <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--on-secondary)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
           </motion.div>

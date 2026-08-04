@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useLightSurface } from './readableColor.js';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Lightbulb, LayoutGrid, Cherry, PencilLine, Table2, Clock, Ruler, GlassWater, Circle,
@@ -94,12 +95,12 @@ const BlocksTool = ({ p, qText, onFx }) => {
         <ToolHint>ブロックを タップしながら かぞえてみよう</ToolHint>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-6">
           <div className="flex flex-col items-center gap-2">
-            <span className="font-black text-2xl text-orange-500">{p.a}</span>
+            <span className="font-black text-2xl text-[var(--tool-a)]">{p.a}</span>
             <BlockGrid count={p.a} color="bg-orange-400" states={Object.fromEntries(Array.from({ length: p.a }).map((_, i) => [i, states[`a_${i}`]]))} onToggle={toggle('a')} />
           </div>
           <span className="font-black text-3xl text-[var(--text)]">＋</span>
           <div className="flex flex-col items-center gap-2">
-            <span className="font-black text-2xl text-sky-500">{p.b}</span>
+            <span className="font-black text-2xl text-[var(--tool-b)]">{p.b}</span>
             <BlockGrid count={p.b} color="bg-sky-400" states={Object.fromEntries(Array.from({ length: p.b }).map((_, i) => [i, states[`b_${i}`]]))} onToggle={toggle('b')} />
           </div>
         </div>
@@ -111,7 +112,7 @@ const BlocksTool = ({ p, qText, onFx }) => {
     <div className="flex flex-col items-center gap-4">
       <ToolHint>ひくかずのぶんだけ タップして けしてみよう</ToolHint>
       <div className="flex flex-col items-center gap-2">
-        <span className="font-black text-2xl text-orange-500">{p.a} − {p.b}</span>
+        <span className="font-black text-2xl text-[var(--tool-a)]">{p.a} − {p.b}</span>
         <BlockGrid count={p.a} color="bg-orange-400" states={Object.fromEntries(Array.from({ length: p.a }).map((_, i) => [i, states[`a_${i}`]]))} onToggle={toggle('a')} />
       </div>
     </div>
@@ -419,11 +420,11 @@ const TapeTool = ({ spec }) => {
         <div className="w-full max-w-sm">
           <div className="flex w-full">
             <div className="flex flex-col items-center" style={{ width: `${(spec.a / total) * 100}%` }}>
-              <span className="font-black text-sm text-orange-500">{spec.a}cm</span>
+              <span className="font-black text-sm text-[var(--tool-a)]">{spec.a}cm</span>
               <div className="w-full h-10 bg-orange-400 border-[3px] border-[var(--text)] rounded-l-xl" />
             </div>
             <div className="flex flex-col items-center" style={{ width: `${(spec.b / total) * 100}%` }}>
-              <span className="font-black text-sm text-sky-500">{spec.b}cm</span>
+              <span className="font-black text-sm text-[var(--tool-b)]">{spec.b}cm</span>
               <div className="w-full h-10 bg-sky-400 border-[3px] border-l-0 border-[var(--text)] rounded-r-xl" />
             </div>
           </div>
@@ -456,7 +457,7 @@ const TapeTool = ({ spec }) => {
 // ---- かさ（ますの図） ----
 const KasaBeaker = ({ value, denom, unit, drink = 0 }) => (
   <div className="flex flex-col items-center gap-1">
-    <span className="font-black text-sky-500">{value}{unit}</span>
+    <span className="font-black text-[var(--tool-b)]">{value}{unit}</span>
     <div className="relative w-16 h-28 border-[3px] border-t-2 border-[var(--text)] rounded-b-xl overflow-hidden bg-[var(--bg)]">
       <div className="absolute bottom-0 left-0 right-0 bg-sky-400" style={{ height: `${Math.min(100, (value / denom) * 100)}%` }}>
         {drink > 0 && (
@@ -662,7 +663,7 @@ const ReduceFractionView = ({ n, d }) => {
     <div className="flex flex-col items-center gap-3 w-full">
       <ToolHint>{n}も {d}も {k} で わりきれるよ。<br />ながさは かえずに めもりを あらくしよう</ToolHint>
       <div className="flex items-center gap-3 w-full justify-center">
-        <span className="font-black text-sm text-orange-500 w-14 text-right">{n}/{d}</span>
+        <span className="font-black text-sm text-[var(--tool-a)] w-14 text-right">{n}/{d}</span>
         <div className="flex h-9 w-full max-w-[240px] border-[3px] border-[var(--text)] rounded-lg overflow-hidden bg-[var(--panel)]">
           {Array.from({ length: d }).map((_, i) => (
             <div key={i} className={`flex-1 ${i < n ? 'bg-orange-400' : ''} ${i > 0 ? `border-l ${i % k === 0 ? 'border-[var(--text)] border-l-[3px]' : 'border-[var(--text)] border-opacity-30'}` : ''}`} />
@@ -735,11 +736,11 @@ const FractionTool = ({ spec }) => {
       <div className="flex flex-col items-center gap-3 w-full">
         <ToolHint>1めもりの 大きさが ちがうね。<br />分母を {lcm} に そろえると くらべられるよ</ToolHint>
         <div className="flex items-center gap-3 w-full justify-center">
-          <span className="font-black text-lg text-orange-500 w-12 text-right">{spec.n1}/{spec.d1}</span>
+          <span className="font-black text-lg text-[var(--tool-a)] w-12 text-right">{spec.n1}/{spec.d1}</span>
           <FractionBar n={spec.n1} d={spec.d1} color="bg-orange-400" />
         </div>
         <div className="flex items-center gap-3 w-full justify-center">
-          <span className="font-black text-lg text-sky-500 w-12 text-right">{spec.n2}/{spec.d2}</span>
+          <span className="font-black text-lg text-[var(--tool-b)] w-12 text-right">{spec.n2}/{spec.d2}</span>
           <FractionBar n={spec.n2} d={spec.d2} color="bg-sky-400" />
         </div>
         <div className="w-full max-w-[240px] border-t-2 border-dashed border-[var(--text)] opacity-40 my-1" />
@@ -789,12 +790,12 @@ const FractionTool = ({ spec }) => {
       <ToolHint>{hint}</ToolHint>
       <div className="flex flex-col items-center gap-2 w-full">
         <div className="flex items-center gap-3 w-full justify-center">
-          <span className="font-black text-lg text-orange-500 w-12 text-right">{spec.n1}/{spec.d1}</span>
+          <span className="font-black text-lg text-[var(--tool-a)] w-12 text-right">{spec.n1}/{spec.d1}</span>
           <FractionBar n={spec.n1} d={spec.d1} color="bg-orange-400" />
         </div>
         <span className="font-black text-2xl text-[var(--text)]">{spec.op === '+' ? '＋' : '−'}</span>
         <div className="flex items-center gap-3 w-full justify-center">
-          <span className="font-black text-lg text-sky-500 w-12 text-right">{spec.n2}/{spec.d2}</span>
+          <span className="font-black text-lg text-[var(--tool-b)] w-12 text-right">{spec.n2}/{spec.d2}</span>
           <FractionBar n={spec.n2} d={spec.d2} color="bg-sky-400" />
         </div>
       </div>
@@ -1776,6 +1777,7 @@ const BaaiTool = ({ spec }) => {
 
 // ---- どうぐパネル（ボトムシート） ----
 export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx, onToolUse }) => {
+  const toolLightSurface = useLightSurface();
   const tools = useMemo(() => getAvailableTools(courseName, qText), [courseName, qText]);
   const [active, setActive] = useState(tools[0] || null);
   const p = useMemo(() => parseArith(qText), [qText]);
@@ -1804,6 +1806,14 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx, onTo
             animate={{ y: 0, transition: { type: 'spring', damping: 28, stiffness: 300 } }}
             exit={{ y: '100%', transition: { duration: 0.15, ease: 'easeIn' } }}
             className="fixed bottom-0 left-0 right-0 z-[80] mx-auto max-w-2xl bg-[var(--panel)] border-[3px] border-b-0 border-[var(--text)] rounded-t-3xl flex flex-col max-h-[70vh] shadow-[0_-4px_20px_rgba(0,0,0,0.15)] pb-[env(safe-area-inset-bottom)]"
+            /* どうぐの中で使う2色。面(--panel)の明るさで濃さを選び分ける。
+             * text-orange-500 / text-sky-500 のままだと白地で 2.80 / 2.77 しかなく、
+             * 14〜18px で使っている場所が基準(4.5:1)に届いていなかった。
+             *   明るい面  #c2410c (5.18) / #0369a1 (5.93)
+             *   暗い面    #fb923c (8.34) / #38bdf8 (8.81)  ※#111111 の上での比 */
+            style={toolLightSurface
+              ? { '--tool-a': '#c2410c', '--tool-b': '#0369a1' }
+              : { '--tool-a': '#fb923c', '--tool-b': '#38bdf8' }}
           >
             <div className="flex items-center gap-2 p-3 pb-2 shrink-0">
               <Lightbulb size={22} className="text-[var(--secondary-d)] shrink-0" />
