@@ -15,6 +15,8 @@
  *   node scripts/check-contrast.mjs --all    … 全部
  */
 import { readFileSync } from 'node:fs';
+import { RANK_TEXT, TEAM_TEXT, TOOL_TEXT, isLightSurface } from '../src/colorTables.js';
+import { RARITY_INFO } from '../src/data/shop.js';
 
 const showAll = process.argv.includes('--all');
 const src = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
@@ -79,6 +81,46 @@ const CASES = [
   { label: 'ボタン on-secondary on secondary', fg: 'on-secondary', bg: 'secondary', alpha: 1, min: 4.5 },
 ];
 
+/* ── 変数ではない色（Part I §2-8 / v5 の実測で見つかった穴）─────────────
+ *
+ * 上の CASES はテーマの CSS 変数どうしの組み合わせだけを測る。
+ * それだけでは足りなかった。実ブラウザで測ると 110件が基準未満で、
+ * 落ちたものはすべて「変数ではない色」だった。
+ *
+ *   JS のデータに直書きした色  RARITY_INFO / ランク / チーム / どうぐ
+ *   変数に opacity を掛けたもの --primary-d 単体 4.85 → opacity-80 の中で 4.18
+ *
+ * 表そのものを import して測る。regex で読むと、表を直したのに
+ * 検査が古いまま通る、ということが起きるため。 */
+const surfaces = Object.entries(themes).map(([name, v]) => ({ name, panel: v.panel, bg: v.bg }));
+const lightPanels = surfaces.filter((s) => isLightSurface(s.panel));
+const darkPanels = surfaces.filter((s) => !isLightSurface(s.panel));
+
+const tableRows = [];
+/** { light, dark } の組を、明るい面・暗い面それぞれで測る */
+const checkPair = (label, pair, min = 4.5) => {
+  for (const s of lightPanels) {
+    tableRows.push({ theme: s.name, label: `${label}（明るい面）`, min, shown: pair.light, bgHex: s.panel, r: ratio(pair.light, s.panel) });
+  }
+  for (const s of darkPanels) {
+    tableRows.push({ theme: s.name, label: `${label}（暗い面）`, min, shown: pair.dark, bgHex: s.panel, r: ratio(pair.dark, s.panel) });
+  }
+};
+
+for (const [name, pair] of Object.entries(RANK_TEXT)) checkPair(`ランク ${name}`, pair);
+for (const [key, pair] of Object.entries(TEAM_TEXT)) checkPair(`チーム ${key}`, pair);
+for (const [key, pair] of Object.entries(TOOL_TEXT)) checkPair(`どうぐ ${key}`, pair);
+
+/* レアリティのバッジは「面(塗り)＋その上に載る文字」で、テーマに関係なく同じ色。
+ * 塗りの色は変えず、載せる文字(on)が読めることだけを見る。 */
+for (const [key, v] of Object.entries(RARITY_INFO)) {
+  if (!v.on) {
+    tableRows.push({ theme: '(共通)', label: `レアリティ ${key}`, min: 4.5, shown: '(文字用の色がない)', bgHex: v.color, r: 0 });
+    continue;
+  }
+  tableRows.push({ theme: '(共通)', label: `レアリティ ${key} の文字`, min: 4.5, shown: v.on, bgHex: v.color, r: ratio(v.on, v.color) });
+}
+
 const rows = [];
 for (const [name, v] of Object.entries(themes)) {
   for (const c of CASES) {
@@ -88,6 +130,8 @@ for (const [name, v] of Object.entries(themes)) {
   }
 }
 
+rows.push(...tableRows);
+
 const bad = rows.filter((r) => r.r < r.min);
 const large = bad.filter((r) => r.r >= 3);   // 本文には足りないが、大きな文字なら通る
 const hard = bad.filter((r) => r.r < 3);     // 大きな文字にしても足りない
@@ -95,7 +139,7 @@ const hard = bad.filter((r) => r.r < 3);     // 大きな文字にしても足�
 const pad = (s, n) => s + ' '.repeat(Math.max(0, n - [...s].reduce((w, ch) => w + (ch.charCodeAt(0) > 0x2000 ? 2 : 1), 0)));
 const line = (r) => `  ${pad(r.theme, 12)} ${pad(r.label, 26)} ${r.shown} on ${r.bgHex}  ${r.r.toFixed(2)}:1`;
 
-console.log(`\nコントラスト実測 — テーマ ${Object.keys(themes).length}種 × ${CASES.length}通り = ${rows.length}件\n`);
+console.log(`\nコントラスト実測 — テーマ ${Object.keys(themes).length}種 × 変数 ${CASES.length}通り ＋ 変数でない色 ${tableRows.length}件 = 合計 ${rows.length}件\n`);
 
 if (showAll) {
   for (const r of rows) console.log(`${r.r >= r.min ? '✅' : r.r >= 3 ? '⚠️ ' : '❌'}${line(r)}`);

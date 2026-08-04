@@ -203,3 +203,82 @@ body.reduce-fx *::after {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
 }
+
+/* タップ領域 44px（Part I §2-9）
+ *
+ * ボタンそのものを大きくして満たすのではなく、疑似要素で当たり判定だけ広げる。
+ * 詰めて組んであるツールバーで min-height を当てると折り返しが起き、
+ * 「読みやすくしたら並びが崩れた」という別の破綻になるため。
+ *
+ * 見た目は1pxも変わらない。指が触れる範囲だけが広がる。 */
+.tap-44 {
+    position: relative;
+}
+
+.tap-44::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    min-width: 44px;
+    min-height: 44px;
+}
+
+/* ⚠️ この手はチェックボックスとラジオには使えない（input は疑似要素を持てない）。
+ * 囲みの <label> 側で 44px を確保すること。
+ *
+ * ⚠️ 詰めて並べたマス目にも使わない。
+ * 36px のマスを 6px の隙間で並べているところに 44px の当たり判定を足すと、
+ * となりのマスと 2px 重なって押しまちがえる。
+ * 数をかぞえる道具では、押しまちがいのほうが害が大きい。
+ * そういう場所はマスそのものを 44px にする。 */
+
+/* スライダー（input[type=range]）
+ *
+ * 疑似要素で広げる手が使えないうえ、当たり判定は track の高さそのものになる。
+ * h-2（8px）のままだと、指で正確につまめない。
+ * 入れものを 44px にして、見た目の棒は 8px のまま描く。 */
+.slider-44 {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 44px;
+    background: transparent;
+    cursor: pointer;
+}
+
+.slider-44::-webkit-slider-runnable-track {
+    height: 8px;
+    border-radius: 9999px;
+    background: var(--bg);
+    border: 2px solid var(--text);
+}
+
+.slider-44::-moz-range-track {
+    height: 8px;
+    border-radius: 9999px;
+    background: var(--bg);
+    border: 2px solid var(--text);
+}
+
+.slider-44::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: var(--primary);
+    border: 3px solid var(--text);
+    /* つまみを棒の中心にそろえる: (棒8px + 枠2px×2) の半分 - つまみ28px の半分 */
+    margin-top: -8px;
+}
+
+.slider-44::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: var(--primary);
+    border: 3px solid var(--text);
+}

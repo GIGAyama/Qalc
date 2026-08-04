@@ -20,13 +20,30 @@
 // JS/CSS をキャッシュ優先で持つので、中身をかえたら必ずここを上げること
 // (上げわすれると、旧版を持った端末が新版のへやに入れず「アプリが古い」と言われつづける)
 const CACHE_PREFIX = 'qalc-cache-';
-const APP_VERSION = 'v4';
+const APP_VERSION = 'v5';
 
 // 版ごとに作りなおすもの（アプリの外枠）
 const CACHE_STATIC = CACHE_PREFIX + 'static-' + APP_VERSION;
 // 版をまたいで残すもの（ファイル名にハッシュが付いた JS/CSS/フォント）。
 // 中身が変わればファイル名も変わるので、古いものが誤って使われることはない
 const CACHE_RUNTIME = CACHE_PREFIX + 'runtime-v1';
+
+/* ビルドで作られる本体の JS と CSS。中身は vite.config.js が書きこむ。
+ *
+ * 【なぜ要るか】これが無いと、1回しか開いていない端末は圏外で起動できない。
+ *   はじめて開いたとき、ブラウザは <script> と <link> を Service Worker より
+ *   先に取りにいく。そのときページはまだ Service Worker の管理下に入っていないので、
+ *   fetch のハンドラを素通りし、runtime キャッシュに1件も入らない。
+ *   そのまま圏外になると、index.html はキャッシュから出るのに
+ *   本体の JS が取れず、**まっ白な画面**になる。
+ *   実測でも qalc-cache-runtime-v1 が作られないまま
+ *   assets/index-*.js が ERR_FAILED になった。
+ *
+ * 【なぜ本体だけか】遅延読みこみの塊（ボスバトル・じんとり・がくしゅうどうぐ）と
+ *   フォントはここに入れない。先読みが重くなると、校内 Wi-Fi に40人が
+ *   ぶら下がっている時間帯に初回表示が止まる（Part I §6）。
+ *   それらは実際に使われたときに runtime キャッシュへ入る。 */
+const BUILD_ASSETS = [/* __BUILD_ASSETS__ */];
 
 const SHELL = [
   '/Qalc/',
@@ -40,6 +57,7 @@ const SHELL = [
   '/Qalc/icon-maskable-192.png',
   '/Qalc/icon-maskable-512.png',
   '/Qalc/apple-touch-icon.png',
+  ...BUILD_ASSETS,
 ];
 
 self.addEventListener('install', (event) => {

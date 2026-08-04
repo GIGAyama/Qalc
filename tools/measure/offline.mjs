@@ -1,0 +1,25 @@
+import { chromium } from 'playwright';
+import { CHROME, BASE_ORIGIN } from './env.mjs';
+import { readFileSync } from 'node:fs';
+const INPAGE = readFileSync(new URL('./inpage.js', import.meta.url), 'utf8');
+const b = await chromium.launch({ executablePath: CHROME });
+const ctx = await b.newContext({ viewport: { width: 320, height: 568 }, deviceScaleFactor: 2 });
+await ctx.addInitScript(INPAGE);
+await ctx.addInitScript(() => { window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ← ' + e.blockedURI)); });
+const p = await ctx.newPage();
+const js = []; p.on('pageerror', e => js.push(String(e))); p.on('console', m => { if (m.type() === 'error') js.push(m.text()); });
+await p.goto(`${BASE_ORIGIN}/Qalc/offline.html`, { waitUntil: 'networkidle' });
+await p.waitForTimeout(600);
+const r = await p.evaluate(() => ({ c: window.__giga.contrast(), t: window.__giga.tapTargets(), o: window.__giga.overflow(), csp: window.__csp }));
+console.log('コントラスト不足', r.c.bad.length, '/ タップ44px未満', r.t.bad.length, '/ 横スクロール', r.o.wide.length ? 'あり' : 'なし', '/ CSP違反', r.csp.length, '/ JSエラー', js.length);
+for (const x of r.c.bad) console.log('  色', x.ratio, '要' + x.need, x.color, 'on', x.bg, '「' + x.text + '」');
+for (const x of r.t.bad) console.log('  タップ', x.w + 'x' + x.h, '「' + x.text + '」');
+for (const x of r.csp) console.log('  CSP', x);
+for (const x of js) console.log('  JS', x.slice(0, 120));
+// 「もういちど ためす」を実際に押して、アプリの入口へ行くか
+await p.click('a.btn');
+await p.waitForTimeout(1500);
+console.log('押したあとの URL:', p.url());
+console.log('本編が出たか:', await p.evaluate(() => !!document.querySelector('#root')?.children.length));
+if (r.c.bad.length || r.t.bad.length || r.o.wide.length || r.csp.length || js.length) process.exitCode = 1;
+await b.close();

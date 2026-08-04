@@ -45,7 +45,16 @@ export function registerServiceWorker() {
         window.location.reload();
     });
 
-    window.addEventListener('load', () => {
+    // ⚠️ load を待つだけにしない（Part I §3-6）。
+    //    いまは main.jsx のモジュール最外で呼んでいるので load より前に走り、
+    //    リスナーはちゃんと間に合っている。
+    //    ただし、この呼び出しを React の useEffect へ移した瞬間に黙って壊れる。
+    //    effect は描画のあとに走るので、そのとき load はもう終わっており、
+    //    リスナーは付くが二度と呼ばれず、Service Worker が登録されないまま
+    //    「オフラインで開けない」だけが残る。エラーも警告も出ない。
+    //    「登録」と「更新の案内」を1か所にまとめようとすると自然にその移動が起きるので、
+    //    先に分岐を入れておく。
+    const start = () => {
         navigator.serviceWorker.register('/Qalc/sw.js').then((reg) => {
             // 前回のうちに新しい版が入って、待機したまま閉じられていた場合
             if (reg.waiting && navigator.serviceWorker.controller) announceUpdate(reg.waiting);
@@ -60,7 +69,10 @@ export function registerServiceWorker() {
                 });
             });
         }).catch(() => { /* 登録できなくてもアプリは動く（オフライン対応が効かないだけ） */ });
-    });
+    };
+
+    if (document.readyState === 'complete') start();
+    else window.addEventListener('load', start, { once: true });
 }
 
 /* ── あたらしいバージョンのお知らせ ──────────────────────── */

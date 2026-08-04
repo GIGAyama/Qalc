@@ -217,6 +217,31 @@ check('E4', 'アプリ内にインストールの導線がある',
     check('E8b', 'sw.js が offline.html をキャッシュしている', /offline\.html/.test(sw));
   }
 }
+/* E8c ── 圏外で起動できるか（先読みに本体の JS/CSS が入っているか）
+ *
+ * これが無いと、1回しか開いていない端末が圏外でまっ白になる。
+ * はじめて開いたときの <script>/<link> は Service Worker が管理下に入る前に
+ * 取りにいくので fetch のハンドラを素通りし、runtime キャッシュに入らない。
+ * 2回目からは入るので、手で試すと気づけないことがある。
+ *
+ * ファイル名にハッシュが付くため、vite.config.js がビルド時に書きこんでいる。
+ * ここでは「dist/index.html が読んでいる本体が、dist/sw.js に全部あるか」を見る。
+ * 目印(__BUILD_ASSETS__)が残ったままなら、書きこみが空振りしている。 */
+{
+  const distSw = read(join(P.distDir, 'sw.js'));
+  const distHtml = read(join(P.distDir, 'index.html'));
+  if (!distSw || !distHtml) {
+    skip('E8c', '圏外で起動できる（本体を先読みしている）', 'dist が無い。npm run build のあとに実行すること');
+  } else if (distSw.includes('__BUILD_ASSETS__')) {
+    ng('E8c', '圏外で起動できる（本体を先読みしている）', '目印が残っている＝ビルド時の書きこみが空振りしている');
+  } else {
+    const entry = [...distHtml.matchAll(/(?:src|href)="(\/[^"]*\/assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]);
+    const missing = entry.filter((u) => !distSw.includes(u));
+    check('E8c', '圏外で起動できる（本体を先読みしている）',
+      entry.length > 0 && missing.length === 0,
+      missing.length ? `先読みに無い: ${missing.join(' , ')}` : `本体 ${entry.length} 件を先読みしている`);
+  }
+}
 check('E7', '更新のお知らせを出している',
   /SKIP_WAITING/.test(sourceText) && /updatefound/.test(sourceText));
 check('E8', 'offline.html がある', has(P.offlineHtml));

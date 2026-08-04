@@ -294,11 +294,25 @@ export const SHOP_ITEMS = {
 };
 
 // ---- レアリティ & ガチャ ----
+//
+// color は「面(バッジの塗り)」用、on は「その面に載せる文字」用。
+// Part I §2-8 が言う「面用と文字用の2段階」である。
+//
+// もとは4色とも白文字を載せていたが、実ブラウザで測ると4色とも基準に届いていなかった。
+// バッジの文字は 8〜10px の font-black なので、大きな文字の緩和(3:1)も使えない。
+//
+//   レアリティ   塗り       白文字   → 黒文字(#111111)
+//   N          #9ca3af    2.54     → 7.44
+//   R          #3b82f6    3.68     → 5.13
+//   SR         #a855f7    3.96     → 4.77
+//   UR         #f59e0b    2.15     → 8.79
+//
+// 塗りの色は1つも変えていない。レアリティの色の印象は保ったまま、文字だけ濃くした。
 export const RARITY_INFO = {
-  N: { label: 'N', color: '#9ca3af' },
-  R: { label: 'R', color: '#3b82f6' },
-  SR: { label: 'SR', color: '#a855f7' },
-  UR: { label: 'UR', color: '#f59e0b' },
+  N: { label: 'N', color: '#9ca3af', on: '#111111' },
+  R: { label: 'R', color: '#3b82f6', on: '#111111' },
+  SR: { label: 'SR', color: '#a855f7', on: '#111111' },
+  UR: { label: 'UR', color: '#f59e0b', on: '#111111' },
 };
 // 明示指定(ガチャ限定品)がなければ価格から自動判定
 export const getRarity = (item) => item.rarity || (item.price >= 8000 ? 'UR' : item.price >= 3000 ? 'SR' : item.price >= 1000 ? 'R' : 'N');
