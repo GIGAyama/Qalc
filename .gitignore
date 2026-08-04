@@ -81,3 +81,6 @@ dist-ssr/
 *.njsproj
 *.sln
 *.sw?
+
+# 実測ツールの出力（測るたびに変わるので追わない）
+tools/measure/*-result.json

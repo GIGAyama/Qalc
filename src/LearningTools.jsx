@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useLightSurface } from './readableColor.js';
+import { useLightSurface, pickOn, TOOL_TEXT } from './readableColor.js';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Lightbulb, LayoutGrid, Cherry, PencilLine, Table2, Clock, Ruler, GlassWater, Circle,
@@ -1811,9 +1811,10 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx, onTo
              * 14〜18px で使っている場所が基準(4.5:1)に届いていなかった。
              *   明るい面  #c2410c (5.18) / #0369a1 (5.93)
              *   暗い面    #fb923c (8.34) / #38bdf8 (8.81)  ※#111111 の上での比 */
-            style={toolLightSurface
-              ? { '--tool-a': '#c2410c', '--tool-b': '#0369a1' }
-              : { '--tool-a': '#fb923c', '--tool-b': '#38bdf8' }}
+            style={{
+              '--tool-a': pickOn(TOOL_TEXT.a, toolLightSurface),
+              '--tool-b': pickOn(TOOL_TEXT.b, toolLightSurface),
+            }}
           >
             <div className="flex items-center gap-2 p-3 pb-2 shrink-0">
               <Lightbulb size={22} className="text-[var(--secondary-d)] shrink-0" />
