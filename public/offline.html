@@ -6,6 +6,18 @@
     <meta name="color-scheme" content="light" />
     <meta name="theme-color" content="#FF6B6B" />
     <title>Qalc | インターネットにつながっていません</title>
+    <!--
+      この画面にも CSP を入れてある。
+      以前は「もういちど ためす」をインラインの <script> で動かしていたため
+      script-src 'self' にできず、quality.config.json で例外として許可していた。
+      いまはボタンを <a href> にして JavaScript を1行も使っていないので、
+      例外を外して本体と同じ強さで閉じられる。
+
+      style-src に 'unsafe-inline' が残るのは、この画面の CSS を <style> で
+      直書きしているため。圏外で外部ファイルが取れないことがあるので、
+      1枚で完結させる必要がある（それがこの画面の存在意義でもある）。
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'" />
     <link rel="icon" type="image/png" href="/Qalc/favicon.png" />
     <!--
       圏外のときに出る画面。「壊れた」と思わせないことが目的なので、
@@ -65,20 +77,26 @@
         font-size: clamp(16px, 4vw, 18px);
         font-weight: 900;
         font-family: inherit;
-        color: var(--panel);
+        /* --primary(#FF6B6B) の上に白を載せると 2.78 しかない。
+           本体が --on-primary で使っている色にそろえる（6.80） */
+        color: #111111;
         background: var(--primary);
         border: 3px solid var(--text);
         border-radius: 16px;
         box-shadow: 3px 3px 0 var(--text);
         cursor: pointer;
         touch-action: manipulation;
+        text-decoration: none;   /* <a> なので下線を消す。見た目はボタンのまま */
       }
       .btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--text); }
       .btn:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
       .hint {
         margin-top: 18px;
         font-size: clamp(12px, 3.2vw, 13px);
-        opacity: 0.65;
+        /* 0.65 だと 3.82 しかなかった。12〜13px なので基準は 4.5:1。
+           「ホーム画面に置いておけば圏外でも使える」は、
+           まさにいま困っている人に向けた案内なので、薄くしてはいけない（Part I §2-8） */
+        opacity: 0.8;
       }
       @media (prefers-reduced-motion: reduce) {
         * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
@@ -96,25 +114,15 @@
         Wi-Fi が つながっているか たしかめてから、<br />
         下の ボタンを おしてね。
       </p>
-      <!-- この画面だけは CSP の meta を入れていない。
-           script-src 'self' にすると下のスクリプトが動かず、「もういちど ためす」が
-           ただの飾りになるため。このページは外から受けとる値をひとつも表示しないので、
-           差しこまれるものが無く、CSP を外しても危険が増えない。
-           本体(index.html)の CSP はそのまま効いている。 -->
-      <button class="btn" id="retry" type="button">もういちど ためす</button>
+      <!-- ボタンではなくリンクにしてある（Part I §3-4）。
+           圏外で、しかもアプリ本体が手元に無いときに出る画面なので、
+           JavaScript が動くことを当てにしない。
+           href をアプリの入口に向けておけば、押すだけで読み込み直しになる。 -->
+      <a class="btn" href="/Qalc/">もういちど ためす</a>
       <p class="hint">
         ホームがめんに Qalc を おいてあると、<br />
         つながっていなくても あそべます。
       </p>
     </main>
-    <script>
-      document.getElementById('retry').addEventListener('click', function () {
-        location.reload();
-      });
-      // つながり直したら、児童が押さなくても自動でもどる
-      window.addEventListener('online', function () {
-        location.replace('/Qalc/');
-      });
-    </script>
   </body>
 </html>

@@ -33,10 +33,6 @@
     {
       "id": "csp-style-unsafe-inline",
       "reason": "テーマ切りかえが動的な <style> を書き、framer-motion が style 属性を直接書きかえるため。外すとテーマとアニメーションが壊れる。script-src は 'self' のままで、実行できるコードは増えていない。"
-    },
-    {
-      "id": "offline-html-no-csp",
-      "reason": "public/offline.html だけ CSP の meta を入れていない。script-src 'self' にすると「もういちど ためす」ボタンが動かなくなるため。外から受けとる値を1つも表示しないページなので、差しこまれるものが無い。"
     }
   ]
 }

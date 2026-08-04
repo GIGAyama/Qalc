@@ -20,7 +20,7 @@
 // JS/CSS をキャッシュ優先で持つので、中身をかえたら必ずここを上げること
 // (上げわすれると、旧版を持った端末が新版のへやに入れず「アプリが古い」と言われつづける)
 const CACHE_PREFIX = 'qalc-cache-';
-const APP_VERSION = 'v4';
+const APP_VERSION = 'v5';
 
 // 版ごとに作りなおすもの（アプリの外枠）
 const CACHE_STATIC = CACHE_PREFIX + 'static-' + APP_VERSION;
