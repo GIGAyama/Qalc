@@ -54,7 +54,6 @@ window.__giga = (() => {
   /** 要素の実効背景。祖先をさかのぼって不透明になるまで重ねる。
    *  グラデーションがあれば、その色ぶんだけ候補を増やす（最悪値で判定する） */
   const backgroundsOf = (el) => {
-    let candidates = [null]; // null = まだ決まっていない
     let node = el;
     const layers = [];
     while (node && node !== document.documentElement.parentNode) {
@@ -91,8 +90,16 @@ window.__giga = (() => {
     return results.map((r) => [r[0], r[1], r[2], 1]);
   };
 
-  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{3030}\u{303D}\u{2049}\u{203C}]/u;
-  const isEmojiOnly = (t) => t.length > 0 && [...t].every((ch) => EMOJI.test(ch) || /\s/.test(ch));
+  /* 絵文字はフォント自身の色で描かれ、CSS の color が効かない。除外しないと誤報になる。
+   *
+   * 異体字セレクタ(U+FE0F)を文字クラスに混ぜない。
+   * 直前の文字とくっついて1文字として扱われるため、範囲指定に混ぜると
+   * 意図しない組み合わせを拾う（eslint の no-misleading-character-class が止める）。
+   * [...t] は符号位置ごとに分けるので、単独で来たものとして別に見ればよい。 */
+  const EMOJI_RANGES = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{3030}\u{303D}\u{2049}\u{203C}]/u;
+  const VARIATION_SELECTOR = '\uFE0F';
+  const isDecorative = (ch) => ch === VARIATION_SELECTOR || EMOJI_RANGES.test(ch);
+  const isEmojiOnly = (t) => t.length > 0 && [...t].every((ch) => isDecorative(ch) || /\s/.test(ch));
 
   const visible = (el) => {
     const cs = getComputedStyle(el);
