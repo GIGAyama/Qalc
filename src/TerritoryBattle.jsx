@@ -6,7 +6,7 @@ import { PupilName } from './presentation.jsx';
 // 決まりごと・計算は別ファイル
 import {
   TERRITORY_CONSTANTS, TEAMS, CELL_DEFS, TOTAL_VALUE, SPECIALS, LUCKY_EFFECTS,
-  computeScores, effectiveCost, remainingFor, isSelectable,
+  computeScores, effectiveCost, remainingFor, isSelectable, otherTeam, adjacentToTeam,
   TERRITORY_CHARACTER_NAME, territoryCharacterUrl, CHARACTER_MOODS,
 } from './battles/territoryLogic.js';
 
