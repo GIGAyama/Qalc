@@ -176,10 +176,17 @@ check('D10', 'prefers-reduced-motion に対応している', /prefers-reduced-mo
   if (!raw) ng('E1', 'manifest がある');
   else {
     const m = JSON.parse(raw);
-    const want = `/${cfg.repoName}/`;
-    check('E1', 'manifest の id/scope/start_url がリポジトリ名の絶対パス',
+    // 正しい値は「どこで配信するか」で変わる。
+    // 独自ドメイン（CNAME あり）だとアプリは qalc.giga-school.com の直下に置かれる。
+    // ここで /Qalc/ のままにすると scope がページの URL を含まなくなり、
+    // manifest ごと無視されて PWA としてインストールできなくなる。
+    // CNAME が無ければ従来どおり共有オリジンのサブディレクトリ配信なので、
+    // リポジトリ名の絶対パスでないと同居する別アプリと取り違えられる。
+    const hasCname = has('CNAME') || has('public/CNAME');
+    const want = hasCname ? './' : `/${cfg.repoName}/`;
+    check('E1', 'manifest の id/scope/start_url が配信場所と合っている',
       m.id === want && m.scope === want && m.start_url?.startsWith(want),
-      `id=${m.id} scope=${m.scope} start_url=${m.start_url}`);
+      `id=${m.id} scope=${m.scope} start_url=${m.start_url}（期待: ${want}）`);
     check('E1b', 'display_override と launch_handler がある',
       Array.isArray(m.display_override) && !!m.launch_handler);
     const purposes = (m.icons || []).map((i) => `${i.sizes}:${i.purpose}`);
@@ -235,7 +242,8 @@ check('E4', 'アプリ内にインストールの導線がある',
   } else if (distSw.includes('__BUILD_ASSETS__')) {
     ng('E8c', '圏外で起動できる（本体を先読みしている）', '目印が残っている＝ビルド時の書きこみが空振りしている');
   } else {
-    const entry = [...distHtml.matchAll(/(?:src|href)="(\/[^"]*\/assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]);
+    // base を相対パスにしたので参照は "./assets/…" になる。旧構成の "/Qalc/assets/…" も拾う。
+    const entry = [...distHtml.matchAll(/(?:src|href)="((?:\.\/|\/[^"]*\/)assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]);
     const missing = entry.filter((u) => !distSw.includes(u));
     check('E8c', '圏外で起動できる（本体を先読みしている）',
       entry.length > 0 && missing.length === 0,

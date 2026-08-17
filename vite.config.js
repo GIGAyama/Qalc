@@ -56,7 +56,9 @@ const injectPrecacheAssets = {
     if (!existsSync(swPath)) return
     const html = readFileSync(resolve(__dirnameLike, 'dist/index.html'), 'utf8')
     // index.html が直接読んでいるものだけを拾う（遅延読みこみの塊は入らない）
-    const urls = [...html.matchAll(/(?:src|href)="(\/Qalc\/assets\/[^"]+\.(?:js|css))"/g)]
+    // base を相対パスにしたので、参照は "./assets/…" になる。
+    // 旧構成（/Qalc/assets/…）の書き方も、取りこぼさないよう両方拾う。
+    const urls = [...html.matchAll(/(?:src|href)="((?:\.\/|\/Qalc\/)assets\/[^"]+\.(?:js|css))"/g)]
       .map((m) => m[1])
     const uniq = [...new Set(urls)]
     if (uniq.length === 0) throw new Error('index.html から本体の JS/CSS を見つけられなかった')
@@ -70,7 +72,7 @@ const injectPrecacheAssets = {
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react(), stripCspInDev, dropLegacyWoff, injectPrecacheAssets],
-  base: '/Qalc/',
+  base: './',
   build: {
     // フォントを data: URI に埋めこませない。
     // 小さいサブセットが CSS に埋まると font-src に data: を許可せねばならず、
