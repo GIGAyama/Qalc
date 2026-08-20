@@ -5,7 +5,7 @@
 import { chromium } from 'playwright';
 
 import { CHROME } from './env.mjs';
-const BASE = process.env.BASE || 'http://127.0.0.1:4180/Qalc/';
+const BASE = process.env.BASE || 'http://127.0.0.1:4180/';
 
 const browser = await chromium.launch({ executablePath: CHROME });
 const page = await browser.newPage();

@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 
 import { CHROME } from './env.mjs';
 const PORT = Number(process.env.PORT || 4181);
-const BASE = `http://127.0.0.1:${PORT}/Qalc/`;
+const BASE = `http://127.0.0.1:${PORT}/`;
 const DIST = new URL('../../dist/', import.meta.url).pathname;
 const SW = `${DIST}/sw.js`;
 
@@ -48,9 +48,9 @@ const browser = await chromium.launch({ executablePath: CHROME });
    * 同じオリジンに別アプリのキャッシュを置いてから版を上げ、残るかを見る */
   await page.evaluate(async () => {
     const c1 = await caches.open('townmap-static-v3');
-    await c1.put('/Qalc/favicon.png', new Response('よそのアプリのもの'));
+    await c1.put('/favicon.png', new Response('よそのアプリのもの'));
     const c2 = await caches.open('keisan-card-runtime-v1');
-    await c2.put('/Qalc/favicon.png', new Response('よそのアプリのもの'));
+    await c2.put('/favicon.png', new Response('よそのアプリのもの'));
   });
 
   // sw.js の版を上げて、更新を起こす
@@ -131,8 +131,8 @@ const browser = await chromium.launch({ executablePath: CHROME });
   await page.evaluate(async () => {
     for (const k of await caches.keys()) {
       const c = await caches.open(k);
-      await c.delete('/Qalc/index.html');
-      await c.delete('/Qalc/');
+      await c.delete('/index.html');
+      await c.delete('/');
     }
   });
   await ctx.setOffline(true);

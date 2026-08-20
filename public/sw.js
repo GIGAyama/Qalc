@@ -2,8 +2,10 @@
  * Qalc の Service Worker（Part I §3-3）
  *
  * 【重要1】activate では自アプリ以外のキャッシュを削除しない。
- *   gigayama.github.io は数十個の学習アプリが同じドメインを共有している。
- *   caches.keys() を全消しすると、他のアプリがオフラインで起動しなくなる。
+ *   いまは独自ドメイン qalc.giga-school.com がこのアプリ専用のオリジンだが、
+ *   旧配信元の gigayama.github.io は数十個の学習アプリが同じドメインを共有していた。
+ *   caches.keys() を全消しする書き方にすると、その形に戻したとたん
+ *   他のアプリがオフラインで起動しなくなる。
  *   だから CACHE_PREFIX で始まるものだけを掃除する。
  *
  * 【重要2】この Service Worker は localStorage を一切さわらない。
@@ -20,7 +22,7 @@
 // JS/CSS をキャッシュ優先で持つので、中身をかえたら必ずここを上げること
 // (上げわすれると、旧版を持った端末が新版のへやに入れず「アプリが古い」と言われつづける)
 const CACHE_PREFIX = 'qalc-cache-';
-const APP_VERSION = 'v5';
+const APP_VERSION = 'v6';
 
 // 版ごとに作りなおすもの（アプリの外枠）
 const CACHE_STATIC = CACHE_PREFIX + 'static-' + APP_VERSION;
@@ -45,18 +47,27 @@ const CACHE_RUNTIME = CACHE_PREFIX + 'runtime-v1';
  *   それらは実際に使われたときに runtime キャッシュへ入る。 */
 const BUILD_ASSETS = [/* __BUILD_ASSETS__ */];
 
+// ⚠️ リポジトリ名の絶対パス（旧 '/Qalc/…'）で書かない。
+//    独自ドメイン qalc.giga-school.com ではアプリがドメイン直下に置かれるので、
+//    そのパスには何も無く、先読みが1件残らず 404 になる。
+//    cache.add の失敗は握りつぶしているため警告しか出ず、
+//    「圏外で開くとまっ白」だけが静かに残る。
+//    sw.js は必ずアプリ直下に置かれるので、ここからの相対で書けば
+//    配信場所（ドメイン直下 / サブパス）が変わっても追随する。
 const SHELL = [
-  '/Qalc/',
-  '/Qalc/index.html',
-  '/Qalc/offline.html',
-  '/Qalc/manifest.webmanifest',
-  '/Qalc/pwa-install.js',
-  '/Qalc/favicon.png',
-  '/Qalc/icon-192.png',
-  '/Qalc/icon-512.png',
-  '/Qalc/icon-maskable-192.png',
-  '/Qalc/icon-maskable-512.png',
-  '/Qalc/apple-touch-icon.png',
+  './',
+  './index.html',
+  './offline.html',
+  './manifest.webmanifest',
+  './pwa-install.js',
+  './records-export.html',
+  './records-export.js',
+  './favicon.png',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-192.png',
+  './icon-maskable-512.png',
+  './apple-touch-icon.png',
   ...BUILD_ASSETS,
 ];
 
@@ -100,8 +111,12 @@ self.addEventListener('fetch', (event) => {
       try {
         return await fetch(request);
       } catch (e) {
-        return (await caches.match('/Qalc/index.html'))
-          || (await caches.match('/Qalc/offline.html'))
+        // 圏外。まず「開こうとした画面そのもの」を探す。
+        // これを飛ばして index.html から返すと、圏外では
+        // 利用規約を開いてもアプリが出る、という妙な動きになる。
+        return (await caches.match(request))
+          || (await caches.match('./index.html'))
+          || (await caches.match('./offline.html'))
           || Response.error();
       }
     })());

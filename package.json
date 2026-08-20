@@ -1,42 +1,43 @@
 {
-    "name": "multi-qalc",
-    "private": true,
-    "version": "0.0.0",
-    "type": "module",
-    "scripts": {
-        "dev": "vite",
-        "build": "vite build",
-        "lint": "eslint .",
-        "preview": "vite preview",
-        "test:studylog": "node scripts/studyLog.test.mjs",
-        "test:room": "node scripts/roomAccess.test.mjs",
-        "test": "npm run test:studylog && npm run test:room && npm run test:battle",
-        "check": "node scripts/check-project.mjs && node scripts/check-contrast.mjs",
-        "check:contrast": "node scripts/check-contrast.mjs",
-        "test:battle": "node scripts/battleLogic.test.mjs",
-        "measure": "node tools/measure/all.mjs"
-    },
-    "dependencies": {
-        "@fontsource/zen-maru-gothic": "^5.3.0",
-        "canvas-confetti": "^1.9.4",
-        "framer-motion": "^12.43.0",
-        "lucide-react": "^1.28.0",
-        "peerjs": "^1.5.5",
-        "qrcode": "^1.5.4",
-        "react": "^19.2.8",
-        "react-dom": "^19.2.8"
-    },
-    "devDependencies": {
-        "@types/react": "^19.2.17",
-        "@types/react-dom": "^19.2.3",
-        "@vitejs/plugin-react": "^4.2.1",
-        "autoprefixer": "^10.4.19",
-        "eslint": "^8.57.0",
-        "eslint-plugin-react": "^7.34.1",
-        "eslint-plugin-react-hooks": "^4.6.0",
-        "eslint-plugin-react-refresh": "^0.4.6",
-        "postcss": "^8.4.38",
-        "tailwindcss": "^3.4.3",
-        "vite": "^5.2.0"
-    }
+  "name": "multi-qalc",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test:studylog": "node scripts/studyLog.test.mjs",
+    "test:room": "node scripts/roomAccess.test.mjs",
+    "test": "npm run test:studylog && npm run test:room && npm run test:battle && npm run test:records",
+    "check": "node scripts/check-project.mjs && node scripts/check-contrast.mjs",
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "test:battle": "node scripts/battleLogic.test.mjs",
+    "measure": "node tools/measure/all.mjs",
+    "test:records": "node scripts/recordsExport.test.mjs"
+  },
+  "dependencies": {
+    "@fontsource/zen-maru-gothic": "^5.3.0",
+    "canvas-confetti": "^1.9.4",
+    "framer-motion": "^12.43.0",
+    "lucide-react": "^1.28.0",
+    "peerjs": "^1.5.5",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.19",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.1",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.6",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "vite": "^5.2.0"
+  }
 }

@@ -1,5 +1,7 @@
-// dist/ を GitHub Pages と同じ /Qalc/ の下に置いて配る。
-// 本番と同じ絶対パス（/Qalc/sw.js など）で測るために必要。
+// dist/ を本番と同じ「ドメイン直下」で配る。
+// 独自ドメイン qalc.giga-school.com ではアプリがドメイン直下に置かれるので、
+// ここを旧構成の /Qalc/ の下にすると、本番では 404 になるパスが
+// 測定環境でだけ通ってしまい、壊れているのに「合格」と出る。
 import http from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
@@ -22,11 +24,8 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
-  if (!p.startsWith('/Qalc/')) {
-    if (p === '/Qalc') { res.writeHead(302, { Location: '/Qalc/' }); return res.end(); }
-    res.writeHead(404); return res.end('outside scope');
-  }
-  let rel = p.slice('/Qalc/'.length);
+  if (!p.startsWith('/')) { res.writeHead(404); return res.end('outside scope'); }
+  let rel = p.slice(1);
   if (rel === '' || rel.endsWith('/')) rel += 'index.html';
   const file = join(ROOT, rel);
   if (!file.startsWith(ROOT) || !existsSync(file) || !statSync(file).isFile()) {
@@ -45,4 +44,4 @@ const server = http.createServer((req, res) => {
   res.end(body);
 });
 
-server.listen(PORT, () => console.log(`serving ${ROOT} at http://127.0.0.1:${PORT}/Qalc/`));
+server.listen(PORT, () => console.log(`serving ${ROOT} at http://127.0.0.1:${PORT}/`));

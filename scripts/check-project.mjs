@@ -189,6 +189,29 @@ check('D10', 'prefers-reduced-motion に対応している', /prefers-reduced-mo
       `id=${m.id} scope=${m.scope} start_url=${m.start_url}（期待: ${want}）`);
     check('E1b', 'display_override と launch_handler がある',
       Array.isArray(m.display_override) && !!m.launch_handler);
+
+    // manifest だけ直しても、Service Worker の登録先と先読み一覧が
+    // 旧構成のリポジトリ名の絶対パス（/Qalc/…）のままだと、
+    // 登録も先読みも全件 404 になる。どちらも失敗を握りつぶす作りなので、
+    // 画面にもコンソールにも何も出ないまま
+    // 「オフラインで開けない・インストールできない」だけが静かに残る。
+    // 実際にこの形で残っていたので、機械で見張る。
+    if (hasCname) {
+      const stale = `/${cfg.repoName}/`;
+      // ⚠️ 判定の前にコメントを落とすこと。
+      //    落とさないと、この決まりを説明したコメント自身
+      //    （「旧 '/Qalc/sw.js' で書かない」）に反応して落ちる。
+      //    正しく直して理由を書き残したファイルほど落ちるという、
+      //    いちばん困る形になる。offline.html のぶんは HTML コメントも落とす。
+      const stripAll = (src) => stripComments(src).replace(/<!--[\s\S]*?-->/g, ' ');
+      const offenders = [P.serviceWorker, 'src/pwa.jsx', P.offlineHtml]
+        .map((f) => [f, stripAll(read(f) || '')])
+        .filter(([, src]) => src.includes(`'${stale}`) || src.includes(`"${stale}`))
+        .map(([f]) => f);
+      check('E1c', 'SW の登録先と先読みがリポジトリ名の絶対パスになっていない',
+        offenders.length === 0,
+        offenders.length ? `${stale} が残っている: ${offenders.join(' , ')}` : `${stale} は残っていない`);
+    }
     const purposes = (m.icons || []).map((i) => `${i.sizes}:${i.purpose}`);
     check('E2a', 'アイコン4種が manifest にある',
       ['192x192:any', '512x512:any', '192x192:maskable', '512x512:maskable']

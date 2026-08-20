@@ -8,7 +8,7 @@ await ctx.addInitScript(INPAGE);
 await ctx.addInitScript(() => { window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ← ' + e.blockedURI)); });
 const p = await ctx.newPage();
 const js = []; p.on('pageerror', e => js.push(String(e))); p.on('console', m => { if (m.type() === 'error') js.push(m.text()); });
-await p.goto(`${BASE_ORIGIN}/Qalc/offline.html`, { waitUntil: 'networkidle' });
+await p.goto(`${BASE_ORIGIN}/offline.html`, { waitUntil: 'networkidle' });
 await p.waitForTimeout(600);
 const r = await p.evaluate(() => ({ c: window.__giga.contrast(), t: window.__giga.tapTargets(), o: window.__giga.overflow(), csp: window.__csp }));
 console.log('コントラスト不足', r.c.bad.length, '/ タップ44px未満', r.t.bad.length, '/ 横スクロール', r.o.wide.length ? 'あり' : 'なし', '/ CSP違反', r.csp.length, '/ JSエラー', js.length);
