@@ -20,7 +20,7 @@ npm run measure
 個別に走らせることもできる。
 
 ```bash
-node tools/measure/serve.mjs dist 4180   # dist を /Qalc/ の下に配る（別の端末で）
+node tools/measure/serve.mjs dist 4180   # dist をドメイン直下に配る（別の端末で）
 node tools/measure/routes.mjs            # 画面ごとの表示（W/H で画面幅を変える）
 node tools/measure/offline.mjs           # 圏外ページ
 node tools/measure/icons.mjs             # アイコンを画素で数える
@@ -66,6 +66,6 @@ CI が遅くなるうえ、校内から使うわけでもないものを全員�
 
 ## 測れないもの
 
-- 本番（`gigayama.github.io`）での挙動。作業環境から到達できない
+- 本番（`qalc.giga-school.com`）での挙動。作業環境から到達できない
 - `wss://0.peerjs.com` を使う「みんなであそぶ」の本編。入口までは測れる
 - 記録が無いと出ない画面（きろく）

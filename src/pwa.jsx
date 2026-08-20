@@ -55,7 +55,13 @@ export function registerServiceWorker() {
     //    「登録」と「更新の案内」を1か所にまとめようとすると自然にその移動が起きるので、
     //    先に分岐を入れておく。
     const start = () => {
-        navigator.serviceWorker.register('/Qalc/sw.js').then((reg) => {
+        // ⚠️ 登録先をリポジトリ名の絶対パス（旧 '/Qalc/sw.js'）で書かない。
+        //    独自ドメイン qalc.giga-school.com ではアプリがドメイン直下に置かれるので、
+        //    そのパスには何も無く、register が 404 で落ちる。
+        //    catch で握りつぶしているため画面にもコンソールにも何も出ず、
+        //    「オフラインで開けない・インストールできない」だけが静かに残る。
+        //    ページからの相対で書けば、配信場所が変わっても追随する。
+        navigator.serviceWorker.register('./sw.js').then((reg) => {
             // 前回のうちに新しい版が入って、待機したまま閉じられていた場合
             if (reg.waiting && navigator.serviceWorker.controller) announceUpdate(reg.waiting);
 

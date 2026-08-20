@@ -8,7 +8,7 @@ import { chromium } from 'playwright';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { CHROME } from './env.mjs';
-const BASE = process.env.BASE || 'http://127.0.0.1:4180/Qalc/';
+const BASE = process.env.BASE || 'http://127.0.0.1:4180/';
 const INPAGE = readFileSync(new URL('./inpage.js', import.meta.url), 'utf8');
 const W = Number(process.env.W || 375);
 const H = Number(process.env.H || 667);

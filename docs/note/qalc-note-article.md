@@ -12,7 +12,7 @@
 
 そこで、まるごと作り直しました。今度はコピーも公開設定もいりません。アドレスを開けば、それだけで始まります。そして今回は、鉛筆が止まった子が自分で開ける「考えるための図」を、二十五種類用意しました。
 
-https://gigayama.github.io/Qalc/
+https://qalc.giga-school.com/
 
 ## 📱 このアプリでできること
 
@@ -184,7 +184,7 @@ https://gigayama.github.io/Qalc/
 
 今回はコピーも公開設定もありません。次のアドレスを子どもたちの端末で開くだけです。
 
-https://gigayama.github.io/Qalc/
+https://qalc.giga-school.com/
 
 そのうえで、二つだけ確認していただけると安心です。
 

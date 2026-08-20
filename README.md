@@ -6,7 +6,7 @@
 
 ## デモ
 
-https://gigayama.github.io/Qalc/
+https://qalc.giga-school.com/
 
 ## 3行でわかる Qalc
 
@@ -292,13 +292,13 @@ GIGA山の学習アプリ群で共通の形式（**スキーマ版 `study.v1` / 
 
 | ホスト | 用途 | ブロックした場合 |
 |--------|------|------------------|
-| `gigayama.github.io` | アプリ本体の配信 | アプリが開けない |
+| `qalc.giga-school.com` | アプリ本体の配信 | アプリが開けない |
 | `0.peerjs.com` | みんなであそぶ（へやの番号のやりとり） | **みんなであそぶだけが使えなくなる** |
 | `stun.l.google.com` / `eu-0.turn.peerjs.com` / `us-0.turn.peerjs.com` | みんなであそぶ（端末同士のつなぎ役） | 環境によってつながらない |
 
 みんなであそぶを使わせない運用にする場合は、**`0.peerjs.com` をブロックすればひとりで遊ぶモードだけに限定できる**。
 
-**ひとりで遊ぶだけなら、必要な通信は `gigayama.github.io` のみ。** JavaScript（PeerJS・QRCode・Canvas Confetti）と本文フォント（Zen Maru Gothic）はすべて同梱しており、外部CDNやGoogleへの通信は発生しない。フォントは unicode-range でサブセットに分かれているため、画面に出た文字ぶんだけ（ホーム画面なら14ファイル程度）が落ちてきて Service Worker にキャッシュされる。2回目以降は通信ゼロ、オフラインでも本来の書体で表示される。
+**ひとりで遊ぶだけなら、必要な通信は `qalc.giga-school.com` のみ。** JavaScript（PeerJS・QRCode・Canvas Confetti）と本文フォント（Zen Maru Gothic）はすべて同梱しており、外部CDNやGoogleへの通信は発生しない。フォントは unicode-range でサブセットに分かれているため、画面に出た文字ぶんだけ（ホーム画面なら14ファイル程度）が落ちてきて Service Worker にキャッシュされる。2回目以降は通信ゼロ、オフラインでも本来の書体で表示される。
 
 ### 受けとったデータの検証
 
@@ -330,13 +330,15 @@ P2P で届くメッセージは、開発者ツールから改造した端末な�
 - `qalc-cache-static-<版>` … アプリの外枠（`index.html` / `offline.html` / アイコン / manifest）。版を上げると作りなおす
 - `qalc-cache-runtime-v1` … ファイル名にハッシュが付いた JS / CSS / フォント。中身が変わればファイル名も変わるので版をまたいで残す
 
-**`activate` では `qalc-cache-` で始まるキャッシュしか消さない。** `gigayama.github.io` は複数のアプリが同一オリジンを共有しているため、`caches.keys()` を全消しすると他のアプリがオフラインで起動しなくなる。
+**`activate` では `qalc-cache-` で始まるキャッシュしか消さない。** いまは `qalc.giga-school.com` がこのアプリ専用のオリジンだが、旧配信元の `gigayama.github.io` は複数のアプリが同一オリジンを共有していた。`caches.keys()` を全消しする書き方にすると、その形に戻したとたん他のアプリがオフラインで起動しなくなる。
 
 `install` で `skipWaiting()` は**しない**。新しい版は待機させ、児童が「さいしんに する」を押したときだけ `SKIP_WAITING` を受けて入れかわる（計算のとちゅうで勝手に切りかわらないように）。
 
 ## 📲 PWA
 
-`public/manifest.webmanifest` の `id` / `scope` / `start_url` は、すべて `/Qalc/` の**絶対パス**にしてある。`gigayama.github.io` は数十個のアプリが同一オリジンを共有しているため、これを省略すると別アプリと取り違えられて「開いたら違うアプリが立ち上がる」事故が起きる。**このリポジトリをコピーして新しいアプリを作るときは、まずこの3つを書きかえること。**
+`public/manifest.webmanifest` の `id` / `scope` / `start_url` は、すべて **`"./"`** にしてある。独自ドメイン `qalc.giga-school.com` ではアプリがドメイン直下に置かれるためで、旧構成の `/Qalc/` のような**リポジトリ名の絶対パスに戻すと、`scope` がページの URL を含まなくなり PWA としてインストールできなくなる**。
+
+同じ理由で、**Service Worker の登録先（`src/pwa.jsx`）と `public/sw.js` の先読み一覧も、リポジトリ名の絶対パスで書いてはいけない**。実際にここが `/Qalc/sw.js` と `/Qalc/…` のまま残っており、登録も先読みも全件 404 になっていた。どちらも失敗を握りつぶす作りなので、画面には何も出ないまま「オフラインで開けない・インストールできない」だけが残る。`npm run check` の `E1c` がこれを見るようにしてある。
 
 | ファイル | 役割 |
 |---|---|

@@ -3,7 +3,7 @@
  *
  *   npm run build && npm run measure
  *
- * dist/ を本番と同じ /Qalc/ の下に配ってから、Chromium を実際に起動して測る。
+ * dist/ を本番と同じドメイン直下に配ってから、Chromium を実際に起動して測る。
  * 静的に読むだけでは分からないものだけを、ここに置いてある。
  */
 import { spawn } from 'node:child_process';
