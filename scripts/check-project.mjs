@@ -243,7 +243,10 @@ check('E4', 'アプリ内にインストールの導線がある',
     const filtersByPrefix = /startsWith\(\s*CACHE_PREFIX/.test(sw) || /startsWith\(['"][\w-]+-['"]\)/.test(sw);
     check('E5', 'sw.js が自アプリ接頭辞のキャッシュだけを消す', filtersByPrefix);
     check('E6', 'sw.js が localStorage にさわっていない', !/localStorage/.test(stripComments(sw)));
-    check('E9', 'sw.js に APP_VERSION がある', /APP_VERSION/.test(sw));
+    // 版は手で上げず tools/build-sw.mjs がビルド後に dist/sw.js を書き換える
+    // （手動運用は 2026-08-21 に全リポジトリで上げ忘れる事故を起こした）
+    check('E9', 'sw.js の版が自動生成の形になっている',
+      /APP_VERSION = '[^']*'; \/\* __APP_VERSION__ \*\//.test(sw) && has('tools/build-sw.mjs'));
     check('E8b', 'sw.js が offline.html をキャッシュしている', /offline\.html/.test(sw));
   }
 }
@@ -262,8 +265,8 @@ check('E4', 'アプリ内にインストールの導線がある',
   const distHtml = read(join(P.distDir, 'index.html'));
   if (!distSw || !distHtml) {
     skip('E8c', '圏外で起動できる（本体を先読みしている）', 'dist が無い。npm run build のあとに実行すること');
-  } else if (distSw.includes('__BUILD_ASSETS__')) {
-    ng('E8c', '圏外で起動できる（本体を先読みしている）', '目印が残っている＝ビルド時の書きこみが空振りしている');
+  } else if (distSw.includes("APP_VERSION = 'dev'")) {
+    ng('E8c', '圏外で起動できる（本体を先読みしている）', "dist の版が 'dev' のまま＝build-sw が走っていない");
   } else {
     // base を相対パスにしたので参照は "./assets/…" になる。旧構成の "/Qalc/assets/…" も拾う。
     const entry = [...distHtml.matchAll(/(?:src|href)="((?:\.\/|\/[^"]*\/)assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]);

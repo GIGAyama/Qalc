@@ -1,0 +1,11 @@
+{
+  "distDir": "dist",
+  "maxBytes": 1048576,
+  "assetsFromIndexHtml": true,
+  "precache": [
+    "index.html", "offline.html", "manifest.webmanifest", "pwa-install.js",
+    "records-export.html", "records-export.js",
+    "favicon.png", "icon-192.png", "icon-512.png",
+    "icon-maskable-192.png", "icon-maskable-512.png", "apple-touch-icon.png"
+  ]
+}
