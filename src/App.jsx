@@ -3867,7 +3867,7 @@ export default function App() {
             {/* outline-none を外した。キーボードだけで操作している人に、
                 いまここにフォーカスがあることが見えなくなっていたため（Part I §4）。
                 inline-flex + min-h で押しどころも 44px を確保する（Part I §2-9） */}
-            <a href="https://note.com/cute_borage86" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] inline-flex items-center justify-center min-h-[44px] px-2 align-middle">
+            <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] inline-flex items-center justify-center min-h-[44px] px-2 align-middle">
               GIGA山
             </a>
           </p>

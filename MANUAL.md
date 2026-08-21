@@ -295,4 +295,4 @@ Safari には自動のボタンがないので、手で追加します。
 
 ---
 
-困ったときは [GIGA山](https://note.com/cute_borage86) まで。
+困ったときは [GIGA山](https://giga-school.com) まで。
