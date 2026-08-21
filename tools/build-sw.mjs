@@ -65,6 +65,7 @@ const all = walk(DIST);
 const wanted = all.filter((p) => {
   const rel = relative(DIST, p).split('\\').join('/');
   if (rel === 'sw.js') return false; // 自分自身は入れない
+  if (rel.endsWith('.map')) return false; // ソースマップは重いだけで表示に要らない
   return matches(rel);
 });
 
