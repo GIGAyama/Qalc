@@ -1,5 +1,27 @@
 {
   "files": [
-    { "canonical": "sw/build-sw-vite.mjs", "local": "tools/build-sw.mjs" }
+    {
+      "canonical": "sw/build-sw-vite.mjs",
+      "local": "tools/build-sw.mjs"
+    },
+    {
+      "canonical": "records/records-export.js",
+      "local": "public/records-export.js",
+      "normalize": [
+        "app-id"
+      ]
+    },
+    {
+      "canonical": "records/records-hub-client.js",
+      "local": "public/records-hub-client.js"
+    },
+    {
+      "canonical": "records/records-export.test.mjs",
+      "local": "tests/records-export.test.mjs",
+      "normalize": [
+        "app-id",
+        "records-export-import"
+      ]
+    }
   ]
 }
