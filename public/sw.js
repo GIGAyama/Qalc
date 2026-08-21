@@ -19,10 +19,10 @@
  */
 
 // 版を上げると古いキャッシュが捨てられ、新しい成果物が配られる。
-// JS/CSS をキャッシュ優先で持つので、中身をかえたら必ずここを上げること
-// (上げわすれると、旧版を持った端末が新版のへやに入れず「アプリが古い」と言われつづける)
+// APP_VERSION は手で上げない。tools/build-sw.mjs がビルド後に dist/sw.js の
+// この行を、先読み対象の内容ハッシュで書き換える（原本のここは 'dev' のまま）。
 const CACHE_PREFIX = 'qalc-cache-';
-const APP_VERSION = 'v7';
+const APP_VERSION = 'dev'; /* __APP_VERSION__ */
 
 // 版ごとに作りなおすもの（アプリの外枠）
 const CACHE_STATIC = CACHE_PREFIX + 'static-' + APP_VERSION;
@@ -30,46 +30,25 @@ const CACHE_STATIC = CACHE_PREFIX + 'static-' + APP_VERSION;
 // 中身が変わればファイル名も変わるので、古いものが誤って使われることはない
 const CACHE_RUNTIME = CACHE_PREFIX + 'runtime-v1';
 
-/* ビルドで作られる本体の JS と CSS。中身は vite.config.js が書きこむ。
+/* 先読み一覧。tools/build-sw.mjs がビルド後に dist/ の実体から埋める
+ * （静的ファイルは sw-build.config.json、本体の JS/CSS は dist/index.html の参照から拾う）。
  *
- * 【なぜ要るか】これが無いと、1回しか開いていない端末は圏外で起動できない。
+ * 【なぜ本体を入れるか】これが無いと、1回しか開いていない端末は圏外で起動できない。
  *   はじめて開いたとき、ブラウザは <script> と <link> を Service Worker より
  *   先に取りにいく。そのときページはまだ Service Worker の管理下に入っていないので、
  *   fetch のハンドラを素通りし、runtime キャッシュに1件も入らない。
- *   そのまま圏外になると、index.html はキャッシュから出るのに
- *   本体の JS が取れず、**まっ白な画面**になる。
- *   実測でも qalc-cache-runtime-v1 が作られないまま
- *   assets/index-*.js が ERR_FAILED になった。
+ *   そのまま圏外になると index.html はキャッシュから出るのに本体の JS が取れず、
+ *   **まっ白な画面**になる。
  *
  * 【なぜ本体だけか】遅延読みこみの塊（ボスバトル・じんとり・がくしゅうどうぐ）と
  *   フォントはここに入れない。先読みが重くなると、校内 Wi-Fi に40人が
  *   ぶら下がっている時間帯に初回表示が止まる（Part I §6）。
- *   それらは実際に使われたときに runtime キャッシュへ入る。 */
-const BUILD_ASSETS = [/* __BUILD_ASSETS__ */];
-
-// ⚠️ リポジトリ名の絶対パス（旧 '/Qalc/…'）で書かない。
-//    独自ドメイン qalc.giga-school.com ではアプリがドメイン直下に置かれるので、
-//    そのパスには何も無く、先読みが1件残らず 404 になる。
-//    cache.add の失敗は握りつぶしているため警告しか出ず、
-//    「圏外で開くとまっ白」だけが静かに残る。
-//    sw.js は必ずアプリ直下に置かれるので、ここからの相対で書けば
-//    配信場所（ドメイン直下 / サブパス）が変わっても追随する。
-const SHELL = [
-  './',
-  './index.html',
-  './offline.html',
-  './manifest.webmanifest',
-  './pwa-install.js',
-  './records-export.html',
-  './records-export.js',
-  './favicon.png',
-  './icon-192.png',
-  './icon-512.png',
-  './icon-maskable-192.png',
-  './icon-maskable-512.png',
-  './apple-touch-icon.png',
-  ...BUILD_ASSETS,
-];
+ *   それらは実際に使われたときに runtime キャッシュへ入る。
+ *
+ * ⚠️ リポジトリ名の絶対パス（旧 '/Qalc/…'）で書かない。
+ *    独自ドメインではアプリがドメイン直下に置かれるため、そのパスは 404 になる。
+ *    build-sw.mjs は sw.js からの相対（'./…'）で埋めるので、配信場所が変わっても追随する。 */
+const PRECACHE_URLS = []; /* __PRECACHE_URLS__ */
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -77,7 +56,7 @@ self.addEventListener('install', (event) => {
     // addAll は1本でも取れないと全部が失敗する。
     // 校内Wi-Fiが混んでいる時間だと1本だけ落ちることがあり、そのたびにインストールごと
     // 失敗して「オフラインで起動しない」状態になっていた。1本ずつ入れて、落ちたものは飛ばす
-    await Promise.all(SHELL.map((url) =>
+    await Promise.all(PRECACHE_URLS.map((url) =>
       cache.add(new Request(url, { cache: 'reload' }))
         .catch((err) => console.warn('[sw] precache skipped', url, err))
     ));
