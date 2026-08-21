@@ -1,9 +1,4 @@
 import { defineConfig } from 'vite'
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const __dirnameLike = dirname(fileURLToPath(import.meta.url))
 import react from '@vitejs/plugin-react'
 
 // 開発サーバ(npm run dev)では index.html の CSP を外す。
