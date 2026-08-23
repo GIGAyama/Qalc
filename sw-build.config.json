@@ -5,6 +5,8 @@
   "precache": [
     "index.html",
     "offline.html",
+    "privacy.html",
+    "terms.html",
     "manifest.webmanifest",
     "pwa-install.js",
     "records-export.html",
