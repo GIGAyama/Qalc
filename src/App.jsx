@@ -3870,6 +3870,12 @@ export default function App() {
             <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] inline-flex items-center justify-center min-h-[44px] px-2 align-middle">
               GIGA山
             </a>
+            {/* このアプリを先に見つけた人が、使い方を読みたくなったときに戻れる先。
+                上の GIGA山 はトップに行くので、そこからだと 38 本の中から
+                探し直すことになる。押しどころは上と同じく 44px を確保する。 */}
+            <a href="https://giga-school.com/apps/qalc/" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] inline-flex items-center justify-center min-h-[44px] px-2 align-middle">
+              使い方を読む
+            </a>
           </p>
         </footer>
       )}
