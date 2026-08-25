@@ -31,5 +31,15 @@
         "records-export-import"
       ]
     }
+  ],
+  "dirs": [
+    {
+      "canonical": "skills/devlog-article",
+      "local": ".claude/skills/devlog-article"
+    },
+    {
+      "canonical": "skills/note-article",
+      "local": ".claude/skills/note-article"
+    }
   ]
 }
