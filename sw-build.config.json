@@ -5,6 +5,7 @@
   "precache": [
     "index.html",
     "offline.html",
+    "giga-app-links.js",
     "privacy.html",
     "terms.html",
     "manifest.webmanifest",

@@ -3858,25 +3858,40 @@ export default function App() {
 
       {view !== 'game' && (
         <footer
-          className="w-full bg-[var(--panel)] border-t-[3px] border-[var(--text)] pt-3 pb-2 text-center text-sm text-[var(--text)] font-bold shrink-0 z-50 transition-colors duration-500"
+          className="w-full bg-[var(--panel)] border-t-[3px] border-[var(--text)] py-0 text-center text-sm text-[var(--text)] font-bold shrink-0 z-50 transition-colors duration-500"
           // iPhone のホームバーに文字が重ならないようにする（Part I §2-3）
           style={{ paddingBottom: 'calc(0.5rem + var(--safe-b))' }}
         >
-          <p>
-            © {new Date().getFullYear()} Qalc
-            {/* outline-none を外した。キーボードだけで操作している人に、
-                いまここにフォーカスがあることが見えなくなっていたため（Part I §4）。
-                inline-flex + min-h で押しどころも 44px を確保する（Part I §2-9） */}
-            <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] inline-flex items-center justify-center min-h-[44px] px-2 align-middle">
-              GIGA山
-            </a>
-            {/* このアプリを先に見つけた人が、使い方を読みたくなったときに戻れる先。
-                上の GIGA山 はトップに行くので、そこからだと 38 本の中から
-                探し直すことになる。押しどころは上と同じく 44px を確保する。 */}
-            <a href="https://giga-school.com/apps/qalc/" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] inline-flex items-center justify-center min-h-[44px] px-2 align-middle">
-              使い方を読む
-            </a>
-          </p>
+          {/* ⚠️ 1 行に収める。flex-nowrap と min-w-0 の 2 つが要る。nowrap だけだと、
+              クレジットの文字列が縮まずに列を押し広げて横スクロールになる。
+              狭い画面ではクレジットが … で切れる。 */}
+          <div className="flex flex-nowrap items-center justify-center gap-1">
+            <span className="min-w-0 truncate">
+              © {new Date().getFullYear()} Qalc
+              {/* outline-none を外した。キーボードだけで操作している人に、
+                  いまここにフォーカスがあることが見えなくなっていたため（Part I §4）。
+                  inline-flex + min-h で押しどころも 44px を確保する（Part I §2-9） */}
+              <a href="https://giga-school.com" target="_blank" rel="noopener noreferrer" className="ml-1 text-[var(--text)] inline-flex items-center justify-center min-h-[44px] px-2 align-middle">
+                GIGA山
+              </a>
+            </span>
+            {/* ⚠️ 行き先のリンクを手で書かないこと。中身は正本の部品
+                standards/web/giga-app-links.js（配布物 public/giga-app-links.js）が
+                この中に出す。文言も並びも行き先も、あちらで決まっている。
+                押しどころは部品の側で 48px を確保している（ここの 44px より広い）。
+
+                ⚠️ ここにあった「使い方を読む」（紹介記事へのリンク）は外した。
+                   紹介記事は「なぜ作ったか」を、まだ使っていない先生に向けて
+                   書いたもので、いま画面の前で困っている人が求めるものではない。
+                   艦隊のほかのアプリでも既に外れている。
+
+                ⚠️ <div> にしないこと。そこで改行が入ってフッターが 2 行になる。
+
+                ⚠️ data-links で「つかいかた」を外してある。このアプリにはまだ
+                   docs/manual/ が無く、既定のまま出すと行き止まりのリンクになる。
+                   マニュアルを書いたら、この属性ごと消すこと。 */}
+            <span data-giga-links data-links="terms,privacy" />
+          </div>
         </footer>
       )}
 
