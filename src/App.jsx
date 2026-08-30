@@ -69,6 +69,28 @@ import { getRandomMissions } from './data/missions.js';
 // 使い方: <R k="漢" r="かん" /> は1文字用。複数文字は直接rubyタグで書く。
 const R = ({ c, r }) => <ruby>{c}<rt>{r}</rt></ruby>;
 
+/* 助数詞は、前の数で音が変わるものがある。一律に 1 つのよみを出していると、
+   ふりがなを頼りに声に出す子が、そのまま まちがえて読む。
+
+   ⚠️ 数字にはルビを乗せられない（「1」に「いっ」は乗らない）ので、
+      一の位で子音だけ選ぶ。「10分」は じゅう＋ぷん でちょうど合い、
+      「1分」は いち＋ぷん と、正しい いっぷん のすぐそばに着地する。
+      「ふん」のままだと「いちふん」——日本語に無い音になる。 */
+const FUN = ['ぷん', 'ぷん', 'ふん', 'ぷん', 'ぷん', 'ふん', 'ぷん', 'ふん', 'ぷん', 'ふん'];
+const funOf = (n) => {
+  const v = Math.abs(Math.trunc(Number(n))) || 0;
+  return v === 0 ? 'ふん' : FUN[v % 10];
+};
+/** 「◯分」。前の数で ふん／ぷん を選ぶ */
+const RFun = ({ n }) => <R c="分" r={funOf(n)} />;
+
+/* 「人」は 1 と 2 だけ、数と切りはなして読めない（ひとり・ふたり）。
+   数字の側に「ひと」「ふた」を乗せられないので、その 2 つは数ごと包む。
+   3 以上は さんにん・よにん…と「にん」で通るので、これまでどおり。 */
+const RNin = ({ n }) => (n === 1 || n === 2
+  ? <ruby>{n}人<rt>{n === 1 ? 'ひとり' : 'ふたり'}</rt></ruby>
+  : <>{n}<R c="人" r="にん" /></>);
+
 // ==========================================
 // 1. サウンド & ハプティック(振動) エンジン
 // ==========================================
@@ -809,7 +831,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
               <div className="text-[10px] font-bold text-[var(--text)] opacity-80 ruby-text"><R c="回" r="かい" />あそんだ</div>
             </div>
             <div className="bg-[var(--bg)] rounded-xl border-2 border-[var(--text)] p-2 text-center">
-              <div className="text-2xl font-black text-[var(--secondary-d)]">{study.summary.minutes}<span className="text-xs ml-0.5 ruby-text"><R c="分" r="ふん" /></span></div>
+              <div className="text-2xl font-black text-[var(--secondary-d)]">{study.summary.minutes}<span className="text-xs ml-0.5 ruby-text"><RFun n={study.summary.minutes} /></span></div>
               <div className="text-[10px] font-bold text-[var(--text)] opacity-80 ruby-text"><R c="集" r="しゅう" /><R c="中" r="ちゅう" />した<R c="時" r="じ" /><R c="間" r="かん" /></div>
             </div>
             <div className="bg-[var(--bg)] rounded-xl border-2 border-[var(--text)] p-2 text-center">
@@ -992,7 +1014,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
     <div className="flex flex-col h-[85vh] gap-4">
       <div className="flex justify-between items-center bg-[var(--panel)] p-3 rounded-2xl border-[3px] border-[var(--text)] shrink-0 shadow-sm">
         <h3 className="font-black text-xl flex items-center gap-2 text-[var(--text)]"><Users size={24} className="text-[var(--secondary-d)]" /> みんなのへや</h3>
-        <div className="font-bold bg-[var(--secondary)] text-white px-3 py-1 rounded-full border-2 border-[var(--text)]">{Object.keys(peerState.participants).length} <R c="人" r="にん" /></div>
+        <div className="font-bold bg-[var(--secondary)] text-white px-3 py-1 rounded-full border-2 border-[var(--text)]"><RNin n={Object.keys(peerState.participants).length} /></div>
       </div>
 
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-5 flex flex-col gap-6 overflow-y-auto flex-grow shadow-sm">
@@ -1061,7 +1083,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
                   const count = members.length + (hostTeam === team ? 1 : 0);
                   return (
                     <div key={team} className="rounded-xl border-[3px] p-2 min-h-[88px]" style={{ borderColor: TEAMS[team].color, background: TEAMS[team].soft }}>
-                      <div className="font-black text-xs mb-1.5" style={{ color: pickOn(TEAM_TEXT[team], roomLightSurface) }}>{TEAMS[team].label}チーム（{count}<R c="人" r="にん" />）</div>
+                      <div className="font-black text-xs mb-1.5" style={{ color: pickOn(TEAM_TEXT[team], roomLightSurface) }}>{TEAMS[team].label}チーム（<RNin n={count} />）</div>
                       <div className="flex flex-wrap gap-1.5">
                         {hostTeam === team && (
                           <button onClick={toggleHostTeam} className="text-[11px] font-black bg-[var(--panel)] border-2 border-[var(--text)] rounded-full px-2 py-0.5 active:scale-95">👑 リーダー</button>
@@ -1089,7 +1111,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
 
         {(configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') && (
           <div className="shrink-0 mb-2">
-            <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
+            <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <RFun n={time} /></span></label>
             <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full slider-44" />
           </div>
         )}
@@ -1654,7 +1676,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
 
         {configMode === 'SCORE_ATTACK' && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-            <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <R c="分" r="ふん" /></span></label>
+            <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <RFun n={time} /></span></label>
             <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full slider-44" />
           </motion.div>
         )}
