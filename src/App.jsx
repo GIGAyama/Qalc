@@ -70,7 +70,7 @@ import {
 import { getRandomMissions } from './data/missions.js';
 // 出題順をまぜる。sort(() => Math.random() - 0.5) は かたよる（random.js の説明）
 import { shuffle } from './random.js';
-import { normalizeStats, normalizeMistakes, normalizeResume } from './statsStore.js';
+import { normalizeStats, normalizeMistakes, normalizeResume, dateKey, addDays, rolloverDay, currentStreak } from './statsStore.js';
 // コースの共有コード・CSV 取りこみ・「テンキーで打てる答えか」の検査（node でテストしている）
 import {
   encodeCourse, decodeCourse, parseProblemText, validateProblems, uniqueCourseName,
@@ -248,7 +248,7 @@ const isCourseMastered = (stats, name) => !!(stats.courseStats && stats.courseSt
 const computeRewardDecay = (stats, courseNames, session) => {
   const real = realCoursesOf(courseNames);
   if (real.length === 0) return { mult: 1, masteredApplied: false, repeatPlays: 0, repeatMult: 1 };
-  const today = new Date().toLocaleDateString();
+  const today = dateKey();
   const counts = (stats.repeat && stats.repeat.date === today) ? stats.repeat.counts : {};
   // 複数ドリル選択時は「いちばん周回されているコース」に合わせる（稼ぎコースに新規1つ混ぜる抜け道の防止）
   const repeatPlays = Math.max(...real.map(n => counts[n] || 0));
@@ -265,7 +265,7 @@ const computeRewardDecay = (stats, courseNames, session) => {
 const recordCourseSession = (stats, courseNames, session) => {
   const real = realCoursesOf(courseNames);
   if (real.length === 0) return { newlyMastered: null };
-  const today = new Date().toLocaleDateString();
+  const today = dateKey();
   if (!stats.repeat || stats.repeat.date !== today) stats.repeat = { date: today, counts: {} };
   const { attempts, acc } = sessionAccuracy(session);
   if (attempts >= DECAY.MIN_ATTEMPTS_FOR_REPEAT) {
@@ -319,39 +319,39 @@ const StorageAPI = {
       legacy.lastDate = window.localStorage.getItem('qalc_last_date');
     } catch (e) { /* 読めない端末 */ }
     // 壊れた・古い形の成績でも、読めたものは残して はじめの値でうめる（statsStore.js）
-    const stats = normalizeStats(StorageAPI.safeGet('qalc_stats'), legacy);
-    const todayStr = new Date().toLocaleDateString();
-    if (!stats.missions || stats.missions.date !== todayStr) {
-      stats.missions = {
-        date: todayStr,
-        list: getRandomMissions(3, stats.streak || 0)
-      };
-    }
-    // 周回カウントは日替わりでリセット
-    if (!stats.repeat || stats.repeat.date !== todayStr) stats.repeat = { date: todayStr, counts: {} };
+    // 日がかわっていたら、その日のミッションと周回の数をはじめる
+    const stats = StorageAPI.rollover(normalizeStats(StorageAPI.safeGet('qalc_stats'), legacy));
     StorageAPI.safeSet('qalc_stats', stats);
     return stats;
+  },
+  // 日がかわっていたら、ミッションと周回の数をその日のものにする（変わっていなければ同じものを返す）。
+  // 受けとりわすれた前の日のミッションのコインは、なくさずに わたして知らせる
+  rollover: (stats) => {
+    const { stats: next, autoClaimed } = rolloverDay(stats, dateKey(), () => getRandomMissions(3, stats.streak || 0));
+    if (autoClaimed > 0) showToast('success', `うけとりわすれた ミッションの コイン +${autoClaimed}`);
+    return next;
   },
   saveStats: (stats) => StorageAPI.safeSet('qalc_stats', stats),
 
   // missionPlayCredit: 減衰の強いセッションはミッションの「あそぶ系」進捗に数えない（省略時は playCount と同じ）
-  updateDailyAndMissions: (stats, exp, combo, playCount, gameMode, correctCount, missionPlayCredit = playCount) => {
-    const today = new Date().toLocaleDateString();
-    if (!stats.daily) stats.daily = {};
-    if (!stats.daily[today]) stats.daily[today] = { exp: 0, count: 0 };
-    stats.daily[today].exp += exp;
-    stats.daily[today].count += playCount;
+  // 前の stats の中身（daily・missions）は書きかえず、写しを作ってから足す（React の前の状態をこわさない）
+  updateDailyAndMissions: (statsIn, exp, combo, playCount, gameMode, correctCount, missionPlayCredit = playCount) => {
+    const today = dateKey();
+    // 遊んでいるあいだに日がかわっても、きょうのミッションに数える
+    const stats = { ...StorageAPI.rollover(statsIn) };
+    const day = { exp: 0, count: 0, ...(stats.daily || {})[today] };
+    day.exp += exp;
+    day.count += playCount;
+    stats.daily = { ...(stats.daily || {}), [today]: day };
     stats.totalExp = (stats.totalExp || 0) + exp;
 
     if (stats.lastDate !== today) {
-      if (stats.lastDate) {
-        const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-        if (stats.lastDate === yesterday.toLocaleDateString()) stats.streak += 1; else stats.streak = 1;
-      } else stats.streak = 1;
+      stats.streak = stats.lastDate === addDays(today, -1) ? (stats.streak || 0) + 1 : 1;
       stats.lastDate = today;
     }
 
     if (stats.missions && stats.missions.date === today) {
+      stats.missions = { ...stats.missions, list: stats.missions.list.map(m => ({ ...m })) };
       stats.missions.list.forEach(m => {
         if (m.type === 'play' && !m.claimed) m.current += missionPlayCredit;
         if (m.type === 'combo' && !m.claimed && combo > m.current) m.current = combo;
@@ -791,11 +791,14 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
   // 満たす色は存在しない（readableColor.js に理由を書いた）
   const lightSurface = useLightSurface(stats.theme);
   const rankColor = pickOn(RANK_TEXT[title] ?? { light: 'var(--text)', dark: 'var(--text)' }, lightSurface);
+  const today = dateKey();
   const chartData = Array.from({ length: 7 }).map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i));
-    const dayData = stats.daily[d.toLocaleDateString()] || { exp: 0 };
-    return { label: `${d.getDate()}日`, exp: dayData.exp };
+    const key = addDays(today, -(6 - i));
+    const dayData = stats.daily[key] || { exp: 0 };
+    return { label: `${Number(key.slice(8))}日`, exp: dayData.exp };
   });
+  // 最後に遊んだ日が きのうより前なら、連続日数はもう切れている（以前は次に遊ぶまで前の数を出していた）
+  const streak = currentStreak(stats, today);
   const maxExp = Math.max(...chartData.map(d => d.exp), 500);
 
   // 学習ログ(study.v1)のふりかえり。読み出し専用で、ここから書きかえは行わない
@@ -829,9 +832,9 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
       {/* Profile Card */}
       <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-4 relative">
         <div className="absolute top-3 right-3 flex items-center gap-2">
-          {(stats.streak || 0) > 0 && (
+          {streak > 0 && (
             <div className="flex items-center gap-1 font-black text-sm text-[var(--on-primary)] bg-[var(--primary)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm" title="連続学習日数">
-              <Flame size={16} /> {stats.streak}<span className="text-[10px]">日</span>
+              <Flame size={16} /> {streak}<span className="text-[10px]">日</span>
             </div>
           )}
           <div className="flex items-center gap-1 font-black text-sm text-[var(--on-accent)] bg-[var(--accent)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm"><Coins size={16} /> {stats.coins}</div>
@@ -1736,7 +1739,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
 
   // マスター済みコースと今日の周回状況（選ぶ前に「減るよ」を知らせるための情報）
   const masteredSet = new Set(Object.keys(stats?.courseStats || {}).filter(n => stats.courseStats[n].mastered));
-  const todayCounts = (stats?.repeat && stats.repeat.date === new Date().toLocaleDateString()) ? stats.repeat.counts : {};
+  const todayCounts = (stats?.repeat && stats.repeat.date === dateKey()) ? stats.repeat.counts : {};
   const realSelected = realCoursesOf(selectedGroups);
   const allSelectedMastered = realSelected.length > 0 && realSelected.every(n => masteredSet.has(n));
   const maxRepeatPlays = realSelected.length > 0 ? Math.max(...realSelected.map(n => todayCounts[n] || 0)) : 0;
@@ -3088,6 +3091,37 @@ export default function App() {
   const [state, setState] = useState({ problemSet: [], timeLimitSec: 0, courseName: '', finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0, gameMode: 'SCORE_ATTACK', mistakes: [] });
   const [stats, setStats] = useState(() => StorageAPI.getStats());
   const [resumeData, setResumeData] = useState(() => StorageAPI.getResume());
+
+  // タブを開いたまま日がかわったら、ミッションと周回の数をその日のものにする。
+  // 以前はアプリを開いたときにしか日をたしかめず、前の日のミッションが残ったまま遊んでも進まなかった。
+  // 画面にもどったとき・真夜中ちょうど（タブを開いたまま）に たしかめる
+  const statsRef = useRef(stats);
+  useEffect(() => { statsRef.current = stats; }, [stats]);
+  useEffect(() => {
+    let timer = null;
+    const check = () => {
+      const prev = statsRef.current;
+      const next = StorageAPI.rollover(prev);
+      if (next !== prev) { StorageAPI.saveStats(next); statsRef.current = next; setStats(next); }
+    };
+    const armMidnight = () => {
+      clearTimeout(timer);
+      const now = new Date();
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 2);
+      timer = setTimeout(() => { check(); armMidnight(); }, next - now);
+    };
+    const onVisible = () => { if (!document.hidden) { check(); armMidnight(); } };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    window.addEventListener('pageshow', onVisible);
+    armMidnight();
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      window.removeEventListener('pageshow', onVisible);
+    };
+  }, []);
   // 提示モードと「えんしゅつをへらす」の状態。framer-motion にも伝える
   const { reduceFx } = usePresentation();
 
