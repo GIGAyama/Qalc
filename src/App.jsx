@@ -10,7 +10,7 @@ import {
   VolumeX, ArrowLeftRight, Share2, BarChart3, Trophy, User,
   Gamepad2, Swords, Timer, Download, HeartCrack, Coins,
   Store, CheckCircle2, PaintBucket, Shirt, Users, Radio,
-  Lightbulb
+  Lightbulb, RotateCcw, ClipboardList, Link2
 } from 'lucide-react';
 // どの「かんがえるどうぐ」を出すかの判定（detect.js）は、ゲームの画面でしか使わない。
 // 最初に読みこむ JS には入れず、アプリを開いて少ししてから・ゲームに入るときに取りにいく（Part I §5）。
@@ -75,6 +75,7 @@ import { getRandomMissions, missionProfile } from './data/missions.js';
 import { shuffle } from './random.js';
 import { normalizeStats, normalizeMistakes, normalizeResume, dateKey, addDays, rolloverDay, currentStreak } from './statsStore.js';
 import { DECAY, realCoursesOf, computeRewardDecay, recordCourseSession, masteryPace } from './mastery.js';
+import { normalizePlayConfig, decodeKadai, encodeKadai, kadaiUrl, readKadaiHash, kadaiId, KADAI_TITLE_MAX } from './kadai.js';
 // コースの共有コード・CSV 取りこみ・「テンキーで打てる答えか」の検査（node でテストしている）
 import {
   encodeCourse, decodeCourse, parseProblemText, validateProblems, uniqueCourseName,
@@ -215,6 +216,9 @@ const resumeProblems = (problemSet, qIndex, gameMode) => {
   for (let i = 0; i < RESUME_PROBLEM_WINDOW; i++) out.push(problemSet[(qIndex + i) % problemSet.length]);
   return { problemSet: out, qIndex: 0 };
 };
+
+// プリセットのドリルか（かだいリンクで、問題を入れずに名前だけで出せるか）
+const isPresetCourse = (name) => Object.prototype.hasOwnProperty.call(getParsedDefaultProblems(), name);
 
 // 旧データを新しい形へ移したのに保存できなかったとき、開いているあいだだけ使う写し
 let userCoursesCache = null;
@@ -360,6 +364,25 @@ const StorageAPI = {
     if (ok) userCoursesCache = null;
     return ok;
   },
+
+  // さっきと おなじ: 前回ひとりで遊んだ設定（モード・ドリル・時間・ランダム）。保存できなくても遊べる
+  getLastPlay: () => normalizePlayConfig(StorageAPI.safeGet('qalc_last_play', null)),
+  saveLastPlay: (config) => StorageAPI.safeSet('qalc_last_play', config, { quiet: true }),
+
+  // かだいリンクで受けとった かだい（いちどに1つ）。リンクの文字のまま持ち、読むたびに形をたしかめる
+  getKadai: () => {
+    const raw = StorageAPI.safeGet('qalc_kadai', null);
+    if (!raw || typeof raw.code !== 'string') return null;
+    const k = decodeKadai(raw.code, isPresetCourse);
+    return k ? { ...k, code: raw.code, id: kadaiId(raw.code), doneCount: Number.isFinite(raw.doneCount) ? raw.doneCount : 0 } : null;
+  },
+  saveKadai: (code, doneCount = 0) => StorageAPI.safeSet('qalc_kadai', { code, doneCount, receivedAt: Date.now() }, { quiet: true }),
+  markKadaiDone: (id) => {
+    const raw = StorageAPI.safeGet('qalc_kadai', null);
+    if (!raw || typeof raw.code !== 'string' || kadaiId(raw.code) !== id) return;
+    StorageAPI.safeSet('qalc_kadai', { ...raw, doneCount: (Number.isFinite(raw.doneCount) ? raw.doneCount : 0) + 1 }, { quiet: true });
+  },
+  clearKadai: () => { try { window.localStorage.removeItem('qalc_kadai'); } catch (e) { /* ignore */ } },
 
   // 再開できない形の中断データ（古い版・壊れたもの）は消して、ホームに「つづきから」を出さない
   getResume: () => {
@@ -811,7 +834,7 @@ const GlobalStyle = React.memo(({ theme }) => {
 GlobalStyle.displayName = 'GlobalStyle';
 
 // --- ホーム画面 ---
-const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeData, onResume, onDiscardResume }) => {
+const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeData, onResume, onDiscardResume, lastPlay, onReplay, kadai, onStartKadai, onCloseKadai }) => {
   const { level, title, badge, progress, nextLevelExp } = getLevelInfo(stats.totalExp);
   // ランクの色は面(--panel)の明るさで選び分ける。
   // もとは1色だけを文字に使っていたが、明るい面と暗い面の両方で 4.5:1 を
@@ -827,6 +850,18 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
   // 最後に遊んだ日が きのうより前なら、連続日数はもう切れている（以前は次に遊ぶまで前の数を出していた）
   const streak = currentStreak(stats, today);
   const maxExp = Math.max(...chartData.map(d => d.exp), 500);
+
+  // さっきと おなじ: 前回の設定のうち、いまもあるドリルだけで（ぜんぶ消えていたら出さない）
+  const replay = useMemo(() => {
+    if (!lastPlay) return null;
+    const names = new Set(StorageAPI.getProblemGroups().map(g => g.name));
+    const hasMistakes = StorageAPI.getMistakes().length > 0;
+    const courses = lastPlay.courses.filter(n => (n === 'mistakes' ? hasMistakes : names.has(n)));
+    return courses.length ? { ...lastPlay, courses } : null;
+  }, [lastPlay]);
+  // 同じ日のくりかえしで EXP が へるときは、ボタンにも出す（設定画面では始める前に出している）
+  const replayPlays = replay && stats.repeat && stats.repeat.date === today
+    ? Math.max(0, ...realCoursesOf(replay.courses).map(n => stats.repeat.counts[n] || 0)) : 0;
 
   // 学習ログ(study.v1)のふりかえり。読み出し専用で、ここから書きかえは行わない
   const study = useMemo(() => {
@@ -885,6 +920,21 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
         <div className="text-right w-full text-[10px] font-bold text-[var(--text)] opacity-80 mt-1">NEXT: {Math.floor(nextLevelExp - stats.totalExp)} pt</div>
       </div>
 
+      {/* かだいリンクで受けとった かだい */}
+      {kadai && (
+        <section aria-label="かだい" className="w-full bg-[var(--panel)] border-[4px] border-[var(--secondary)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-4 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-black text-[var(--text)] flex items-center gap-2 min-w-0"><ClipboardList size={20} className="shrink-0" aria-hidden="true" /> <span className="truncate">かだい{kadai.title ? `：${kadai.title}` : ''}</span></h3>
+            <button type="button" onClick={onCloseKadai} className="tap-44 shrink-0 text-[var(--text)] text-xs font-bold border-2 border-[var(--text)] rounded-lg px-2 py-1 bg-[var(--bg)]">しまう</button>
+          </div>
+          <div className="text-sm font-bold text-[var(--text)] leading-tight break-words">{describePlay(kadai)}</div>
+          {kadai.doneCount > 0 && <div className="text-xs font-black text-[var(--secondary-d)]">✓ {kadai.doneCount}かい やったよ</div>}
+          <MotionButton className="bg-[var(--secondary)] text-[var(--on-secondary)] w-full py-3 text-lg border-[3px] border-[var(--text)]" onClick={onStartKadai}>
+            <Rocket size={20} /> はじめる
+          </MotionButton>
+        </section>
+      )}
+
       {resumeData && (
         <div className="w-full bg-[var(--accent)] border-[4px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-4 flex flex-col gap-2">
           <div className="flex items-center justify-between">
@@ -917,6 +967,14 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
           <Swords size={28} className="text-[var(--primary-d)]" /> <span className="text-xs leading-tight">サドン<br />デス</span>
         </MotionButton>
       </div>
+
+      {/* さっきと おなじ: 前回ひとりで遊んだ設定（モード・ドリル・時間・ランダム）で、すぐ始める */}
+      {replay && (
+        <MotionButton className="bg-[var(--secondary)] text-[var(--on-secondary)] w-full py-3 border-[3px] border-[var(--text)] flex-col gap-0.5 h-auto" onClick={() => onReplay(replay)}>
+          <span className="flex items-center gap-2 text-lg"><RotateCcw size={20} aria-hidden="true" /> さっきと おなじ</span>
+          <span className="text-xs font-bold max-w-full truncate px-2">{describePlay(replay)}{replayPlays >= 2 ? `（きょう ${replayPlays + 1}かいめ）` : ''}</span>
+        </MotionButton>
+      )}
 
       {/* マルチプレイ ボタン */}
       <div className="w-full flex flex-col gap-2">
@@ -1761,9 +1819,83 @@ const collectProblems = (names) => {
 };
 const joinCourseNames = (names) => names.map(n => n === 'mistakes' ? 'にがて克服ボックス' : n).join('、');
 
+// ひとりで遊ぶゲームの状態を、設定と問題から作る（設定画面・さっきと おなじ・かだいリンクで共通）。
+// playConfig を持たせておき、結果画面の「もういちど」で同じ設定をもう一度はじめる
+const buildSoloState = (config, problems, extra = {}) => {
+  let probs = problems;
+  if (probs.length === 0) return null;
+  if (config.shuffle) probs = shuffle(probs);
+  if (config.mode === 'TIME_ATTACK') probs = probs.slice(0, 20);
+  return {
+    timeLimitSec: config.mode === 'SCORE_ATTACK' ? config.minutes * 60 : 0,
+    problemSet: probs.map(p => ({ q: p.q, a: String(p.a).split('|') })),
+    courseName: joinCourseNames(config.courses),
+    courseNames: [...config.courses],
+    gameMode: config.mode,
+    playConfig: config,
+    ...extra,
+  };
+};
+
+// 設定を、ボタンや かだいの カードに出す短いことばにする（例: 「タイム・2年_九九 ほか1」）
+const MODE_SHORT = { SCORE_ATTACK: 'スコア', TIME_ATTACK: 'タイム', SUDDEN_DEATH: 'サドンデス' };
+const describePlay = (config) => {
+  const names = config.courses.map(n => (n === 'mistakes' ? 'にがて克服ボックス' : n));
+  const head = names.length > 1 ? `${names[0]} ほか${names.length - 1}` : names[0];
+  return `${MODE_SHORT[config.mode]}・${head}${config.mode === 'SCORE_ATTACK' ? `・${config.minutes}ふん` : ''}`;
+};
+
+// かだいリンクを作るダイアログ（先生むけ）。えらんだモード・ドリル・時間をリンクと QR にする。
+// プリセットは名前だけ、自作のドリルと書きかえたプリセットは問題ごとリンクに入れる（kadai.js）。
+// 中身（説明・QR・コピー）は先生しか使わないので、開いたときに取りにいく（KadaiLinkBody.jsx）
+const KadaiLinkBody = lazy(() => import('./KadaiLinkBody.jsx'));
+const KadaiLinkDialog = ({ config, groups, onClose }) => {
+  const [title, setTitle] = useState('');
+  const dialogRef = useModalFocus(true);
+  // にがて克服ボックスは その子の まちがいなので、かだいには入れない
+  const coursesKey = config.courses.filter(n => n !== 'mistakes').join('\n');
+  const courses = useMemo(() => (coursesKey ? coursesKey.split('\n') : []), [coursesKey]);
+  const url = useMemo(() => {
+    const custom = {};
+    for (const n of courses) {
+      const g = groups.find(x => x.name === n);
+      if (g && (!g.preset || g.edited)) custom[n] = StorageAPI.getProblemsByGroup(n);
+    }
+    const code = encodeKadai({ title, mode: config.mode, courses, minutes: config.minutes, shuffle: config.shuffle, custom });
+    return kadaiUrl(`${window.location.origin}${window.location.pathname}`, code);
+  }, [title, courses, config.mode, config.minutes, config.shuffle, groups]);
+
+  const copy = async () => {
+    audioCtrl.playSE('click');
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('success', 'リンクを コピーしました');
+    } catch (e) {
+      showToast('warning', 'コピーできませんでした。下の リンクを えらんで コピーしてください');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="かだいリンク" className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-5 w-full max-w-md max-h-[90dvh] overflow-y-auto flex flex-col gap-3 [&>*]:shrink-0">
+        <Suspense fallback={<p className="text-sm font-bold text-[var(--text)] text-center py-6">よみこみ中…</p>}>
+          <KadaiLinkBody
+            url={url} title={title} setTitle={setTitle} titleMax={KADAI_TITLE_MAX}
+            summary={`${describePlay({ ...config, courses: courses.length ? courses : config.courses })}${config.shuffle ? '' : '・じゅんばんどおり'}`}
+            droppedMistakes={courses.length < config.courses.length}
+            onCopy={copy} onClose={() => { audioCtrl.playSE('click'); onClose(); }}
+            Button={MotionButton} dpr={canvasDpr()}
+          />
+        </Suspense>
+      </div>
+    </div>
+  );
+};
+
 // --- 設定・スタート画面 ---
-const SingleConfigView = ({ setView, setState, configMode, stats }) => {
+const SingleConfigView = ({ setView, configMode, stats, onStart }) => {
   const [groups, setGroups] = useState([]); const [selectedGroups, setSelectedGroups] = useState([]); const [time, setTime] = useState(3); const [isShuffle, setIsShuffle] = useState(true); const [selectedGrade, setSelectedGrade] = useState('すべて');
+  const [kadaiOpen, setKadaiOpen] = useState(false);
   const grades = ['すべて', '1年', '2年', '3年', '4年', '5年', '6年', 'その他'];
   const mistakesCount = StorageAPI.getMistakes().length;
 
@@ -1786,21 +1918,17 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
 
   useEffect(() => { const list = StorageAPI.getProblemGroups(); if (mistakesCount > 0) list.unshift({ name: 'mistakes', count: mistakesCount, displayName: '★ にがて克服ボックス' }); setGroups(list); }, []);
 
+  // いま えらんでいる設定（スタート・かだいリンクで使う）
+  const config = { mode: configMode, courses: [...selectedGroups], minutes: Number(time), shuffle: isShuffle };
   const start = () => {
     if (selectedGroups.length === 0) return showToast('warning', 'ドリルを選んでください');
-    let probs = collectProblems(selectedGroups);
-    if (probs.length === 0) return showToast('error', '問題がありません');
-    if (isShuffle) probs = shuffle(probs);
-    if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
-
-    setState({
-      timeLimitSec: configMode === 'SCORE_ATTACK' ? time * 60 : 0,
-      problemSet: probs.map(p => ({ q: p.q, a: String(p.a).split('|') })),
-      courseName: joinCourseNames(selectedGroups),
-      courseNames: [...selectedGroups],
-      gameMode: configMode
-    });
-    setView('game');
+    onStart(config);
+  };
+  const openKadai = () => {
+    audioCtrl.playSE('click');
+    if (selectedGroups.length === 0) return showToast('warning', 'ドリルを選んでください');
+    if (selectedGroups.every(n => n === 'mistakes')) return showToast('warning', 'にがて克服ボックスは かだいに できません');
+    setKadaiOpen(true);
   };
 
   return (
@@ -1855,9 +1983,12 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
 
         <div className="mt-2 space-y-3">
           <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-4 text-xl border-[3px] border-[var(--text)]" onClick={start}><Gamepad2 size={24} /> スタート！</MotionButton>
+          {/* かだいリンク（先生むけ）: この設定を リンクと QR にして こどもに わたす */}
+          <button type="button" className="tap-44 w-full flex items-center justify-center gap-2 font-bold text-sm text-[var(--text)] border-2 border-dashed border-[var(--text)] rounded-xl py-2 bg-[var(--bg)]" onClick={openKadai}><Link2 size={18} aria-hidden="true" /> この せっていで かだいリンクを つくる</button>
           <button className="tap-44 text-[var(--text)] opacity-80 font-bold text-sm py-2 w-full hover:opacity-100 transition" onClick={() => { audioCtrl.playSE('click'); setView('home') }}>もどる</button>
         </div>
       </div>
+      {kadaiOpen && <KadaiLinkDialog config={config} groups={groups} onClose={() => setKadaiOpen(false)} />}
     </div>
   );
 };
@@ -2301,6 +2432,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
     setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp, earnedCoins, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, decayInfo: { mult: decay.mult, mastered: decay.masteredApplied, repeatPlays: decay.repeatPlays, baseExp, newlyMastered: masteryResult.newlyMastered }, ...(raidResult ? { raidResult } : {}), ...(territoryResult ? { territoryResult } : {}) }));
 
+    // かだいリンクの かだいを やりおえたら、やった回数を数える（ホームのカードに出す）
+    if (state.kadaiId) StorageAPI.markKadaiDone(state.kadaiId);
+
     if (isResumedSessionRef.current) {
       StorageAPI.clearResume();
       if (setResumeData) setResumeData(null);
@@ -2691,7 +2825,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 };
 
 // --- リザルト画面 (おさらいレポート付き) ---
-const ResultView = ({ state, setView, peerState, leaveRoom }) => {
+const ResultView = ({ state, setView, peerState, leaveRoom, onReplay, onStartKadai }) => {
   const oldExp = state.previousExp || 0; const earnedExp = state.earnedExp || 0; const newExp = oldExp + earnedExp;
   const oldInfo = getLevelInfo(oldExp); const newInfo = getLevelInfo(newExp);
   const mistakes = state.mistakes || [];
@@ -2875,9 +3009,17 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
             </MotionButton>
           </div>
         ) : (
-          <MotionButton className="bg-[var(--text)] w-full py-4 text-[var(--panel)] text-xl border-[3px] border-[var(--text)]" onClick={() => setView('home')}>
-            <Home size={24} /> ホームへもどる
-          </MotionButton>
+          <div className="flex flex-col gap-3">
+            {/* さっきと おなじ: いま終わったのと同じ設定で、もう一度（かだいなら、かだいを もう一度） */}
+            {(state.kadaiId || state.playConfig) && (
+              <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-4 text-xl border-[3px] border-[var(--text)] ruby-text" onClick={() => (state.kadaiId ? onStartKadai() : onReplay(state.playConfig))}>
+                <RotateCcw size={22} /> もう<R c="一" r="いち" />ど（さっきと おなじ）
+              </MotionButton>
+            )}
+            <MotionButton className="bg-[var(--text)] w-full py-4 text-[var(--panel)] text-xl border-[3px] border-[var(--text)]" onClick={() => setView('home')}>
+              <Home size={24} /> ホームへもどる
+            </MotionButton>
+          </div>
         )}
       </div>
     </div>
@@ -3190,6 +3332,67 @@ export default function App() {
   // 提示モードと「えんしゅつをへらす」の状態。framer-motion にも伝える
   const { reduceFx } = usePresentation();
 
+  // さっきと おなじ: 前回ひとりで遊んだ設定。ゲームを始めるたびに覚えなおす
+  const [lastPlay, setLastPlay] = useState(() => StorageAPI.getLastPlay());
+  // かだいリンクで受けとった かだい（ホームにカードを出す）
+  const [kadai, setKadai] = useState(() => StorageAPI.getKadai());
+
+  // 設定からゲームを始める（設定画面・さっきと おなじ・結果画面の「もういちど」）
+  const startSolo = (config) => {
+    const next = buildSoloState(config, collectProblems(config.courses));
+    if (!next) { showToast('error', '問題がありません'); return; }
+    setState(next);
+    setView('game');
+    StorageAPI.saveLastPlay(config);
+    setLastPlay(config);
+  };
+
+  // かだいを始める。プリセットは もとの問題（この端末で書きかえていても使わない）、自作はリンクに入っていた問題
+  const startKadai = () => {
+    const k = StorageAPI.getKadai() || kadai;
+    if (!k) return;
+    const presets = getParsedDefaultProblems();
+    const problems = k.courses.flatMap(n => k.custom[n] || presets[n] || []);
+    const next = buildSoloState(k, problems, { kadaiId: k.id });
+    if (!next) { showToast('error', '問題がありません'); return; }
+    setState(next);
+    setView('game');
+  };
+
+  const closeKadai = () => {
+    audioCtrl.playSE('click');
+    StorageAPI.clearKadai();
+    setKadai(null);
+    showToast('success', 'かだいを しまいました。リンクを ひらくと また でます');
+  };
+
+  // かだいリンク（…/#kadai=…）を開いたら、かだいを受けとる。開いたままリンクを開きなおしたとき（hashchange）も。
+  // 「#」から後ろはサーバーへ送られない。受けとったら URL から消す（再読みこみで二重に受けとらない）
+  useEffect(() => {
+    const take = () => {
+      const code = readKadaiHash(window.location.hash);
+      if (!code) return;
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      const k = decodeKadai(code, isPresetCourse);
+      if (!k) { showToast('error', 'かだいリンクを よみこめませんでした。せんせいに しらせてね', { duration: 7000 }); return; }
+      const id = kadaiId(code);
+      const prev = StorageAPI.getKadai();
+      const doneCount = prev && prev.id === id ? prev.doneCount : 0;
+      StorageAPI.saveKadai(code, doneCount);
+      // 保存できない端末でも、開いているあいだは使えるようにする
+      setKadai(StorageAPI.getKadai() || { ...k, code, id, doneCount });
+      showToast('success', 'かだいを うけとりました。ホームの「はじめる」から できるよ');
+    };
+    take();
+    window.addEventListener('hashchange', take);
+    return () => window.removeEventListener('hashchange', take);
+  }, []);
+
+  // ホームにもどったら、やった回数を読みなおす（保存できない端末では、手もとの かだいを そのまま使う）
+  useEffect(() => {
+    if (view === 'home') setKadai(k => (k ? (StorageAPI.getKadai() || k) : StorageAPI.getKadai()));
+  }, [view]);
+
   const resumeGame = () => {
     const data = StorageAPI.getResume();
     if (!data) return;
@@ -3199,6 +3402,8 @@ export default function App() {
       courseName: data.courseName || '',
       courseNames: data.courseNames || [],
       gameMode: data.gameMode || 'SCORE_ATTACK',
+      // 結果画面の「もういちど」用。中断データにはランダムかどうかが無いので、ランダムにする
+      playConfig: normalizePlayConfig({ mode: data.gameMode, courses: data.courseNames, minutes: Math.round((data.timeLimitSec || 0) / 60), shuffle: true }),
       resumeSnapshot: data,
       mistakes: [],
       finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0
@@ -4200,8 +4405,8 @@ export default function App() {
             （読みこみ中に文字が出ると、そのぶん画面がちらつくため） */}
         <Suspense fallback={null}>
         <AnimatePresence mode="wait">
-          {view === 'home' && <PageWrapper key="home"><HomeView setView={setView} stats={stats} setStats={setStats} setConfigMode={setConfigMode} initHost={initHost} resumeData={resumeData} onResume={resumeGame} onDiscardResume={discardResume} /></PageWrapper>}
-          {view === 'singleConfig' && <PageWrapper key="single"><SingleConfigView setView={setView} setState={setState} configMode={configMode} stats={stats} /></PageWrapper>}
+          {view === 'home' && <PageWrapper key="home"><HomeView setView={setView} stats={stats} setStats={setStats} setConfigMode={setConfigMode} initHost={initHost} resumeData={resumeData} onResume={resumeGame} onDiscardResume={discardResume} lastPlay={lastPlay} onReplay={startSolo} kadai={kadai} onStartKadai={startKadai} onCloseKadai={closeKadai} /></PageWrapper>}
+          {view === 'singleConfig' && <PageWrapper key="single"><SingleConfigView setView={setView} configMode={configMode} stats={stats} onStart={startSolo} /></PageWrapper>}
 
           {/* 追加ビュー */}
           {view === 'hostRoom' && <PageWrapper key="host"><HostRoomView peerState={peerState} setPeerState={setPeerState} broadcast={broadcast} setView={setView} setState={setState} configMode={configMode} setConfigMode={setConfigMode} initRaid={initRaid} initTerritory={initTerritory} approveMember={hostApproveMember} rejectMember={hostRejectMember} /></PageWrapper>}
@@ -4209,7 +4414,7 @@ export default function App() {
           {view === 'clientWait' && <PageWrapper key="clientWait"><ClientWaitView peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
 
           {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} sendTerrSpecial={sendTerrSpecial} collectTerritoryResult={collectTerritoryResult} leaderFinishRef={leaderFinishRef} scheduleScoresBroadcast={scheduleScoresBroadcast} flushScoresBroadcast={flushScoresBroadcast} /></PageWrapper>}
-          {view === 'result' && <PageWrapper key="result"><ResultView state={state} setView={setView} peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
+          {view === 'result' && <PageWrapper key="result"><ResultView state={state} setView={setView} peerState={peerState} leaveRoom={leaveRoom} onReplay={startSolo} onStartKadai={startKadai} /></PageWrapper>}
           {view === 'manager' && <PageWrapper key="manager"><ManagerView setView={setView} /></PageWrapper>}
           {view === 'import' && <PageWrapper key="import"><ImportView setView={setView} /></PageWrapper>}
           {view === 'shop' && <PageWrapper key="shop"><ShopView setView={setView} stats={stats} setStats={setStats} /></PageWrapper>}
