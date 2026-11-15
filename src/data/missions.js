@@ -52,8 +52,52 @@ const MISSION_POOL = [
   { id: 'play_territory_1', type: 'play_territory', target: 1, reward: 50, desc: 'みんなでじんとりバトルを 1回 プレイ' },
 ];
 
-export const getRandomMissions = (count = 3, streak = 0) => {
-  let pool = [...MISSION_POOL];
+// 「みんなであそぶ」でしか進まないミッション
+const MULTIPLAYER_TYPES = new Set(['play_boss_raid', 'play_territory']);
+
+// ミッションの目標は、その子の記録の1.5倍まで（記録がまだ低くても、下の値までは出す）
+export const MISSION_STRETCH = 1.5;
+const FLOOR = { combo: 10, sudden_death_correct: 10, score: 500, play: 3 };
+
+/**
+ * その子の記録から、ミッションの目標の上限を決めるための材料をあつめる。
+ * daily のキーは YYYY-MM-DD（statsStore.js）。today も同じ形
+ */
+export const missionProfile = (stats, today, recentKeys) => {
+  const recent = new Set(recentKeys);
+  let maxDailyPlays = 0;
+  for (const [day, d] of Object.entries(stats.daily || {})) if (recent.has(day)) maxDailyPlays = Math.max(maxDailyPlays, d.count || 0);
+  return {
+    maxCombo: stats.maxComboRecord || 0,
+    suddenDeath: stats.suddenDeathRecord || 0,
+    bestPlayExp: stats.bestPlayExp || 0,
+    maxDailyPlays,
+    multiplayerRecent: !!stats.lastMultiplayerDate && recent.has(stats.lastMultiplayerDate),
+  };
+};
+
+/** その子に出してよいミッションか（ひとりで達成できる・記録から遠すぎない） */
+export const isReachable = (m, p) => {
+  if (MULTIPLAYER_TYPES.has(m.type)) return p.multiplayerRecent;
+  const cap = (floor, record) => Math.max(floor, Math.ceil(record * MISSION_STRETCH));
+  if (m.type === 'combo') return m.target <= cap(FLOOR.combo, p.maxCombo);
+  if (m.type === 'sudden_death_correct') return m.target <= cap(FLOOR.sudden_death_correct, p.suddenDeath);
+  if (m.type === 'score') return m.target <= cap(FLOOR.score, p.bestPlayExp);
+  if (m.type.startsWith('play')) return m.target <= cap(FLOOR.play, p.maxDailyPlays);
+  return true;
+};
+
+/**
+ * その日のミッションを count こ えらぶ。
+ * profile（missionProfile）をわたすと、
+ *   ・「みんなであそぶ」のミッションは、さいきん（7日のうちに）みんなで遊んだ子にだけ出す
+ *     （以前は ひとりで遊ぶ子にも出て、およそ6日に1日は 達成できないミッションがまざった）
+ *   ・目標は その子の記録の1.5倍まで（はじめたばかりの子に「1プレイで100コンボ」を出さない）
+ *   ・同じ種類は1日に1つまで（「3回プレイ」と「5回プレイ」が同じ日に出ない）
+ * 報酬の高いものほど出にくく、連続日数が長いほど 高いものが出やすい（以前と同じ）
+ */
+export const getRandomMissions = (count = 3, streak = 0, profile = null) => {
+  let pool = profile ? MISSION_POOL.filter((m) => isReachable(m, profile)) : [...MISSION_POOL];
   const selected = [];
 
   for (let i = 0; i < count; i++) {
@@ -73,8 +117,9 @@ export const getRandomMissions = (count = 3, streak = 0) => {
       if (r <= 0) { selectedIdx = j; break; }
     }
 
-    selected.push({ ...pool[selectedIdx], current: 0, claimed: false });
-    pool.splice(selectedIdx, 1);
+    const picked = pool[selectedIdx];
+    selected.push({ ...picked, current: 0, claimed: false });
+    pool = profile ? pool.filter((m) => m.type !== picked.type) : pool.filter((_, j) => j !== selectedIdx);
   }
 
   return selected;

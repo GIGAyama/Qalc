@@ -174,6 +174,9 @@ export const normalizeStats = (raw, legacy = {}, { dateOrder = localeDateOrder()
     timeAttackRecord: num(src.timeAttackRecord, 0),
     bossRaidRecord: int(src.bossRaidRecord, 0),
     territoryWins: int(src.territoryWins, 0),
+    // 1プレイの最高 EXP と、最後に「みんなであそぶ」で遊んだ日（ミッションの えらびかたに使う。missions.js）
+    bestPlayExp: num(src.bestPlayExp, 0),
+    lastMultiplayerDate: migrateKey(str(src.lastMultiplayerDate, ''), dateOrder),
     coins: int(src.coins, hadShop ? 0 : 100),
     inventory: normalizeInventory(src.inventory),
     equipped: normalizeEquipped(src.equipped),

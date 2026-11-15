@@ -70,7 +70,7 @@ import {
   SHOP_ITEMS, RARITY_INFO, getRarity, GACHA_COST, GACHA_DUP_REFUND,
   getGachaPool, rollGacha,
 } from './data/shop.js';
-import { getRandomMissions } from './data/missions.js';
+import { getRandomMissions, missionProfile } from './data/missions.js';
 // 出題順をまぜる。sort(() => Math.random() - 0.5) は かたよる（random.js の説明）
 import { shuffle } from './random.js';
 import { normalizeStats, normalizeMistakes, normalizeResume, dateKey, addDays, rolloverDay, currentStreak } from './statsStore.js';
@@ -251,7 +251,10 @@ const StorageAPI = {
   // 日がかわっていたら、ミッションと周回の数をその日のものにする（変わっていなければ同じものを返す）。
   // 受けとりわすれた前の日のミッションのコインは、なくさずに わたして知らせる
   rollover: (stats) => {
-    const { stats: next, autoClaimed } = rolloverDay(stats, dateKey(), () => getRandomMissions(3, stats.streak || 0));
+    const today = dateKey();
+    // ミッションは その子の記録にあわせて えらぶ（ひとりで達成できるもの・記録の1.5倍まで。missions.js）
+    const last7 = Array.from({ length: 7 }, (_, i) => addDays(today, -i));
+    const { stats: next, autoClaimed } = rolloverDay(stats, today, () => getRandomMissions(3, stats.streak || 0, missionProfile(stats, today, last7)));
     if (autoClaimed > 0) showToast('success', `うけとりわすれた ミッションの コイン +${autoClaimed}`);
     return next;
   },
@@ -268,6 +271,7 @@ const StorageAPI = {
     day.count += playCount;
     stats.daily = { ...(stats.daily || {}), [today]: day };
     stats.totalExp = (stats.totalExp || 0) + exp;
+    stats.bestPlayExp = Math.max(stats.bestPlayExp || 0, exp);
 
     if (stats.lastDate !== today) {
       stats.streak = stats.lastDate === addDays(today, -1) ? (stats.streak || 0) + 1 : 1;
@@ -1874,6 +1878,9 @@ const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correc
 TimerProgressBar.displayName = 'TimerProgressBar';
 
 // --- ゲーム画面 ---
+// 正解1問でもらえるコイン（finishGame）
+const COINS_PER_CORRECT = 1;
+
 // みんなであそぶ: スコアの一覧を配る間かく（App の scheduleScoresBroadcast）
 const SCORES_BROADCAST_MS = 1000;
 const SCORES_MIN_WAIT_MS = 100;
@@ -2214,6 +2221,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     // 減衰の強いセッション(半額未満)は「あそぶ系」ミッションの進捗にも数えない
     newStats = StorageAPI.updateDailyAndMissions(newStats, earnedExp, maxComboRef.current, 1, state.gameMode, correctCountRef.current, decay.mult >= 0.5 ? 1 : 0);
 
+    // 正解1問につき1コイン。同じドリルのくりかえし・マスターずみの楽々クリアは EXP と同じ割合で へる。
+    // 以前はコインがミッションとレベルアップでしか入らず、ふつうに遊ぶ子で1日 約125コイン。
+    // 買える品（421こ、まんなかの値段が900コイン）に ほとんど手が届かなかった
+    const earnedCoins = Math.round(correctCountRef.current * COINS_PER_CORRECT * decay.mult);
+    newStats.coins = (newStats.coins || 0) + earnedCoins;
+    // さいきん「みんなであそぶ」で遊んだか（ボス・じんとりのミッションは、そういう子にだけ出す）
+    if (isMultiplayer) newStats.lastMultiplayerDate = dateKey();
+
     // レベルアップしたらコインボーナスを付与（上がったレベル数 × 50コイン）
     const levelBefore = getLevelInfo(stats.totalExp).level;
     const levelAfter = getLevelInfo(newStats.totalExp).level;
@@ -2241,7 +2256,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     const raidResult = (state.gameMode === 'BOSS_RAID' && peerState && peerState.role === 'host' && collectRaidResult) ? collectRaidResult() : null;
     const territoryResult = (state.gameMode === 'TERRITORY' && peerState && peerState.role === 'host' && collectTerritoryResult) ? collectTerritoryResult() : null;
 
-    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, decayInfo: { mult: decay.mult, mastered: decay.masteredApplied, repeatPlays: decay.repeatPlays, baseExp, newlyMastered: masteryResult.newlyMastered }, ...(raidResult ? { raidResult } : {}), ...(territoryResult ? { territoryResult } : {}) }));
+    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp, earnedCoins, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, decayInfo: { mult: decay.mult, mastered: decay.masteredApplied, repeatPlays: decay.repeatPlays, baseExp, newlyMastered: masteryResult.newlyMastered }, ...(raidResult ? { raidResult } : {}), ...(territoryResult ? { territoryResult } : {}) }));
 
     if (isResumedSessionRef.current) {
       StorageAPI.clearResume();
@@ -2755,6 +2770,9 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
               ⬆ {earnedExp} EXP かくとく！
               {state.decayInfo && state.decayInfo.mult < 1 && <span className="text-sm font-bold opacity-50 line-through">{state.decayInfo.baseExp}</span>}
             </div>
+            {(state.earnedCoins || 0) > 0 && (
+              <div className="flex items-center gap-1.5 text-base text-[var(--text)]"><Coins size={18} className="text-yellow-500" /> +{state.earnedCoins} コイン</div>
+            )}
             {state.decayInfo && state.decayInfo.mult < 1 && (
               <div className="text-xs font-bold text-[var(--text)] opacity-80 ruby-text px-2">
                 {state.decayInfo.mastered

@@ -46,6 +46,7 @@ eq('成績に値があれば旧キーは使わない', normalizeStats({ totalExp
 // --- ふつうの成績は1つも変えない ---
 const real = {
   totalExp: 5321, streak: 4, lastDate: '2026-11-15', maxComboRecord: 37, suddenDeathRecord: 22, timeAttackRecord: 41.3, bossRaidRecord: 2, territoryWins: 1,
+  bestPlayExp: 1500, lastMultiplayerDate: '2026-11-10',
   coins: 640, inventory: { bases: ['b_dog', 'b_cat'], hats: ['h_cap'], faces: [], props: [], themes: ['default', 'dark'], backgrounds: [], effects: [], titles: ['t_star'] },
   equipped: { base: 'b_cat', hat: 'h_cap', face: null, prop: null, background: null, effect: null, title: 't_star' }, theme: 'dark',
   missions: { date: '2026-11-15', list: [{ id: 'play_3', type: 'play', target: 3, reward: 50, desc: '今日 3回 プレイする', current: 1, claimed: false }] },
