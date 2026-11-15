@@ -274,7 +274,7 @@ const createActiveTimer = () => {
  *   const session = createStudySession({...});
  *   session.present(問題文);                       // 出題した
  *   session.answer(正誤, 入力値);                  // 解答した
- *   session.save({ status: 'completed', ext });    // 終了・中断で1レコード
+ *   session.save({ status: 'completed', ext });    // 終了・中断で1レコード（保存できなければ false）
  *   session.dispose();                             // 画面を離れるとき
  *
  * save() のあとは自動的に次のレコードが始まる（§5.4「復帰したら新しいレコードを開始する」）。
@@ -424,9 +424,11 @@ export function createStudySession({ gameMode, courseName, courseNames, multipla
         },
       };
 
+      // 保存できなかったとき(端末の保存容量がいっぱい など)は false を返す。
+      // 呼んだ側が画面で知らせるため。null は「1問も解答していないので保存しなかった」
       const id = saveStudyRecord(record);
       reset(carry);
-      return id;
+      return id || false;
     },
 
     dispose() {

@@ -6,6 +6,13 @@
  *   - 使っていない変数 → 消しわすれ・打ちまちがい
  *   - useEffect の依存配列もれ → 古い値を見つづける不具合（PeerJS のコールバックで実際に起きやすい）
  * インデントや引用符には口を出さない（既存のコードを一括で書きかえたくない）。
+ *
+ * ⚠️ `npm run lint` には --ext .js,.jsx,.mjs が要る。ESLint 8 の `eslint .` は
+ *    .js しか見ないので、画面のコード（src/*.jsx）が1本も検査されていなかった
+ *    （CI は毎回「警告0件」で通っていたが、.jsx を足すとエラー7件・警告56件あった）。
+ * ⚠️ --max-warnings は「いまある警告の数」。下の react-hooks/exhaustive-deps の
+ *    既存21件だけが残っている。新しく警告を増やすと CI が落ちる。
+ *    直して減らしたら、package.json の数字も同じだけ下げること。
  */
 module.exports = {
   root: true,
@@ -16,7 +23,8 @@ module.exports = {
     'plugin:react-hooks/recommended',
   ],
   parserOptions: { ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true } },
-  settings: { react: { version: '18.2' } },
+  // 入っている React の版を見る（以前は '18.2' と書いてあったが、実際は 19）
+  settings: { react: { version: 'detect' } },
   plugins: ['react-refresh'],
   ignorePatterns: ['dist', 'node_modules', '.eslintrc.cjs'],
   rules: {

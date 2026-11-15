@@ -150,5 +150,19 @@ eq('capped at 500', read().length, 500);
 eq('oldest dropped', read()[0].i, 1);
 s7.dispose();
 
+// --- 保存できなかったら false を返す（画面で知らせるため）。null は「解答0で保存しなかった」 ---
+store.clear();
+const realSetItem = localStorage.setItem;
+localStorage.setItem = () => { const e = new Error('quota'); e.name = 'QuotaExceededError'; throw e; };
+const s9 = createStudySession({ gameMode: 'SCORE_ATTACK', courseName: 'x', courseNames: ['2年_九九'] });
+s9.present('3×4'); s9.answer(true, '12');
+eq('save failure returns false', s9.save({}), false);
+eq('nothing written on failure', read().length, 0);
+localStorage.setItem = realSetItem;
+s9.present('5×6'); s9.answer(true, '30');
+eq('next save works again after failure', typeof s9.save({}), 'string');
+eq('only the later record is stored', read().length, 1);
+s9.dispose();
+
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

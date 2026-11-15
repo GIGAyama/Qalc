@@ -6,11 +6,11 @@ import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 // ブロックされると「エラーも出ないまま機能が動かない」 (3) CSPを 'self' で閉じられる
 import {
   Calculator, Trash2, PenTool, Home, Rocket,
-  Flame, Clock, Award, Settings, Plus, XCircle, Bot, Volume2,
+  Flame, Clock, Award, Settings, Plus, XCircle, Volume2,
   VolumeX, ArrowLeftRight, Share2, BarChart3, Trophy, User,
   Gamepad2, Swords, Timer, Download, HeartCrack, Coins,
   Store, CheckCircle2, PaintBucket, Shirt, Users, Radio,
-  LayoutDashboard, Lightbulb
+  Lightbulb
 } from 'lucide-react';
 // どの「かんがえるどうぐ」を出すかの判定は毎問ひつようなので、最初から読みこむ。
 // どうぐの絵そのもの(SVGが多く約140KB)はゲーム画面に入ってから取りにいく（Part I §5）
@@ -64,6 +64,11 @@ import {
   getGachaPool, rollGacha,
 } from './data/shop.js';
 import { getRandomMissions } from './data/missions.js';
+// コースの共有コード・CSV 取りこみ・「テンキーで打てる答えか」の検査（node でテストしている）
+import {
+  encodeCourse, decodeCourse, parseProblemText, validateProblems, uniqueCourseName,
+  sanitizeCourseName, isTypeableAnswer, ANSWER_MAX_LEN, PROBLEM_MAX,
+} from './courseShare.js';
 
 // ふりがなヘルパー: <R k="かん" g="じ" /> → <ruby>漢<rt>かん</rt></ruby><ruby>字<rt>じ</rt></ruby>
 // 使い方: <R k="漢" r="かん" /> は1文字用。複数文字は直接rubyタグで書く。
@@ -119,9 +124,10 @@ class AudioController {
       case 'correct':
         osc.type = 'sine'; osc.frequency.setValueAtTime(880, t); osc.frequency.exponentialRampToValueAtTime(1760, t + 0.1); gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.3); osc.start(t); osc.stop(t + 0.3);
         this.vibrate([20, 50, 20]); break;
-      case 'combo':
+      case 'combo': {
         osc.type = 'sine'; const freq = Math.min(880 + param * 55, 2000); osc.frequency.setValueAtTime(freq, t); gain.gain.setValueAtTime(0.1, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2); osc.start(t); osc.stop(t + 0.2); if (param >= 5) { const osc2 = this.ctx.createOscillator(); osc2.connect(gain); osc2.type = 'triangle'; osc2.frequency.setValueAtTime(freq * 1.5, t); osc2.start(t); osc2.stop(t + 0.2); }
         this.vibrate([30, 30, 40]); break;
+      }
       case 'wrong':
         osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, t); osc.frequency.linearRampToValueAtTime(100, t + 0.3); gain.gain.setValueAtTime(0.1, t); gain.gain.linearRampToValueAtTime(0.01, t + 0.3); osc.start(t); osc.stop(t + 0.3);
         this.vibrate([100, 50, 100]); break;
@@ -213,6 +219,19 @@ const sessionAccuracy = (session) => {
   return { attempts, acc: attempts > 0 ? session.correctCount / attempts : 0 };
 };
 
+// 中断データに入れる問題の数の上限。スコアアタックとサドンデスは問題を くりかえし出す
+// （次の問題は qIndex を問題数で割ったあまり）ので、いまの問題から先の分だけあれば つづきが遊べる。
+// 以前は えらんだ問題を全部入れていて、全コースを選ぶと約42万文字になった。端末の保存容量を
+// 大きく使ううえ、容量が足りないと中断データそのものが残らない。
+// スコアアタックの上限10分で解ける数より十分に多くしておく。タイムアタックは20問なのでそのまま
+const RESUME_PROBLEM_WINDOW = 600;
+const resumeProblems = (problemSet, qIndex, gameMode) => {
+  if (gameMode === 'TIME_ATTACK' || problemSet.length <= RESUME_PROBLEM_WINDOW) return { problemSet, qIndex };
+  const out = [];
+  for (let i = 0; i < RESUME_PROBLEM_WINDOW; i++) out.push(problemSet[(qIndex + i) % problemSet.length]);
+  return { problemSet: out, qIndex: 0 };
+};
+
 // にがて克服ボックス('mistakes')は常に減衰対象外（まちがい直しはいつでも全額）
 const realCoursesOf = (courseNames) => (courseNames || []).filter(n => n !== 'mistakes');
 
@@ -268,7 +287,16 @@ const recordCourseSession = (stats, courseNames, session) => {
 
 const StorageAPI = {
   safeGet: (key, fallback = null) => { try { const v = window.localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; } },
-  safeSet: (key, val) => { try { window.localStorage.setItem(key, JSON.stringify(val)); return true; } catch (e) { console.warn("Quota exceeded"); return false; } },
+  // 保存できたら true。できなければ画面で知らせて false（quiet のときは呼んだ側が知らせる）。
+  // false を受けとった側は「保存しました」と出さないこと
+  safeSet: (key, val, { quiet = false } = {}) => {
+    try { window.localStorage.setItem(key, JSON.stringify(val)); lastSaveError = null; return true; } catch (e) {
+      lastSaveError = e;
+      console.warn('[storage] save failed', key, e && e.name);
+      if (!quiet) warnSaveFailure();
+      return false;
+    }
+  },
 
   getStats: () => {
     let stats = StorageAPI.safeGet('qalc_stats');
@@ -366,13 +394,14 @@ const StorageAPI = {
     return Object.keys(data).sort(courseCompare).map(key => ({ name: key, count: data[key].length }));
   },
   getProblemsByGroup: (name) => StorageAPI.getRawData()[name] || [],
-  saveProblemSet: (name, problems) => { const data = StorageAPI.getRawData(); data[name] = problems; return StorageAPI.safeSet('qalc_problems', data); },
-  deleteProblemGroup: (name) => { const data = StorageAPI.getRawData(); delete data[name]; return StorageAPI.safeSet('qalc_problems', data); },
-  encodeCourse: (name, problems) => btoa(encodeURIComponent(JSON.stringify({ n: name, p: problems.map(p => `${p.q},${p.a}`).join(';') }))),
-  decodeCourse: (code) => { try { const data = JSON.parse(decodeURIComponent(atob(code))); return { name: data.n, problems: data.p.split(';').map(str => { const [q, a] = str.split(','); return { q, a }; }) }; } catch (e) { return null; } },
+  // コースの保存・削除。失敗したときの文言は呼んだ側（コース管理・取りこみ）が出す。
+  // 共有コードの作りかた・読みかたは courseShare.js
+  saveProblemSet: (name, problems) => { const data = StorageAPI.getRawData(); data[name] = problems; return StorageAPI.safeSet('qalc_problems', data, { quiet: true }); },
+  deleteProblemGroup: (name) => { const data = StorageAPI.getRawData(); delete data[name]; return StorageAPI.safeSet('qalc_problems', data, { quiet: true }); },
 
   getResume: () => StorageAPI.safeGet('qalc_resume', null),
-  saveResume: (data) => StorageAPI.safeSet('qalc_resume', data),
+  // 失敗したときの文言は呼んだ側(pauseAndExit)が出す
+  saveResume: (data) => StorageAPI.safeSet('qalc_resume', data, { quiet: true }),
   clearResume: () => { try { window.localStorage.removeItem('qalc_resume'); } catch (e) { /* ignore */ } }
 };
 
@@ -380,17 +409,50 @@ const StorageAPI = {
 // 3. 共通 UIコンポーネント & フック
 // ==========================================
 const toastEvent = new EventTarget();
-const showToast = (icon, title) => { toastEvent.dispatchEvent(new CustomEvent('show', { detail: { icon, title } })); };
+// お知らせの表示コンポーネント(CustomToast)がまだ画面に無いうちに出したものは、ためておいて
+// 出せるようになったときに出す。起動直後に「保存できない」が起きても、だまって消えないように
+let toastReady = false;
+const toastQueue = [];
+// opts.duration: 表示しておくミリ秒（既定 3000）
+const showToast = (icon, title, opts = {}) => {
+  const detail = { icon, title, ...opts };
+  if (!toastReady) { toastQueue.push(detail); return; }
+  toastEvent.dispatchEvent(new CustomEvent('show', { detail }));
+};
+
+// ── 保存に失敗したことを知らせる ─────────────────────────
+// 以前は console.warn だけで、画面には「EXP かくとく！」「とちゅうから保存しました」が
+// 出たまま、再読みこみすると何も残っていなかった（端末の保存容量がいっぱいのときなど）。
+// 学習ログはこの端末にしか無いので、保存できていないことは その場で知らせる。
+const isQuotaError = (e) => !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+let lastSaveError = null;
+let lastSaveWarnAt = 0;
+const SAVE_WARN_INTERVAL_MS = 8000; // つづけて失敗しても、同じお知らせは8秒に1回にする
+const saveFailureReason = () => (isQuotaError(lastSaveError) ? 'この たんまつの ほぞんする ばしょが いっぱいです。' : '');
+const warnSaveFailure = (text) => {
+  const now = Date.now();
+  // 呼んだ側が文言を決めるとき(text あり)は必ず出す。ないときは間引く
+  if (!text && now - lastSaveWarnAt < SAVE_WARN_INTERVAL_MS) return;
+  lastSaveWarnAt = now;
+  showToast('error', text || `ほぞんできませんでした。${saveFailureReason()}せんせいに しらせてね`, { duration: 7000 });
+};
 // 紙ふぶきは「動きを減らす」設定のときは出さない。
 // 感覚過敏の児童には、画面いっぱいに散る粒がいちばんつらい演出になる（Part I §2-10）
 //
 // canvas-confetti(約24KB)は最初の1画面には要らないので、別ファイルに分けて
 // あとから取りにいく。ただし「正解したしゅんかんに出ない」と気が抜けるので、
 // ゲームに入るときに preloadConfetti() で先に温めておく（Part I §5）
+//
+// ⚠️ 既定の confetti() は使わない。あれは Worker（blob: の URL）で描こうとするが、
+//    index.html の CSP は worker-src 'self' なので Worker が止められる。しかも例外に
+//    ならないので代わりの描きかたにも切りかわらず、紙ふぶきは一度も画面に出ていなかった
+//    （コンソールに CSP 違反が1行出るだけ）。CSP はゆるめず、メインスレッドで描く版を作る。
+//    粒は多くても150個なので、低価格の端末でも描画の負担は小さい。
 let confettiFn = null;
+const makeConfetti = (m) => (m.create || m.default.create)(null, { resize: true, useWorker: false });
 export const preloadConfetti = () => {
   if (confettiFn) return;
-  import('canvas-confetti').then((m) => { confettiFn = m.default; }).catch(() => {});
+  import('canvas-confetti').then((m) => { confettiFn = confettiFn || makeConfetti(m); }).catch(() => {});
 };
 const triggerConfetti = (options) => {
   if (prefersReducedMotion()) return;
@@ -399,7 +461,7 @@ const triggerConfetti = (options) => {
     return;
   }
   import('canvas-confetti')
-    .then((m) => { confettiFn = m.default; confettiFn(options); })
+    .then((m) => { confettiFn = confettiFn || makeConfetti(m); confettiFn(options); })
     .catch(() => { /* 取れなくても正解の判定には関係ない */ });
 };
 
@@ -412,10 +474,12 @@ const CustomToast = () => {
       setToasts(prev => [...prev, { id, ...e.detail }]);
       setTimeout(() => {
         setToasts(prev => prev.filter(t => t.id !== id));
-      }, 3000);
+      }, e.detail.duration || 3000);
     };
     toastEvent.addEventListener('show', handleShow);
-    return () => toastEvent.removeEventListener('show', handleShow);
+    toastReady = true;
+    toastQueue.splice(0).forEach((detail) => handleShow({ detail }));
+    return () => { toastReady = false; toastEvent.removeEventListener('show', handleShow); };
   }, []);
 
   // 保存できた・つながらない などのお知らせを読み上げてもらう。
@@ -470,6 +534,7 @@ const LayeredAvatar = React.memo(({ equipped, size = "text-5xl", className = "" 
     </div>
   );
 });
+LayeredAvatar.displayName = 'LayeredAvatar';
 
 const PageWrapper = ({ children, keyName }) => (
   <motion.div key={keyName} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.25, ease: "easeOut" }} className="absolute inset-0 flex flex-col overflow-y-auto overflow-x-hidden p-4 no-scrollbar">
@@ -500,6 +565,7 @@ const MathText = React.memo(({ text }) => {
     </span>
   );
 });
+MathText.displayName = 'MathText';
 
 // 手書きキャンバス（描画はネイティブイベントで完結するため React.memo で親の再レンダーから完全に隔離する）
 // 画面上の大きさ(CSS px)と、実際に描くピクセル数を分ける（Part I §2-5）。
@@ -649,6 +715,7 @@ const Keypad = React.memo(({ onAppend, onClear, onSubmit, digitLayout = DEFAULT_
     </div>
   </div>
 ));
+Keypad.displayName = 'Keypad';
 
 // 退出検知(ハートビート)。PeerJS の close は相手が黙って消えたとき数十秒〜届かないことがあるため、
 // ホストから定期的に ping を投げ、一定時間 pong が返らないメンバーは「抜けた」とみなす。
@@ -692,12 +759,19 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
     return { summary: summarize(records, 7), missed: topMissedItems(records, 3) };
   }, []);
 
+  // 保存できたときだけ受けとる。保存できなければ saveStats が知らせ、ミッションは受けとる前のまま。
+  // （以前は いまの stats の中のミッションを直接書きかえていたので、保存に失敗しても
+  //   画面では受けとったことになり、再読みこみでコインが消えていた）
   const claimMission = (mId) => {
-    let newStats = { ...stats }; const m = newStats.missions.list.find(x => x.id === mId);
-    if (m && m.current >= m.target && !m.claimed) {
-      audioCtrl.playSE('coin'); m.claimed = true; newStats.coins += m.reward;
-      StorageAPI.saveStats(newStats); setStats(newStats); showToast('success', `${m.reward}コイン ゲット！`);
-    }
+    const m = stats.missions.list.find(x => x.id === mId);
+    if (!m || m.current < m.target || m.claimed) return;
+    const newStats = {
+      ...stats,
+      coins: stats.coins + m.reward,
+      missions: { ...stats.missions, list: stats.missions.list.map(x => (x.id === mId ? { ...x, claimed: true } : x)) },
+    };
+    if (!StorageAPI.saveStats(newStats)) return;
+    audioCtrl.playSE('coin'); setStats(newStats); showToast('success', `${m.reward}コイン ゲット！`);
   };
 
   return (
@@ -1316,7 +1390,8 @@ const ShopView = ({ setView, stats, setStats }) => {
         const propName = category.slice(0, -1);
         newStats.equipped = { ...newStats.equipped, [propName]: newStats.equipped[propName] === item.id ? null : item.id };
       }
-      StorageAPI.saveStats(newStats); setStats(newStats);
+      // 保存できなければ着がえない（saveStats が知らせる）。画面だけ変わって再読みこみで戻るのを防ぐ
+      if (StorageAPI.saveStats(newStats)) setStats(newStats);
     }
   };
 
@@ -1330,8 +1405,10 @@ const ShopView = ({ setView, stats, setStats }) => {
     if (category === 'themes') { newStats.theme = item.id; }
     else { const propName = category.slice(0, -1); newStats.equipped = { ...newStats.equipped, [propName]: item.id }; }
 
+    // 保存できたときだけ「購入しました」。できなければ コインも品物もそのまま（saveStats が知らせる）
+    if (!StorageAPI.saveStats(newStats)) { setConfirmItem(null); return; }
     audioCtrl.playSE('coin'); showToast('success', '購入しました！');
-    StorageAPI.saveStats(newStats); setStats(newStats); setConfirmItem(null);
+    setStats(newStats); setConfirmItem(null);
   };
 
   const spinGacha = () => {
@@ -1351,7 +1428,9 @@ const ShopView = ({ setView, stats, setStats }) => {
       refund = GACHA_DUP_REFUND[getRarity(item)];
       newStats.coins += refund;
     }
-    StorageAPI.saveStats(newStats); setStats(newStats);
+    // 保存できなければ まわさない（コインだけ減って品物が残らない、を防ぐ。saveStats が知らせる）
+    if (!StorageAPI.saveStats(newStats)) { spinningRef.current = false; return; }
+    setStats(newStats);
     setGachaResult({ category, item, isNew, refund, revealed: false });
     setTimeout(() => {
       audioCtrl.playSE(isNew ? 'finish' : 'coin');
@@ -1594,7 +1673,14 @@ const CourseMultiSelect = ({ filteredGroups, allGroups, selected, setSelected, m
 };
 
 // えらんだドリル(複数)の問題をまとめて集める。mistakes はにがて克服ボックス
-const collectProblems = (names) => names.flatMap(name => (name === 'mistakes' ? StorageAPI.getMistakes() : StorageAPI.getProblemsByGroup(name)) || []);
+// テンキーで答えを打てない問題（以前の版で取りこめてしまった「12cm」「3あまり1」など）は出さない。
+// 出すと だれも正解できず、その問題から先へ進めなくなる
+const collectProblems = (names) => {
+  const all = names.flatMap(name => (name === 'mistakes' ? StorageAPI.getMistakes() : StorageAPI.getProblemsByGroup(name)) || []);
+  const playable = all.filter(p => p && p.q && isTypeableAnswer(p.a));
+  if (playable.length < all.length) showToast('warning', `テンキーで こたえられない 問題を ${all.length - playable.length}問 はずしました`, { duration: 5000 });
+  return playable;
+};
 const joinCourseNames = (names) => names.map(n => n === 'mistakes' ? 'にがて克服ボックス' : n).join('、');
 
 // --- 設定・スタート画面 ---
@@ -1722,6 +1808,7 @@ const TimerClock = React.memo(({ gameMode, startTime, timeLimitSec }) => {
     <div className={`font-black text-2xl flex items-center gap-2 ${danger ? 'text-red-500 animate-pulse' : 'text-[var(--text)]'}`}><Clock size={24} /> {m}:{s}</div>
   );
 });
+TimerClock.displayName = 'TimerClock';
 
 // 上部の進捗バー。SCORE_ATTACK のみ毎秒tickし、時間切れで onTimeUp を呼ぶ（GameView 本体は tick で再レンダーしない）
 const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correctCount, total, onTimeUp }) => {
@@ -1751,9 +1838,10 @@ const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correc
     </div>
   );
 });
+TimerProgressBar.displayName = 'TimerProgressBar';
 
 // --- ゲーム画面 ---
-const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, sendTerrSpecial, collectTerritoryResult }) => {
+const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, sendTerrSpecial, collectTerritoryResult, leaderFinishRef }) => {
   const isMultiplayer = peerState && peerState.role;
   const isRaid = state.gameMode === 'BOSS_RAID';
   const isTerritory = state.gameMode === 'TERRITORY';
@@ -2084,8 +2172,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     StorageAPI.saveStats(newStats); setStats(newStats);
 
     // 学習ログ（study.v1）。「ポイントもらって終わる」で切りあげたときは中断として残す。
-    // マルチプレイは妨害・盤面戦略があるため学力指標に使えないが、取り組み量として記録する
-    studyRef.current?.save({
+    // マルチプレイは妨害・盤面戦略があるため学力指標に使えないが、取り組み量として記録する。
+    // 保存できなかったら知らせる（成績のほうの失敗は saveStats が知らせる。続けて出さないよう間引く）
+    const logSaved = studyRef.current?.save({
       status: quitEarly ? 'aborted' : 'completed',
       ext: {
         maxCombo: maxComboRef.current,
@@ -2095,6 +2184,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         ...(state.gameMode === 'TERRITORY' ? { paints: scoreRef.current } : {}),
       },
     });
+    if (logSaved === false) warnSaveFailure();
 
     // ボスバトル/じんとり: ホストが権威データから最終結果を確定し、結果画面と全クライアントに配る
     const raidResult = (state.gameMode === 'BOSS_RAID' && peerState && peerState.role === 'host' && collectRaidResult) ? collectRaidResult() : null;
@@ -2119,16 +2209,30 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     setView('result');
   }, [stats, state.gameMode, state.problemSet, state.courseNames, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult, collectTerritoryResult, myTeam]);
 
+  // みんなであそぶ: リーダーが先に終えたとき（時間切れ・20問ときおわった・1問まちがえた・
+  // 「ポイントもらって終わる」）や へやが閉じられたときも、メンバーの端末はここを通って終える。
+  // 以前は App が結果画面へ切りかえるだけで finishGame を通らず、リーダーより先に
+  // 終わらなかったメンバーの EXP・コイン・ミッション・学習ログ・にがて が まるごと消えていた。
+  //   aborted: 結果発表まで行けずに切れたとき（へやが閉じられた）。学習ログは中断として残す
+  const finishGameRef = useRef(finishGame);
+  useEffect(() => { finishGameRef.current = finishGame; }, [finishGame]);
+  useEffect(() => {
+    if (!leaderFinishRef) return undefined;
+    leaderFinishRef.current = ({ aborted = false } = {}) => finishGameRef.current(aborted);
+    return () => { leaderFinishRef.current = null; };
+  }, [leaderFinishRef]);
+
   // じんとり: 盤面がうまっても試合はつづく(ここからは全マスのうばいあい)。終了はつねに制限時間ちょうど
 
   const pauseAndExit = useCallback(() => {
+    const resume = resumeProblems(state.problemSet, qIndex, state.gameMode);
     const snapshot = {
-      problemSet: state.problemSet,
+      problemSet: resume.problemSet,
       timeLimitSec: state.timeLimitSec,
       courseName: state.courseName,
       courseNames: state.courseNames || [],
       gameMode: state.gameMode,
-      qIndex,
+      qIndex: resume.qIndex,
       score: scoreRef.current,
       combo,
       maxCombo: maxComboRef.current,
@@ -2138,14 +2242,20 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       mistakes: mistakesRef.current,
       savedAt: Date.now()
     };
+    // 先に中断データを保存する。保存できなかったら「保存しました」とは言わず、ゲームにもどす。
+    // 以前は失敗しても「とちゅうから保存しました」と出してホームへもどり、つづきが消えていた
+    if (!StorageAPI.saveResume(snapshot)) {
+      warnSaveFailure(`とちゅうから ほぞんできませんでした。${saveFailureReason()}このまま ゲームを つづけてね`);
+      return;
+    }
     // 学習ログ: 中断としてここまでを1レコードで締める。
     // 復帰後は新しいレコードを始めるため、このレコードに追記はしない（§5.4）
-    studyRef.current?.save({
+    const logSaved = studyRef.current?.save({
       status: 'aborted',
       ext: { maxCombo: maxComboRef.current, level: getLevelInfo(stats.totalExp).level, score: scoreRef.current },
     });
+    if (logSaved === false) warnSaveFailure();
 
-    StorageAPI.saveResume(snapshot);
     if (setResumeData) setResumeData(snapshot);
     showToast('success', 'とちゅうから保存しました');
     setState(prev => ({ ...prev, resumeSnapshot: null }));
@@ -2235,7 +2345,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       if (quitDialog) return; // ダイアログ表示中は背後のゲームに入力を流さない
       if (isRaidLocked()) return; // ボスの凍結攻撃・撃破演出中は物理キーボードもロック
       const key = e.key;
-      if ((key >= '0' && key <= '9') || ['.', '/', '-', '(', ')'].includes(key)) { audioCtrl.playSE('click'); setAns(a => (a.length < 15 ? a + key : a)); }
+      if ((key >= '0' && key <= '9') || ['.', '/', '-', '(', ')'].includes(key)) { audioCtrl.playSE('click'); setAns(a => (a.length < ANSWER_MAX_LEN ? a + key : a)); }
       else if (key === 'Backspace') { audioCtrl.playSE('click'); setAns(a => a.slice(0, -1)); }
       else if (key === 'Enter') { e.preventDefault(); submitAns(); }
       else if (key === 'Escape' || key === 'Delete' || key.toLowerCase() === 'c') { audioCtrl.playSE('click'); setAns(''); }
@@ -2246,7 +2356,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   // キーパッドへ渡す安定コールバック（submitAns は ref 経由で最新を参照し、Keypad の memo を維持する）
   const submitAnsRef = useRef(submitAns); useEffect(() => { submitAnsRef.current = submitAns; }, [submitAns]);
   const isRaidLockedRef = useRef(isRaidLocked); useEffect(() => { isRaidLockedRef.current = isRaidLocked; });
-  const handleAppend = useCallback((c) => { if (isRaidLockedRef.current()) return; audioCtrl.playSE('click'); setAns(a => (a.length < 15 ? a + c : a)); }, []);
+  const handleAppend = useCallback((c) => { if (isRaidLockedRef.current()) return; audioCtrl.playSE('click'); setAns(a => (a.length < ANSWER_MAX_LEN ? a + c : a)); }, []);
   const handleClear = useCallback(() => { audioCtrl.playSE('click'); setAns(''); }, []);
   // どうぐを開いて解いた問題は、自力で解いたのとは分けて記録する（hint: true）。
   // ext.tools は教師が読む値なので、内部IDではなく画面と同じ名前で残す
@@ -2642,6 +2752,23 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
 };
 
 // --- 問題管理・共有画面 ---
+
+// 保存できない問題を、どう直せばよいかが分かることばで伝える（先生が読む）
+const ANSWER_HINT = '答えは 数字と . / - ( ) だけで 書いてください。単位や「あまり」は 書きません';
+const problemFixMessage = (b) => {
+  const q = b.q.length > 16 ? `${b.q.slice(0, 16)}…` : b.q;
+  if (b.reason === 'empty') return b.q ? `「${q}」の 答えが ありません` : `答え「${b.a}」の 問題が ありません`;
+  if (b.reason === 'too-long') return `「${q}」は 問題文が 長すぎます（200文字まで）`;
+  return `「${q}」の 答え「${b.a}」は テンキーで 打てません`;
+};
+// 取りこめなかった問題の知らせ。1件目を例に出す
+const skippedMessage = (bad, unreadable = 0) => {
+  const parts = [];
+  if (bad.length) parts.push(`${bad.length}問は 取りこみませんでした。例: ${problemFixMessage(bad[0])}`);
+  if (bad.some(b => b.reason === 'untypeable')) parts.push(ANSWER_HINT);
+  if (unreadable) parts.push(`${unreadable}行は 読みとれませんでした`);
+  return parts.join('。');
+};
 const ManagerView = ({ setView }) => {
   const [groups, setGroups] = useState([]); const [selectedGrade, setSelectedGrade] = useState('すべて'); const [editTarget, setEditTarget] = useState(null); const [editName, setEditName] = useState(''); const [probs, setProbs] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -2659,15 +2786,30 @@ const ManagerView = ({ setView }) => {
     setEditTarget(name); setEditName(name);
     if (name) { const res = StorageAPI.getProblemsByGroup(name); setProbs(res.length ? res.map(p => ({ q: p.q, a: String(p.a) })) : [{ q: '', a: '' }]); } else { setProbs(Array.from({ length: 3 }, () => ({ q: '', a: '' }))); }
   };
+  // 保存する前に確かめる。ゲームで使えない問題・ほかのコースと同じ名前は保存しない。
+  //  ・答えがテンキーで打てない（「12cm」「3あまり1」など）と、その問題で先へ進めなくなる
+  //  ・同じ名前で保存すると そのコースを だまって上書きしていた
+  //    （新規作成で「2年_九九」と名づけると、プリセットの81問が1問になった）
+  //  ・問題か答えの片方だけ書いた行は、だまって捨てずに知らせる
   const save = () => {
-    if (!editName.trim()) return showToast('warning', '名前を入力してください');
-    const valid = probs.filter(p => p.q.trim() && p.a.trim()); if (!valid.length) return showToast('warning', '問題を1つ以上入力してください');
-    StorageAPI.saveProblemSet(editName.trim(), valid); if (editTarget && editTarget !== editName.trim()) StorageAPI.deleteProblemGroup(editTarget);
+    const name = sanitizeCourseName(editName);
+    if (!name) return showToast('warning', '名前を入力してください');
+    const rows = probs.filter(p => p.q.trim() || p.a.trim());
+    if (!rows.length) return showToast('warning', '問題を1つ以上入力してください');
+    const { ok, bad, overflow } = validateProblems(rows);
+    if (bad.length) return showToast('warning', bad[0].reason === 'untypeable' ? `${problemFixMessage(bad[0])}。${ANSWER_HINT}` : problemFixMessage(bad[0]), { duration: 8000 });
+    if (overflow) return showToast('warning', `問題は 1つのコースに ${ok.length}問までです`, { duration: 6000 });
+    if (name !== editTarget && groups.some(g => g.name === name)) return showToast('warning', `「${name}」という コースは もう あります。べつの 名前に してください`, { duration: 6000 });
+    if (!StorageAPI.saveProblemSet(name, ok)) return warnSaveFailure(`コースを 保存できませんでした。${saveFailureReason()}`);
+    if (editTarget && editTarget !== name) StorageAPI.deleteProblemGroup(editTarget);
     showToast('success', '保存しました'); setEditTarget(null); loadGroups();
   };
   const executeDelete = () => {
     if (!editTarget) return;
-    StorageAPI.deleteProblemGroup(editTarget);
+    if (!StorageAPI.deleteProblemGroup(editTarget)) {
+      setConfirmDelete(false);
+      return warnSaveFailure(`コースを 削除できませんでした。${saveFailureReason()}`);
+    }
     setEditTarget(null);
     setConfirmDelete(false);
     loadGroups();
@@ -2676,14 +2818,15 @@ const ManagerView = ({ setView }) => {
 
   const copyShareCode = (e, name) => {
     e.stopPropagation(); audioCtrl.playSE('click');
-    const code = StorageAPI.encodeCourse(name, StorageAPI.getProblemsByGroup(name));
+    const code = encodeCourse(name, StorageAPI.getProblemsByGroup(name));
 
     const textArea = document.createElement("textarea");
     textArea.value = code;
     document.body.appendChild(textArea);
     textArea.select();
     try {
-      document.execCommand('copy');
+      // コピーできなかったとき、例外ではなく false を返すブラウザがある
+      if (!document.execCommand('copy')) throw new Error('copy failed');
       showToast('success', '共有コードをコピーしました！');
     } catch (err) {
       showToast('error', 'コピーに失敗しました');
@@ -2766,14 +2909,29 @@ const ImportView = ({ setView }) => {
 
   const copyPrompt = () => {
     audioCtrl.playSE('click');
-    const prompt = `あなたは日本の小学校教育に精通したベテラン教師アシスタントです。\n指定の学年・単元の計算問題を作成します。\n# 出力ルール\n1. 形式: CSV形式（問題,答え）\n2. 正解が複数考えられる場合は「|」で区切る\n3. ヘッダーなし\n4. コードブロック内にCSVデータのみを出力`;
+    // 答えの書きかたを指定する。単位つき（12cm）や「3あまり1」のような答えは、
+    // テンキーで打てないので取りこめない。問題文の「,」は CSV の区切りとまぎれる
+    const prompt = [
+      'あなたは日本の小学校教育に精通したベテラン教師アシスタントです。',
+      '次の学年・単元の計算問題を作成してください。',
+      '# 学年・単元: （ここに書く。例: 3年 わり算）',
+      '# 問題数: 20',
+      '# 出力ルール',
+      '1. 形式: CSV形式（問題,答え）。1行に1問',
+      '2. 答えは半角の数字だけで書く。小数は 0.5、分数は 3/4 のように書く。単位や「あまり」などのことばは書かない',
+      '3. 正解が複数考えられる場合は「|」で区切る（例: 1/2|2/4）',
+      '4. 問題文に「,」を使わない',
+      '5. ヘッダーなし',
+      '6. コードブロック内にCSVデータのみを出力',
+    ].join('\n');
 
     const textArea = document.createElement("textarea");
     textArea.value = prompt;
     document.body.appendChild(textArea);
     textArea.select();
     try {
-      document.execCommand('copy');
+      // コピーできなかったとき、例外ではなく false を返すブラウザがある
+      if (!document.execCommand('copy')) throw new Error('copy failed');
       showToast('success', 'プロンプトをコピーしました！');
     } catch (err) {
       showToast('error', 'コピーに失敗しました');
@@ -2781,16 +2939,34 @@ const ImportView = ({ setView }) => {
     document.body.removeChild(textArea);
   };
 
+  // 読みとり → ゲームで使える問題だけにしぼる → 同じ名前のコースがあれば (2)(3)… を付けて保存。
+  // 以前は AI の取りこみを同じ日に2回すると1回目が消え、共有コードも同じ名前のコースを上書きしていた。
+  // 使えない問題（テンキーで打てない答えなど）は取りこまず、何問はずしたかを知らせる
   const process = () => {
     if (!text.trim()) return showToast('warning', 'データが空です');
+    let baseName;
+    let rows;
+    let unreadable = 0;
     if (mode === 'code') {
-      const decoded = StorageAPI.decodeCourse(text.trim());
-      if (decoded) { StorageAPI.saveProblemSet(`受信_${decoded.name}`, decoded.problems); showToast('success', `${decoded.name} を追加しました！`); setView('manager'); }
-      else { showToast('error', '正しい共有コードではありません'); }
+      const decoded = decodeCourse(text);
+      if (!decoded) return showToast('error', '正しい共有コードではありません');
+      // 受けとったコースをもう一度配っても「受信_受信_…」にならないようにする
+      baseName = `受信_${decoded.name.replace(/^(受信_)+/, '')}`;
+      rows = decoded.problems;
     } else {
-      const probs = []; text.split('\n').forEach(line => { const parts = line.includes(',') ? line.split(',') : line.split('\t'); if (parts.length >= 2) { const q = parts[0].trim(), a = parts[1].trim(); if (q && a && q !== '問題') probs.push({ q, a }); } });
-      if (!probs.length) return showToast('error', '読み込めませんでした'); StorageAPI.saveProblemSet(`AI_${new Date().toLocaleDateString()}`, probs); showToast('success', `${probs.length}問保存しました`); setView('manager');
+      const parsed = parseProblemText(text);
+      baseName = `AI_${new Date().toLocaleDateString()}`;
+      rows = parsed.rows;
+      unreadable = parsed.skipped;
     }
+    const { ok, bad, overflow } = validateProblems(rows);
+    if (!ok.length) return showToast('error', bad.length ? skippedMessage(bad, unreadable) : '読み込めませんでした', { duration: 8000 });
+    const name = uniqueCourseName(sanitizeCourseName(baseName) || '受信', StorageAPI.getProblemGroups().map(g => g.name));
+    if (!StorageAPI.saveProblemSet(name, ok)) return warnSaveFailure(`コースを 保存できませんでした。${saveFailureReason()}`);
+    showToast('success', `「${name}」に ${ok.length}問 保存しました`, { duration: 5000 });
+    const notes = [skippedMessage(bad, unreadable), overflow ? `${PROBLEM_MAX}問を こえた ${overflow}問は 取りこみませんでした` : ''].filter(Boolean);
+    if (notes.length) showToast('warning', notes.join('。'), { duration: 8000 });
+    setView('manager');
   };
 
   return (
@@ -2826,6 +3002,9 @@ export default function App() {
   // PeerJS のコールバックから「いまどの画面か」を見るためのref(コールバックは古い view を閉じこめてしまうため)
   const viewRef = useRef(view);
   useEffect(() => { viewRef.current = view; }, [view]);
+  // ゲーム中の GameView が「自分の端末の記録を締める」入口をここに置く。
+  // みんなであそぶでリーダーが先に終えたとき、メンバーの端末はここを通して終える（下の game_finish）
+  const leaderFinishRef = useRef(null);
   const [configMode, setConfigMode] = useState('SCORE_ATTACK');
   const [isMuted, setIsMuted] = useState(audioCtrl.muted);
   const [state, setState] = useState({ problemSet: [], timeLimitSec: 0, courseName: '', finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0, gameMode: 'SCORE_ATTACK', mistakes: [] });
@@ -3617,7 +3796,9 @@ export default function App() {
           // 古いキャッシュのまま入ろうとした。原因がわかる文言で伝える(「へやが見つからない」ではない)
           teardownPeer({ type: 'error', msg: 'アプリが古いようです。ページを さいよみこみ してね' });
         } else if (rawData.type === 'room_closed') {
-          // リーダーがへやをとじた/自分がへやから外された。この端末はここで完全に切りはなす
+          // リーダーがへやをとじた/自分がへやから外された。この端末はここで完全に切りはなす。
+          // ゲームのとちゅうなら、そこまでの EXP と学習ログ（中断）を先に残してから切る
+          if (viewRef.current === 'game') leaderFinishRef.current?.({ aborted: true });
           const reason = rawData.data?.reason;
           const msg = reason === 'rejected' ? 'リーダーが きょかしませんでした'
             : reason === 'in_game' ? 'いま ゲーム中です。おわるまで まってね'
@@ -3639,7 +3820,11 @@ export default function App() {
         } else if (rawData.type === 'game_finish') {
           if (rawData.data && rawData.data.raidResult) setState(prev => ({ ...prev, raidResult: rawData.data.raidResult }));
           if (rawData.data && rawData.data.territoryResult) setState(prev => ({ ...prev, territoryResult: rawData.data.territoryResult }));
-          setView('result');
+          // まだ自分のゲームが終わっていなければ、自分の端末の記録を締めてから結果画面へ。
+          // ここで結果画面へ切りかえるだけだと、EXP も学習ログも残らない（finishGame が結果画面へ進める）
+          const finishMine = viewRef.current === 'game' ? leaderFinishRef.current : null;
+          if (finishMine) finishMine();
+          else setView('result');
         } else if (rawData.type === 'participants_update') {
           setPeerState(p => ({ ...p, participants: rawData.data }));
         } else if (rawData.type === 'raid_state') {
@@ -3869,7 +4054,7 @@ export default function App() {
           {view === 'clientJoin' && <PageWrapper key="clientJoin"><ClientJoinView initClient={initClient} urlHostId={urlHostId} setView={setView} /></PageWrapper>}
           {view === 'clientWait' && <PageWrapper key="clientWait"><ClientWaitView peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
 
-          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} sendTerrSpecial={sendTerrSpecial} collectTerritoryResult={collectTerritoryResult} /></PageWrapper>}
+          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} sendTerrSpecial={sendTerrSpecial} collectTerritoryResult={collectTerritoryResult} leaderFinishRef={leaderFinishRef} /></PageWrapper>}
           {view === 'result' && <PageWrapper key="result"><ResultView state={state} setView={setView} peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
           {view === 'manager' && <PageWrapper key="manager"><ManagerView setView={setView} /></PageWrapper>}
           {view === 'import' && <PageWrapper key="import"><ImportView setView={setView} /></PageWrapper>}
@@ -3944,8 +4129,9 @@ export default function App() {
       {/* カスタム通知コンポーネントを配置 */}
       <CustomToast />
 
-      {/* あたらしいバージョンがあります（押すまで入れかわらない） */}
-      <UpdateNotice />
+      {/* あたらしいバージョンがあります（押すまで入れかわらない）。
+          ゲーム中と へやにいるあいだは出さない（テンキーに重なり、押すと とちゅうのゲームが消えるため） */}
+      <UpdateNotice hold={view === 'game' || !!peerState.role} />
     </div>
     </MotionConfig>
   );

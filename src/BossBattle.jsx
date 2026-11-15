@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo, useId } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Swords, Heart, Crown, Sparkles, AlertTriangle, Flame, Shield, Bomb } from 'lucide-react';
 // 提示モード中は児童名を伏せる（電子黒板は廊下や参観の保護者からも見える）
 import { PupilName } from './presentation.jsx';
 // 決まりごと・計算は別ファイル。あちらは最初から読みこまれ、この画面は選ばれるまで読まれない
 import {
-  RAID_CONSTANTS, BOSSES, bossForStage, bossMaxHp, bossSpriteUrl, attackTrackOf,
+  RAID_CONSTANTS, BOSSES, bossForStage, bossSpriteUrl,
 } from './battles/raidLogic.js';
 
 // ==========================================

@@ -60,13 +60,12 @@ const result = await page.evaluate(async (base) => {
     const isBackdrop = (p) => p[3] < 8 || corners.some((c) => near(p, c, 26));
 
     const cx = w / 2, cy = h / 2, r = w * 0.4; // 中央80%の円
-    let outsideContent = 0, totalContent = 0, outsideAll = 0;
+    let outsideContent = 0, outsideAll = 0;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const p = at(x, y);
         const inCircle = ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2) <= r * r;
         const content = !isBackdrop(p);
-        if (content) totalContent++;
         if (!inCircle) {
           if (p[3] > 8) outsideAll++;
           if (content) outsideContent++;
