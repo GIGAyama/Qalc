@@ -64,6 +64,8 @@ import {
   getGachaPool, rollGacha,
 } from './data/shop.js';
 import { getRandomMissions } from './data/missions.js';
+// 出題順をまぜる。sort(() => Math.random() - 0.5) は かたよる（random.js の説明）
+import { shuffle } from './random.js';
 // コースの共有コード・CSV 取りこみ・「テンキーで打てる答えか」の検査（node でテストしている）
 import {
   encodeCourse, decodeCourse, parseProblemText, validateProblems, uniqueCourseName,
@@ -1026,7 +1028,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
     if (selectedGroups.length === 0) return showToast('warning', 'ドリルを選んでください');
     let probs = collectProblems(selectedGroups);
     if (probs.length === 0) return showToast('error', '問題がありません');
-    probs = [...probs].sort(() => Math.random() - 0.5);
+    probs = shuffle(probs);
     if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
 
     // 開始直前にもう一度「いま つながっている人」だけにしぼる。
@@ -1712,7 +1714,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
     if (selectedGroups.length === 0) return showToast('warning', 'ドリルを選んでください');
     let probs = collectProblems(selectedGroups);
     if (probs.length === 0) return showToast('error', '問題がありません');
-    if (isShuffle) probs = [...probs].sort(() => Math.random() - 0.5);
+    if (isShuffle) probs = shuffle(probs);
     if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
 
     setState({
