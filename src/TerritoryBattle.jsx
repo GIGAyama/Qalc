@@ -275,7 +275,7 @@ export const TerritorySpecialButton = ({ gauge, kind, onFire }) => {
             strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - ratio)} style={{ transition: 'stroke-dashoffset 0.3s' }} />
         </svg>
         <span className={`leading-none ${ready ? 'text-3xl drop-shadow' : 'text-xl opacity-40 grayscale'}`}>{sp.emoji}</span>
-        {!ready && <span className="text-[9px] font-black text-[var(--text)] opacity-80 tabular-nums">{gauge}/{TERRITORY_CONSTANTS.SPECIAL_MAX}</span>}
+        {!ready && <span className="text-[10px] font-black text-[var(--text)] opacity-80 tabular-nums">{gauge}/{TERRITORY_CONSTANTS.SPECIAL_MAX}</span>}
       </motion.button>
       {ready && (
         <motion.span initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}

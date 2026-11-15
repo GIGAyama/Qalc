@@ -387,7 +387,7 @@ export const SupportButton = ({ gauge, onFire }) => {
           strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - ratio)} style={{ transition: 'stroke-dashoffset 0.3s' }} />
       </svg>
       <Sparkles size={20} className={ready ? 'text-[var(--primary-d)]' : 'text-[var(--text)] opacity-80'} />
-      <span className={`text-[9px] font-black ${ready ? 'text-[var(--text)]' : 'text-[var(--text)] opacity-80'}`}>おうえん</span>
+      <span className={`text-[10px] font-black ${ready ? 'text-[var(--text)]' : 'text-[var(--text)] opacity-80'}`}>おうえん</span>
     </motion.button>
   );
 };

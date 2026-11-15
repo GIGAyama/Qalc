@@ -425,14 +425,18 @@ export const preloadConfetti = () => {
   if (confettiFn) return;
   import('canvas-confetti').then((m) => { confettiFn = confettiFn || makeConfetti(m); }).catch(() => {});
 };
+// 紙ふぶきの canvas は body の直下に作られる（飛びおわると消える）。飾りなので読み上げからは外す
+const hideConfettiCanvas = () => {
+  document.querySelectorAll('body > canvas:not([aria-hidden])').forEach((c) => c.setAttribute('aria-hidden', 'true'));
+};
 const triggerConfetti = (options) => {
   if (prefersReducedMotion()) return;
   if (confettiFn) {
-    try { confettiFn(options); } catch (e) { /* 演出なので失敗しても進める */ }
+    try { confettiFn(options); hideConfettiCanvas(); } catch (e) { /* 演出なので失敗しても進める */ }
     return;
   }
   import('canvas-confetti')
-    .then((m) => { confettiFn = confettiFn || makeConfetti(m); confettiFn(options); })
+    .then((m) => { confettiFn = confettiFn || makeConfetti(m); confettiFn(options); hideConfettiCanvas(); })
     .catch(() => { /* 取れなくても正解の判定には関係ない */ });
 };
 
@@ -512,6 +516,40 @@ const PageWrapper = ({ children, keyName }) => (
     <div className="m-auto w-full max-w-lg md:max-w-xl">{children}</div>
   </motion.div>
 );
+
+// ダイアログを開いたら、中のボタンへフォーカスを移し、Tab は中だけを回す。閉じたら開く前の場所へもどす。
+// 以前はフォーカスが背後の画面に残ったままで、キーボードや読み上げで使う子には
+// ダイアログが出たことも、どこを押せばよいかも分からなかった（Part I §4）。
+// 最初に移すのは data-autofocus のついたボタン（「やめる」など、押しても困らないほう）
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const useModalFocus = (open) => {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const before = document.activeElement;
+    const list = () => (ref.current ? [...ref.current.querySelectorAll(FOCUSABLE)] : []);
+    const id = requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el || el.contains(document.activeElement)) return;
+      (el.querySelector('[data-autofocus]') || list()[0] || el).focus();
+    });
+    const onKey = (e) => {
+      if (e.key !== 'Tab' || !ref.current) return;
+      const items = list();
+      if (items.length === 0) { e.preventDefault(); return; }
+      const first = items[0]; const last = items[items.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !ref.current.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (document.activeElement === last || !ref.current.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      cancelAnimationFrame(id);
+      document.removeEventListener('keydown', onKey);
+      if (before && typeof before.focus === 'function' && document.contains(before)) before.focus();
+    };
+  }, [open]);
+  return ref;
+};
 
 const MotionButton = ({ children, onClick, className, ...props }) => (
   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95, y: 2, boxShadow: "none" }} onClick={() => { audioCtrl.playSE('click'); if (onClick) onClick(); }} className={`rounded-[20px] font-bold shadow-[0_4px_0_rgba(0,0,0,0.2)] border-none outline-none flex items-center justify-center gap-2 select-none touch-manipulation ${className}`} {...props}>
@@ -665,7 +703,7 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
     // 無限ループでバッファが数万pxまで膨張し、操作不能なほど重くなる。
     <div className="w-full h-full relative overflow-hidden border-2 border-[var(--text)] bg-[var(--panel)]">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full touch-none" />
-      <button className="absolute top-3 right-3 w-11 h-11 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 z-20 active:scale-90 transition-transform" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></button>
+      <button type="button" aria-label="メモを ぜんぶ けす" className="absolute top-3 right-3 w-11 h-11 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 z-20 active:scale-90 transition-transform" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} aria-hidden="true" /></button>
     </div>
   );
 }));
@@ -678,13 +716,13 @@ const Keypad = React.memo(({ onAppend, onClear, onSubmit, digitLayout = DEFAULT_
   // 文字は1行なので leading-none にして、行の高さを文字の行間が押し広げないようにする
   <div className="flex-grow flex flex-col gap-2 short:gap-1.5 tiny:gap-1 z-30 min-h-[30vh]">
     <div className="flex h-14 short:h-11 gap-2 short:gap-1.5 shrink-0">
-      {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary-d)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl leading-none shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }}>{c}</motion.button>)}
+      {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary-d)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl leading-none shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }} onClick={(e) => { if (e.detail === 0) onAppend(c); }}>{c}</motion.button>)}
     </div>
     <div className="grid grid-cols-3 grid-rows-[repeat(4,minmax(44px,1fr))] gap-2 short:gap-1.5 tiny:gap-1 flex-grow">
-      {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl leading-none shadow-[0_4px_0_var(--primary)] short:shadow-[0_3px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl leading-none rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }}>C</motion.button>
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl leading-none shadow-[0_4px_0_var(--primary)] short:shadow-[0_3px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--on-secondary)] border-[3px] border-[var(--text)] font-black text-3xl leading-none rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }}>OK</motion.button>
+      {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl leading-none shadow-[0_4px_0_var(--primary)] short:shadow-[0_3px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }} onClick={(e) => { if (e.detail === 0) onAppend(n); }}>{n}</motion.button>)}
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl leading-none rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }} onClick={(e) => { if (e.detail === 0) onClear(); }}>C</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl leading-none shadow-[0_4px_0_var(--primary)] short:shadow-[0_3px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }} onClick={(e) => { if (e.detail === 0) onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--on-secondary)] border-[3px] border-[var(--text)] font-black text-3xl leading-none rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }} onClick={(e) => { if (e.detail === 0) onSubmit(); }}>OK</motion.button>
     </div>
   </div>
 ));
@@ -860,7 +898,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
               {resumeData.gameMode === 'SCORE_ATTACK' ? 'スコア' : resumeData.gameMode === 'TIME_ATTACK' ? 'タイム' : 'サドンデス'}
             </span>
             <span className="truncate">{resumeData.courseName}</span>
-            <span className="ml-1 opacity-70 ruby-text">／ {resumeData.correctCount || 0}<R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></span>
+            <span className="ml-1 ruby-text">／ {resumeData.correctCount || 0}<R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></span>
           </div>
           <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-3 text-lg border-[3px] border-[var(--text)] ruby-text" onClick={onResume}>
             <Rocket size={20} /> つづきから<R c="始" r="はじ" />める
@@ -892,7 +930,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
 
       {/* ミッションパネル */}
       <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-4">
-        <h4 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text"><CheckCircle2 size={20} className="text-[var(--secondary-d)]" /> <R c="今" r="きょ" /><R c="日" r="う" />のミッション</h4>
+        <h3 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text"><CheckCircle2 size={20} className="text-[var(--secondary-d)]" /> <R c="今" r="きょ" /><R c="日" r="う" />のミッション</h3>
         <div className="flex flex-col gap-2">
           {stats.missions?.list.map(m => {
             const isCleared = m.current >= m.target;
@@ -916,7 +954,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
 
       {/* がんばりグラフ */}
       <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-4">
-        <h4 className="font-bold text-[var(--text)] mb-4 flex items-center gap-2 ruby-text"><BarChart3 size={18} /> がんばりグラフ (<R c="直" r="ちょっ" /><R c="近" r="きん" />7<R c="日" r="にち" />)</h4>
+        <h3 className="font-bold text-[var(--text)] mb-4 flex items-center gap-2 ruby-text"><BarChart3 size={18} /> がんばりグラフ (<R c="直" r="ちょっ" /><R c="近" r="きん" />7<R c="日" r="にち" />)</h3>
         <div className="flex justify-between h-24 gap-1">
           {chartData.map((d, i) => (
             <div key={i} className="flex flex-col items-center flex-1 h-full group">
@@ -924,7 +962,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
                 <div className="absolute -top-6 opacity-0 group-hover:opacity-100 text-[10px] font-bold text-[var(--text)] transition-opacity bg-[var(--panel)] px-1 rounded border z-10 shadow-sm">{d.exp}</div>
                 <motion.div initial={{ height: 0 }} animate={{ height: `${Math.max((d.exp / maxExp) * 100, 2)}%` }} className={`w-full max-w-[20px] rounded-t-sm ${d.exp > 0 ? 'bg-[var(--secondary)]' : 'bg-gray-200'}`}></motion.div>
               </div>
-              <div className="text-[9px] font-bold text-[var(--text)] opacity-80 mt-1 shrink-0">{d.label}</div>
+              <div className="text-[11px] font-bold text-[var(--text)] opacity-80 mt-1 shrink-0">{d.label}</div>
             </div>
           ))}
         </div>
@@ -933,9 +971,9 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
       {/* まなびのきろく: 学習ログ(study.v1)を読んで、自分のがんばりをふりかえる */}
       {study.summary.sessions > 0 && (
         <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-4">
-          <h4 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text">
+          <h3 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text">
             <Trophy size={18} className="text-[var(--accent)]" /> まなびのきろく（<R c="直" r="ちょっ" /><R c="近" r="きん" />7<R c="日" r="にち" />）
-          </h4>
+          </h3>
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-[var(--bg)] rounded-xl border-2 border-[var(--text)] p-2 text-center">
               <div className="text-2xl font-black text-[var(--text)]">{study.summary.sessions}</div>
@@ -1124,7 +1162,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
   return (
     <div className="flex flex-col h-[85vh] gap-4">
       <div className="flex justify-between items-center bg-[var(--panel)] p-3 rounded-2xl border-[3px] border-[var(--text)] shrink-0 shadow-sm">
-        <h3 className="font-black text-xl flex items-center gap-2 text-[var(--text)]"><Users size={24} className="text-[var(--secondary-d)]" /> みんなのへや</h3>
+        <h2 className="font-black text-xl flex items-center gap-2 text-[var(--text)]"><Users size={24} className="text-[var(--secondary-d)]" /> みんなのへや</h2>
         <div className="font-bold bg-[var(--secondary)] text-white px-3 py-1 rounded-full border-2 border-[var(--text)]"><RNin n={Object.keys(peerState.participants).length} /></div>
       </div>
 
@@ -1132,7 +1170,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
         <div className="flex flex-col items-center justify-center p-4 bg-[var(--bg)] rounded-xl border-2 border-dashed border-[var(--text)] shrink-0">
           <p className="font-bold text-[var(--primary-d)] mb-1 text-sm ruby-text">ルーム<R c="番" r="ばん" /><R c="号" r="ごう" /></p>
           {/* 10けたは長いので 4-3-3 に区切って見せる。打つときは数字だけでよい（すきまは読みやすさのため） */}
-          <h4 className="font-black text-3xl sm:text-4xl text-[var(--text)] mb-4 tracking-wider tabular-nums">{formatRoomId(peerState.hostId)}</h4>
+          <h3 className="font-black text-3xl sm:text-4xl text-[var(--text)] mb-4 tracking-wider tabular-nums">{formatRoomId(peerState.hostId)}</h3>
           <p className="font-bold text-sm text-[var(--text)] mb-3 ruby-text">この<R c="数" r="すう" /><R c="字" r="じ" />を<R c="入" r="にゅう" /><R c="力" r="りょく" />するか、QRコードを<R c="読" r="よ" />みこんでね</p>
           <canvas ref={qrRef} className="bg-white p-3 rounded-xl mb-3 shadow-inner" />
           <div className="w-full flex items-center bg-white border-2 border-gray-200 rounded-lg p-2">
@@ -1223,16 +1261,16 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
         {(configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') && (
           <div className="shrink-0 mb-2">
             <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <RFun n={time} /></span></label>
-            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full slider-44" />
+            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} aria-label="せいげんじかん" aria-valuetext={`${time}ふん`} className="w-full slider-44" />
           </div>
         )}
 
         {/* 入室のきょか。ここを通した人だけが参加者リスト・問題・ゲーム開始を受けとれる */}
         <div className="shrink-0">
-          <h4 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text flex items-center justify-between">
+          <h3 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text flex items-center justify-between">
             <span><R c="入" r="はい" />りたい<R c="人" r="ひと" /></span>
             {pendingList.length > 0 && <span className="text-sm text-[var(--on-primary)] bg-[var(--primary)] rounded-full px-3 py-0.5">{pendingList.length}</span>}
-          </h4>
+          </h3>
 
           <div className="flex gap-2 mb-3">
             <button
@@ -1269,7 +1307,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
             ))}
           </div>
 
-          <h4 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text"><R c="参" r="さん" /><R c="加" r="か" /><R c="者" r="しゃ" />の<R c="状" r="じょう" /><R c="況" r="きょう" /></h4>
+          <h3 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text"><R c="参" r="さん" /><R c="加" r="か" /><R c="者" r="しゃ" />の<R c="状" r="じょう" /><R c="況" r="きょう" /></h3>
           <div className="flex flex-col gap-2">
             {Object.keys(peerState.participants).length === 0 && <p className="text-center text-gray-400 py-4 font-bold text-sm ruby-text"><R c="参" r="さん" /><R c="加" r="か" /><R c="者" r="しゃ" />がいません</p>}
             {Object.entries(peerState.participants).sort((a, b) => b[1].score - a[1].score).map(([id, p], index) => (
@@ -1310,7 +1348,7 @@ const ClientJoinView = ({ initClient, urlHostId, setView }) => {
       <div className="bg-[var(--accent)] w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-[var(--text)] shrink-0">
         <Users size={32} className="text-[var(--text)]" />
       </div>
-      <h3 className="font-black text-2xl mb-4 text-[var(--text)] shrink-0 ruby-text">へやに<R c="入" r="はい" />ります</h3>
+      <h2 className="font-black text-2xl mb-4 text-[var(--text)] shrink-0 ruby-text">へやに<R c="入" r="はい" />ります</h2>
 
       <div className="mb-4 shrink-0">
         <p className="font-bold mb-2 text-[var(--text)] opacity-80 text-sm ruby-text">ルーム<R c="番" r="ばん" /><R c="号" r="ごう" />（<R c="数" r="すう" /><R c="字" r="じ" />{ROOM_ID_LEN}けた）</p>
@@ -1368,14 +1406,14 @@ const ClientWaitView = ({ peerState, leaveRoom }) => {
       </div>
       {approved ? (
         <>
-          <h3 className="font-black text-3xl text-[var(--text)] mb-3 ruby-text"><PupilName name={peerState.myName} /> さん、<br /><R c="準" r="じゅん" /><R c="備" r="び" />OK！</h3>
+          <h2 className="font-black text-3xl text-[var(--text)] mb-3 ruby-text"><PupilName name={peerState.myName} /> さん、<br /><R c="準" r="じゅん" /><R c="備" r="び" />OK！</h2>
           <p className="font-bold text-[var(--on-accent)] opacity-80 bg-[var(--accent)] px-4 py-2 rounded-lg border-2 border-[var(--text)] mb-6 ruby-text">
             リーダーがスタートするまで<br />このまま<R c="待" r="ま" />っていてね
           </p>
         </>
       ) : (
         <>
-          <h3 className="font-black text-2xl text-[var(--text)] mb-3 ruby-text">リーダーの<br /><R c="許" r="きょ" /><R c="可" r="か" />を<R c="待" r="ま" />っています</h3>
+          <h2 className="font-black text-2xl text-[var(--text)] mb-3 ruby-text">リーダーの<br /><R c="許" r="きょ" /><R c="可" r="か" />を<R c="待" r="ま" />っています</h2>
           <p className="font-bold text-[var(--text)] opacity-80 bg-[var(--bg)] border-2 border-dashed border-[var(--text)] px-4 py-2 rounded-lg mb-6 ruby-text text-sm">
             「<PupilName name={peerState.myName} />」で<R c="申" r="もう" />しこみました。<br />リーダーが「いれる」を おすまで<br />ちょっと<R c="待" r="ま" />っててね
           </p>
@@ -1392,6 +1430,8 @@ const ShopView = ({ setView, stats, setStats }) => {
   const [tab, setTab] = useState('bases');
   const [confirmItem, setConfirmItem] = useState(null);
   const [gachaResult, setGachaResult] = useState(null); // { category, item, isNew, refund, revealed }
+  const buyDialogRef = useModalFocus(!!confirmItem);
+  const gachaDialogRef = useModalFocus(!!gachaResult);
   const spinningRef = useRef(false);
   const { level } = getLevelInfo(stats.totalExp);
 
@@ -1484,16 +1524,16 @@ const ShopView = ({ setView, stats, setStats }) => {
       <AnimatePresence>
         {confirmItem && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="かうかどうかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={buyDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="かうかどうかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
               <div className="text-5xl mb-3 h-16 flex items-center justify-center">
                 {confirmItem.category === 'themes'
                   ? (confirmItem.item.c ? <div className="flex gap-1">{confirmItem.item.c.map((col, i) => <span key={i} className="w-8 h-8 rounded-full border-[3px] border-[var(--text)]" style={{ background: col }} />)}</div> : <PaintBucket size={48} className="text-[var(--text)]" />)
                   : confirmItem.item.char}
               </div>
-              <h3 className="font-black text-xl text-[var(--text)] mb-2 leading-snug">「{confirmItem.item.name}」を<br />買いますか？</h3>
+              <h2 className="font-black text-xl text-[var(--text)] mb-2 leading-snug">「{confirmItem.item.name}」を<br />買いますか？</h2>
               <p className="font-bold text-[var(--primary-d)] mb-6 flex items-center gap-1 justify-center"><Coins size={20} /> {confirmItem.item.price}</p>
               <div className="flex w-full gap-3">
-                <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmItem(null); }}>やめる</MotionButton>
+                <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmItem(null); }}>やめる</MotionButton>
                 <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={executeBuy}>かう！</MotionButton>
               </div>
             </motion.div>
@@ -1502,7 +1542,7 @@ const ShopView = ({ setView, stats, setStats }) => {
 
         {gachaResult && (
           <motion.div key="gachaModal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="ふしぎなたまごガチャ" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={gachaDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="ふしぎなたまごガチャ" aria-live="polite" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
               {!gachaResult.revealed ? (
                 <>
                   <motion.div animate={{ rotate: [0, -15, 15, -15, 15, 0], scale: [1, 1.05, 1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 0.7 }} className="text-7xl mb-4">🥚</motion.div>
@@ -1512,13 +1552,13 @@ const ShopView = ({ setView, stats, setStats }) => {
                 <>
                   <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.5 }} className="text-7xl mb-3">{gachaResult.item.char}</motion.div>
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-full mb-2" style={{ background: RARITY_INFO[getRarity(gachaResult.item)].color, color: RARITY_INFO[getRarity(gachaResult.item)].on }}>{RARITY_INFO[getRarity(gachaResult.item)].label}</span>
-                  <h3 className="font-black text-xl text-[var(--text)] leading-snug">{gachaResult.item.name}</h3>
+                  <h2 className="font-black text-xl text-[var(--text)] leading-snug">{gachaResult.item.name}</h2>
                   <p className="text-[10px] font-bold text-[var(--text)] opacity-80 mb-2">({CATEGORY_LABELS[gachaResult.category]})</p>
                   {gachaResult.isNew
                     ? <p className="font-black text-[var(--primary-d)] mb-4">✨ NEW! てにいれた！</p>
                     : <p className="font-black text-[var(--text)] opacity-80 mb-4 flex items-center gap-1 justify-center">もってた！ <Coins size={16} /> +{gachaResult.refund} もどってきた</p>}
                   <div className="flex w-full gap-3">
-                    <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setGachaResult(null); }}>とじる</MotionButton>
+                    <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setGachaResult(null); }}>とじる</MotionButton>
                     <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={spinGacha} disabled={stats.coins < GACHA_COST}>もう1かい</MotionButton>
                   </div>
                 </>
@@ -1529,7 +1569,7 @@ const ShopView = ({ setView, stats, setStats }) => {
       </AnimatePresence>
 
       <div className="flex justify-between items-center mb-2 shrink-0">
-        <h3 className="font-bold text-xl text-[var(--text)] flex items-center gap-2"><Store size={24} /> ショップ＆きせかえ</h3>
+        <h2 className="font-bold text-xl text-[var(--text)] flex items-center gap-2"><Store size={24} /> ショップ＆きせかえ</h2>
         <div className="flex items-center gap-1 font-black text-sm text-[var(--on-accent)] bg-[var(--accent)] px-3 py-1.5 rounded-full border-[3px] border-[var(--text)]"><Coins size={16} /> {stats.coins}</div>
       </div>
 
@@ -1561,7 +1601,7 @@ const ShopView = ({ setView, stats, setStats }) => {
             { id: 'themes', icon: <PaintBucket size={14} />, label: 'テーマ' },
             { id: 'gacha', icon: <span className="text-xs">🥚</span>, label: 'ガチャ' },
           ].map(t => (
-            <button key={t.id} onClick={() => { audioCtrl.playSE('click'); setTab(t.id); }} className={`flex flex-col items-center justify-center p-1 rounded-lg border-2 font-bold text-[9px] transition-all ${tab === t.id ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--panel)] text-[var(--text)] opacity-80 border-transparent hover:bg-[var(--bg)]'}`}>
+            <button key={t.id} onClick={() => { audioCtrl.playSE('click'); setTab(t.id); }} className={`flex flex-col items-center justify-center p-1 rounded-lg border-2 font-bold text-[11px] leading-tight min-h-[44px] transition-all ${tab === t.id ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--panel)] text-[var(--text)] opacity-80 border-transparent hover:bg-[var(--bg)]'}`}>
               {t.icon} {t.label}
             </button>
           ))}
@@ -1571,7 +1611,7 @@ const ShopView = ({ setView, stats, setStats }) => {
       {tab === 'gacha' ? (
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] flex-grow p-4 overflow-y-auto shadow-sm flex flex-col items-center gap-3">
           <motion.div animate={{ rotate: [0, -6, 6, -6, 6, 0] }} transition={{ repeat: Infinity, duration: 2.5, repeatDelay: 1 }} className="text-7xl">🥚</motion.div>
-          <h4 className="font-black text-lg text-[var(--text)]">ふしぎなたまごガチャ</h4>
+          <h3 className="font-black text-lg text-[var(--text)]">ふしぎなたまごガチャ</h3>
           <p className="text-xs font-bold text-[var(--text)] opacity-80 text-center leading-relaxed">
             ここでしか手に入らないレアきせかえが ぜんぶで {gachaPool.length}しゅるい！<br />
             もっているものが 出たときは コインが すこし もどってくるよ
@@ -1589,7 +1629,7 @@ const ShopView = ({ setView, stats, setStats }) => {
               🥚 ガチャをまわす（<Coins size={18} /> {GACHA_COST}）
             </MotionButton>
           )}
-          <div className="flex gap-2 text-[9px] font-bold">
+          <div className="flex flex-wrap justify-center gap-2 text-[11px] font-bold">
             {Object.entries(RARITY_INFO).map(([k, v]) => (
               <span key={k} className="px-2 py-0.5 rounded-full" style={{ background: v.color, color: v.on }}>{v.label}{k === 'N' ? ' でやすい' : k === 'UR' ? ' ちょうレア' : ''}</span>
             ))}
@@ -1600,9 +1640,9 @@ const ShopView = ({ setView, stats, setStats }) => {
               const r = getRarity(item);
               return (
                 <div key={item.id} className={`relative flex flex-col items-center p-1.5 rounded-xl border-2 ${owned ? 'bg-[var(--bg)] border-[var(--text)]' : 'bg-[var(--panel)] border-gray-200'}`}>
-                  <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black px-1.5 rounded-full" style={{ background: RARITY_INFO[r].color, color: RARITY_INFO[r].on }}>{RARITY_INFO[r].label}</span>
+                  <span className="absolute -top-1.5 -right-1.5 text-[10px] font-black px-1.5 rounded-full" style={{ background: RARITY_INFO[r].color, color: RARITY_INFO[r].on }}>{RARITY_INFO[r].label}</span>
                   <div className={`text-2xl ${owned ? '' : 'grayscale opacity-40'}`}>{owned ? item.char : '❓'}</div>
-                  <div className="text-[8px] font-bold text-[var(--text)] text-center leading-tight truncate w-full">{owned ? item.name : '？？？'}</div>
+                  <div className="text-[11px] font-bold text-[var(--text)] text-center leading-tight truncate w-full">{owned ? item.name : '？？？'}</div>
                 </div>
               );
             })}
@@ -1617,24 +1657,25 @@ const ShopView = ({ setView, stats, setStats }) => {
             const isLocked = !isOwned && item.lv && level < item.lv;
             const isGachaOnly = item.gacha && !isOwned;
             return (
-              <div key={item.id} onClick={() => handleItemClick(item, tab)} className={`relative flex flex-col items-center p-2 rounded-xl border-[3px] cursor-pointer transition-transform active:scale-95 ${isEquipped ? 'bg-[var(--accent)] border-[var(--text)]' : isOwned ? 'bg-[var(--bg)] border-[var(--text)] opacity-80' : 'bg-[var(--panel)] border-gray-200 grayscale hover:grayscale-0'}`}>
-                {rarity !== 'N' && <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black px-1.5 py-px rounded-full z-10" style={{ background: RARITY_INFO[rarity].color, color: RARITY_INFO[rarity].on }}>{RARITY_INFO[rarity].label}</span>}
-                <div className="text-3xl mb-1 h-10 flex items-center justify-center">
+              // 以前は div に onClick をつけていて、キーボードでは選べず、読み上げでは「ボタン」と伝わらなかった
+              <button type="button" key={item.id} onClick={() => handleItemClick(item, tab)} aria-pressed={isOwned ? isEquipped : undefined} className={`relative flex flex-col items-center p-2 rounded-xl border-[3px] cursor-pointer transition-transform active:scale-95 ${isEquipped ? 'bg-[var(--accent)] border-[var(--text)]' : isOwned ? 'bg-[var(--bg)] border-[var(--text)] opacity-80' : 'bg-[var(--panel)] border-gray-200 grayscale hover:grayscale-0'}`}>
+                {rarity !== 'N' && <span className="absolute -top-1.5 -right-1.5 text-[10px] font-black px-1.5 py-px rounded-full z-10" aria-hidden="true" style={{ background: RARITY_INFO[rarity].color, color: RARITY_INFO[rarity].on }}>{RARITY_INFO[rarity].label}</span>}
+                <span aria-hidden="true" className="text-3xl mb-1 h-10 flex items-center justify-center">
                   {tab === 'themes'
-                    ? (item.c ? <div className="flex gap-0.5">{item.c.map((col, i) => <span key={i} className="w-4 h-4 rounded-full border-2 border-[var(--text)]" style={{ background: col }} />)}</div> : <PaintBucket size={28} className={isEquipped ? 'text-[var(--text)]' : 'text-gray-400'} />)
+                    ? (item.c ? <span className="flex gap-0.5">{item.c.map((col, i) => <span key={i} className="w-4 h-4 rounded-full border-2 border-[var(--text)]" style={{ background: col }} />)}</span> : <PaintBucket size={28} className={isEquipped ? 'text-[var(--text)]' : 'text-gray-400'} />)
                     : isGachaOnly ? '❓' : isLocked ? '🔒' : item.char}
-                </div>
-                <div className="text-[9px] font-bold text-[var(--text)] text-center leading-tight h-6 overflow-hidden">{isGachaOnly ? '？？？' : item.name}</div>
-                <div className="mt-1 w-full text-center">
+                </span>
+                <span className="block text-[11px] font-bold text-[var(--text)] text-center leading-tight h-7 overflow-hidden">{isGachaOnly ? '？？？' : item.name}</span>
+                <span className="block mt-1 w-full text-center">
                   {isOwned
                     ? <span className="text-[10px] font-bold bg-[var(--text)] text-[var(--panel)] px-2 py-0.5 rounded-full">{isEquipped ? 'そうび中' : 'もってる'}</span>
                     : isGachaOnly
                       ? <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--bg)] border border-[var(--text)] px-1.5 py-0.5 rounded-full">🥚ガチャ</span>
                       : isLocked
                         ? <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--bg)] border border-[var(--text)] px-1.5 py-0.5 rounded-full">🔒Lv.{item.lv}</span>
-                        : <span className="text-[10px] font-bold text-[var(--on-accent)] bg-[var(--accent)] border border-[var(--text)] px-1.5 py-0.5 rounded-full flex items-center justify-center gap-0.5"><Coins size={10} />{item.price}</span>}
-                </div>
-              </div>
+                        : <span className="text-[10px] font-bold text-[var(--on-accent)] bg-[var(--accent)] border border-[var(--text)] px-1.5 py-0.5 rounded-full flex items-center justify-center gap-0.5"><Coins size={10} aria-hidden="true" />{item.price}<span className="sr-only">コイン</span></span>}
+                </span>
+              </button>
             );
           })}
         </div>
@@ -1765,11 +1806,11 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
   return (
     <div>
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-5 flex flex-col gap-4">
-        <h3 className="font-black text-2xl text-center mb-1 text-[var(--text)] flex items-center justify-center gap-2">
+        <h2 className="font-black text-2xl text-center mb-1 text-[var(--text)] flex items-center justify-center gap-2">
           {configMode === 'SCORE_ATTACK' && <><Award size={28} className="text-[var(--accent)]" /> スコアアタック</>}
           {configMode === 'TIME_ATTACK' && <><Timer size={28} className="text-[var(--secondary-d)]" /> タイムアタック</>}
           {configMode === 'SUDDEN_DEATH' && <><Swords size={28} className="text-[var(--primary-d)]" /> サドンデス</>}
-        </h3>
+        </h2>
 
         <div>
           <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 ruby-text"><R c="学" r="がく" /><R c="年" r="ねん" /></label>
@@ -1800,16 +1841,17 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
         {configMode === 'SCORE_ATTACK' && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
             <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <RFun n={time} /></span></label>
-            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full slider-44" />
+            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} aria-label="せいげんじかん" aria-valuetext={`${time}ふん`} className="w-full slider-44" />
           </motion.div>
         )}
 
-        <div className="flex items-center gap-3 bg-[var(--bg)] p-3 rounded-xl border border-[var(--text)] cursor-pointer" onClick={() => { audioCtrl.playSE('click'); setIsShuffle(!isShuffle); }}>
-          <div className={`w-6 h-6 rounded flex items-center justify-center border-2 transition-colors ${isShuffle ? 'bg-[var(--secondary)] border-[var(--secondary)]' : 'bg-[var(--panel)] border-[var(--text)]'}`}>
+        {/* 以前は div に onClick をつけていて、キーボードでは切りかえられず、読み上げでは入っているかが伝わらなかった */}
+        <button type="button" role="switch" aria-checked={isShuffle} className="w-full flex items-center gap-3 bg-[var(--bg)] p-3 rounded-xl border border-[var(--text)] cursor-pointer text-left" onClick={() => { audioCtrl.playSE('click'); setIsShuffle(!isShuffle); }}>
+          <span aria-hidden="true" className={`w-6 h-6 shrink-0 rounded flex items-center justify-center border-2 transition-colors ${isShuffle ? 'bg-[var(--secondary)] border-[var(--secondary)]' : 'bg-[var(--panel)] border-[var(--text)]'}`}>
             {isShuffle && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
-          </div>
-          <label className="font-bold text-sm text-[var(--text)] select-none cursor-pointer">問題をランダムに出題する</label>
-        </div>
+          </span>
+          <span className="font-bold text-sm text-[var(--text)] select-none">問題をランダムに出題する</span>
+        </button>
 
         <div className="mt-2 space-y-3">
           <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-4 text-xl border-[3px] border-[var(--text)]" onClick={start}><Gamepad2 size={24} /> スタート！</MotionButton>
@@ -1910,6 +1952,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const wrongCountRef = useRef(resumeSnapshot?.wrongCount || 0);
   const isResumedSessionRef = useRef(!!resumeSnapshot);
   const [quitDialog, setQuitDialog] = useState(false);
+  const quitDialogRef = useModalFocus(quitDialog);
   // 勝負がついた（サドンデスでまちがえた・タイムアタックの最後の問題に正解した）あと、
   // 結果画面へ移るまでの0.5秒は答えを受けつけない。以前はこのあいだに打った正解も数えていて、
   // 1問目でまちがえたサドンデスが「2問正解」になったり、タイムアタックが「21 / 20問」になったりした
@@ -2518,7 +2561,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             <div className="h-[27vh] md:h-auto md:w-full md:flex-grow md:min-h-0 flex items-center justify-center gap-1 w-full">
               <TerritoryBoard terrState={terrState} myTeam={myTeam} myId={myId} targetIdx={terrTarget} onSelect={selectTerrTarget} lastSpurt={lastSpurt} />
               {/* おうえんキャラクター(モバイル): 盤面は 27vh の正方形なので、あまった横のすきまに ならべて置く */}
-              <TerritoryCharacter mood={terrMood} line={terrLine} team={myTeam} bubbleClassName="max-w-[104px] text-[8px]" className="w-20 shrink-0 md:hidden" />
+              <TerritoryCharacter mood={terrMood} line={terrLine} team={myTeam} bubbleClassName="max-w-[110px] text-[10px]" className="w-20 shrink-0 md:hidden" />
             </div>
             <TerritoryRushBadge until={rushUntil} />
             {/* おうえんキャラクター(PC): 盤面の下にゆったり出す */}
@@ -2571,8 +2614,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
               </motion.button>
             )}
             <span className="text-5xl short:text-4xl font-black text-[var(--secondary-d)] tracking-widest">{ans || (wrongFlash ? <span className="text-[var(--primary-d)] line-through decoration-4">{wrongFlash.text}</span> : <span className="text-4xl short:text-3xl font-bold text-[var(--text)] opacity-70">?</span>)}</span>
-            {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 short:right-16 w-12 h-12 tiny:w-11 tiny:h-11 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
-            <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 short:right-2 w-14 h-14 short:w-12 short:h-12 tiny:w-11 tiny:h-11 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--on-secondary)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
+            {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 short:right-16 w-12 h-12 tiny:w-11 tiny:h-11 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" aria-label="メモを はんたいがわに うつす" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }} onClick={(e) => { if (e.detail === 0) { audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); } }}><ArrowLeftRight size={20} aria-hidden="true" /></motion.button>}
+            <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 short:right-2 w-14 h-14 short:w-12 short:h-12 tiny:w-11 tiny:h-11 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--on-secondary)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} aria-label="てがきメモ" aria-pressed={showMemo} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }} onClick={(e) => { if (e.detail === 0) { audioCtrl.playSE('click'); setShowMemo(m => !m); } }}><PenTool size={24} aria-hidden="true" /></motion.button>
           </motion.div>
 
           <div className="relative flex-grow flex flex-col flat:col-start-2 flat:row-start-1 flat:row-span-3">
@@ -2617,10 +2660,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       <AnimatePresence>
         {quitDialog && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="とちゅうで やめるかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-sm flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={quitDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="とちゅうで やめるかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-sm flex flex-col items-center text-center">
               <XCircle size={48} className="text-[var(--primary-d)] mb-3" />
-              <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text"><R c="途" r="と" /><R c="中" r="ちゅう" />で やめますか？</h3>
-              <p className="text-sm text-[var(--text)] opacity-80 mb-5 ruby-text">
+              <h2 className="font-black text-xl text-[var(--text)] mb-2 ruby-text"><R c="途" r="と" /><R c="中" r="ちゅう" />で やめますか？</h2>
+              <p className="text-sm text-[var(--text)] mb-5 ruby-text">
                 ここまでの<R c="正" r="せい" /><R c="解" r="かい" />: <span className="font-black text-[var(--primary-d)]">{correctCount}<R c="問" r="もん" /></span>
                 {state.gameMode === 'SCORE_ATTACK' && <> ／ スコア: <span className="font-black text-[var(--primary-d)]">{score}pt</span></>}
                 {state.gameMode === 'BOSS_RAID' && <> ／ <R c="与" r="あた" />えたダメージ: <span className="font-black text-[var(--primary-d)]">⚔{score}</span></>}
@@ -2635,7 +2678,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
                     <Clock size={18} /> <R c="中" r="ちゅう" /><R c="断" r="だん" />して<R c="保" r="ほ" /><R c="存" r="ぞん" />
                   </MotionButton>
                 )}
-                <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 w-full" onClick={() => { audioCtrl.playSE('click'); setQuitDialog(false); }}>
+                <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 w-full" onClick={() => { audioCtrl.playSE('click'); setQuitDialog(false); }}>
                   つづける
                 </MotionButton>
               </div>
@@ -2653,6 +2696,7 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
   const oldInfo = getLevelInfo(oldExp); const newInfo = getLevelInfo(newExp);
   const mistakes = state.mistakes || [];
   const [showLevelUp, setShowLevelUp] = useState(false);
+  const levelUpRef = useModalFocus(showLevelUp);
 
   const isMultiplayer = peerState && peerState.role;
   const participantsList = isMultiplayer ? Object.entries(peerState.participants || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => b.score - a.score) : [];
@@ -2689,16 +2733,16 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
             transition={{ type: "spring", bounce: 0.5 }}
             className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--bg)]/80 backdrop-blur-sm rounded-[20px] m-4"
           >
-            <div className="bg-[var(--panel)] border-[4px] border-[var(--accent)] p-8 rounded-3xl text-center shadow-2xl flex flex-col items-center w-full max-w-sm">
+            <div ref={levelUpRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="レベルアップ" className="bg-[var(--panel)] border-[4px] border-[var(--accent)] p-8 rounded-3xl text-center shadow-2xl flex flex-col items-center w-full max-w-sm">
               <motion.div initial={{ scale: 0, rotate: -30 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.6, delay: 0.1 }} className="text-7xl mb-4">{newInfo.badge}</motion.div>
-              <h3 className="text-3xl font-black text-[var(--text)] mb-2">レベルアップ！</h3>
+              <h2 className="text-3xl font-black text-[var(--text)] mb-2">レベルアップ！</h2>
               <p className="text-xl font-bold text-[var(--primary-d)] mb-3">Lv.{oldInfo.level} <span className="opacity-50">→</span> Lv.{newInfo.level} {newInfo.title}</p>
               {(state.levelUpCoins || 0) > 0 && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="flex items-center gap-1.5 bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-[var(--on-accent)] mb-6">
                   <Coins size={18} /> ボーナス +{state.levelUpCoins} コイン！
                 </motion.div>
               )}
-              <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] w-full py-3 text-lg border-[3px] border-[var(--text)]" onClick={() => setShowLevelUp(false)}>やったー！</MotionButton>
+              <MotionButton data-autofocus className="bg-[var(--accent)] text-[var(--on-accent)] w-full py-3 text-lg border-[3px] border-[var(--text)]" onClick={() => setShowLevelUp(false)}>やったー！</MotionButton>
             </div>
           </motion.div>
         )}
@@ -2761,9 +2805,9 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
         </div>
       ) : (
         <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_var(--text)] p-6 text-center w-full mb-6 shrink-0 relative overflow-hidden">
-          {state.gameMode === 'SCORE_ATTACK' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1">SCORE</h4><div className="text-6xl font-black text-[var(--text)] mb-2">{state.finalScore || 0}</div></>}
-          {state.gameMode === 'TIME_ATTACK' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1">CLEAR TIME</h4><div className="text-6xl font-black text-[var(--secondary-d)] mb-2">{state.finalTime.toFixed(1)} <span className="text-2xl ruby-text"><R c="秒" r="びょう" /></span></div></>}
-          {state.gameMode === 'SUDDEN_DEATH' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1 ruby-text"><R c="連" r="れん" /><R c="続" r="ぞく" /><R c="正" r="せい" /><R c="解" r="かい" /><R c="数" r="すう" /></h4><div className="text-6xl font-black text-[var(--primary-d)] mb-2">{state.finalCorrect} <span className="text-2xl ruby-text"><R c="問" r="もん" /></span></div></>}
+          {state.gameMode === 'SCORE_ATTACK' && <><h3 className="text-[var(--text)] opacity-80 font-bold mb-1">SCORE</h3><div className="text-6xl font-black text-[var(--text)] mb-2">{state.finalScore || 0}</div></>}
+          {state.gameMode === 'TIME_ATTACK' && <><h3 className="text-[var(--text)] opacity-80 font-bold mb-1">CLEAR TIME</h3><div className="text-6xl font-black text-[var(--secondary-d)] mb-2">{state.finalTime.toFixed(1)} <span className="text-2xl ruby-text"><R c="秒" r="びょう" /></span></div></>}
+          {state.gameMode === 'SUDDEN_DEATH' && <><h3 className="text-[var(--text)] opacity-80 font-bold mb-1 ruby-text"><R c="連" r="れん" /><R c="続" r="ぞく" /><R c="正" r="せい" /><R c="解" r="かい" /><R c="数" r="すう" /></h3><div className="text-6xl font-black text-[var(--primary-d)] mb-2">{state.finalCorrect} <span className="text-2xl ruby-text"><R c="問" r="もん" /></span></div></>}
 
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="text-xl font-black text-[var(--secondary-d)] mb-4 flex flex-col items-center justify-center gap-1">
             <div className="flex items-center gap-1.5">
@@ -2798,7 +2842,7 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
 
       {mistakes.length > 0 && (
         <div className="bg-[var(--panel)] border-[3px] border-[var(--primary)] rounded-[20px] p-4 mb-6 shrink-0 shadow-sm">
-          <h4 className="font-black text-[var(--primary-d)] mb-3 flex items-center justify-center gap-2 ruby-text"><PenTool size={20} /> おさらい（まちがえた<R c="問" r="もん" /><R c="題" r="だい" />）</h4>
+          <h3 className="font-black text-[var(--primary-d)] mb-3 flex items-center justify-center gap-2 ruby-text"><PenTool size={20} /> おさらい（まちがえた<R c="問" r="もん" /><R c="題" r="だい" />）</h3>
           <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2 no-scrollbar">
             {mistakes.map((m, i) => (
               <div key={i} className="flex justify-between items-center border-b-2 border-dashed border-[var(--bg)] pb-2">
@@ -2861,6 +2905,7 @@ const skippedMessage = (bad, unreadable = 0) => {
 const ManagerView = ({ setView }) => {
   const [groups, setGroups] = useState([]); const [selectedGrade, setSelectedGrade] = useState('すべて'); const [editTarget, setEditTarget] = useState(null); const [editName, setEditName] = useState(''); const [probs, setProbs] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteDialogRef = useModalFocus(confirmDelete);
   const grades = ['すべて', '1年', '2年', '3年', '4年', '5年', '6年', 'その他'];
   const loadGroups = () => setGroups(StorageAPI.getProblemGroups());
   useEffect(() => { loadGroups(); }, []);
@@ -2934,11 +2979,11 @@ const ManagerView = ({ setView }) => {
         <AnimatePresence>
           {confirmDelete && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label={targetIsPreset ? 'もとにもどすかの かくにん' : 'さくじょの かくにん'} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={deleteDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={targetIsPreset ? 'もとにもどすかの かくにん' : 'さくじょの かくにん'} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
                 <Trash2 size={48} className="text-[var(--primary-d)] mb-3" />
-                <h3 className="font-black text-xl text-[var(--text)] mb-6 leading-snug">「{editTarget}」を<br />{targetIsPreset ? 'はじめの 問題に もどしますか？' : '本当に削除しますか？'}</h3>
+                <h2 className="font-black text-xl text-[var(--text)] mb-6 leading-snug">「{editTarget}」を<br />{targetIsPreset ? 'はじめの 問題に もどしますか？' : '本当に削除しますか？'}</h2>
                 <div className="flex w-full gap-3">
-                  <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(false); }}>やめる</MotionButton>
+                  <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(false); }}>やめる</MotionButton>
                   <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); executeDelete(); }}>{targetIsPreset ? 'もどす' : '削除する'}</MotionButton>
                 </div>
               </motion.div>
@@ -2946,7 +2991,7 @@ const ManagerView = ({ setView }) => {
           )}
         </AnimatePresence>
 
-        <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="font-bold text-xl flex items-center gap-2 text-[var(--text)]"><Settings size={20} /> コース編集</h3>{canRemove && <button className="tap-44 text-[var(--on-primary)] font-bold border-2 border-[var(--primary)] bg-[var(--primary)] rounded-xl px-4 py-1.5 text-sm" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(true); }}>{targetIsPreset ? 'もとにもどす' : '削除'}</button>}</div>
+        <div className="flex justify-between items-center mb-4 shrink-0"><h2 className="font-bold text-xl flex items-center gap-2 text-[var(--text)]"><Settings size={20} /> コース編集</h2>{canRemove && <button className="tap-44 text-[var(--on-primary)] font-bold border-2 border-[var(--primary)] bg-[var(--primary)] rounded-xl px-4 py-1.5 text-sm" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(true); }}>{targetIsPreset ? 'もとにもどす' : '削除'}</button>}</div>
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl p-2 mb-4 shrink-0 shadow-sm"><input type="text" className="w-full font-bold text-lg p-2 outline-none bg-transparent text-[var(--text)]" placeholder="コース名 (例: 1年_たしざん)" value={editName} onChange={e => setEditName(e.target.value)} /></div>
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl flex flex-col flex-grow overflow-hidden mb-4 shadow-sm">
           <div className="bg-[var(--bg)] flex p-3 border-b-2 border-[var(--text)] font-bold text-sm text-[var(--text)] opacity-80 shrink-0"><div className="flex-grow px-2">問題</div><div className="w-24 px-2 text-center border-l-2 border-[var(--text)]">答え</div><div className="w-12 border-l-2 border-[var(--text)]"></div></div>
@@ -2954,9 +2999,9 @@ const ManagerView = ({ setView }) => {
             <AnimatePresence>
               {probs.map((p, i) => (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} key={i} className="flex border-b-2 border-dashed border-[var(--bg)] overflow-hidden">
-                  <input type="text" className="flex-grow p-3 outline-none font-bold bg-transparent text-[var(--text)]" placeholder="問題" value={p.q} onChange={e => { const n = [...probs]; n[i] = { ...n[i], q: e.target.value }; setProbs(n); }} />
-                  <input type="text" className="w-24 p-3 outline-none border-l-2 border-dashed border-[var(--bg)] text-center font-bold text-[var(--primary-d)] bg-transparent" placeholder="答え" value={p.a} onChange={e => { const n = [...probs]; n[i] = { ...n[i], a: e.target.value }; setProbs(n); }} />
-                  <button className="w-12 border-l-2 border-dashed border-[var(--bg)] text-[var(--text)] opacity-80 hover:opacity-100 flex items-center justify-center transition-opacity" onClick={() => { audioCtrl.playSE('click'); setProbs(probs.filter((_, idx) => idx !== i)) }}><XCircle size={20} /></button>
+                  <input type="text" aria-label={`${i + 1}もんめの 問題`} className="flex-grow p-3 outline-none font-bold bg-transparent text-[var(--text)]" placeholder="問題" value={p.q} onChange={e => { const n = [...probs]; n[i] = { ...n[i], q: e.target.value }; setProbs(n); }} />
+                  <input type="text" aria-label={`${i + 1}もんめの 答え`} className="w-24 p-3 outline-none border-l-2 border-dashed border-[var(--bg)] text-center font-bold text-[var(--primary-d)] bg-transparent" placeholder="答え" value={p.a} onChange={e => { const n = [...probs]; n[i] = { ...n[i], a: e.target.value }; setProbs(n); }} />
+                  <button type="button" aria-label={`${i + 1}もんめを けす`} className="w-12 border-l-2 border-dashed border-[var(--bg)] text-[var(--text)] opacity-80 hover:opacity-100 flex items-center justify-center transition-opacity" onClick={() => { audioCtrl.playSE('click'); setProbs(probs.filter((_, idx) => idx !== i)) }}><XCircle size={20} aria-hidden="true" /></button>
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -2972,7 +3017,7 @@ const ManagerView = ({ setView }) => {
   }
   return (
     <div className="flex flex-col h-[70vh]">
-      <h3 className="font-bold text-xl text-center mb-4 shrink-0 flex items-center justify-center gap-2 text-[var(--text)]"><Settings size={24} /> 管理・共有</h3>
+      <h2 className="font-bold text-xl text-center mb-4 shrink-0 flex items-center justify-center gap-2 text-[var(--text)]"><Settings size={24} /> 管理・共有</h2>
       <div className="shrink-0 mb-3">
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar sm:flex-wrap sm:overflow-visible sm:pb-0">
           {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`tap-44 px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-[3px] transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--panel)] border-[var(--text)] text-[var(--text)]'}`}>{grade}</button>)}
@@ -2980,9 +3025,10 @@ const ManagerView = ({ setView }) => {
       </div>
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl flex-grow overflow-y-auto mb-4 shadow-sm p-2">
         {filteredGroups.length === 0 ? <div className="text-center text-[var(--text)] opacity-80 py-10 font-bold">コースがありません</div> : filteredGroups.map(g => (
-          <div key={g.name} className="p-3 border-b border-dashed border-[var(--bg)] cursor-pointer flex justify-between items-center transition-colors rounded-lg group" onClick={() => { audioCtrl.playSE('click'); openEdit(g.name) }}>
-            <div className="flex flex-col"><span className="font-bold text-[var(--text)]">{g.name}</span><span className="text-[var(--text)] opacity-80 text-xs">{g.count}問</span></div>
-            <button className="bg-[var(--bg)] hover:bg-[var(--secondary)] hover:text-[var(--on-secondary)] text-[var(--text)] p-2 rounded-xl transition-colors border-2 border-[var(--text)] shadow-sm tap-44" onClick={(e) => copyShareCode(e, g.name)} title="共有コードをコピー"><Share2 size={18} /></button>
+          <div key={g.name} className="p-3 border-b border-dashed border-[var(--bg)] flex justify-between items-center gap-2 transition-colors rounded-lg group">
+            {/* 以前は行の div に onClick をつけていて、キーボードでは開けなかった */}
+            <button type="button" className="flex flex-col flex-grow text-left min-h-[44px] justify-center rounded-lg" onClick={() => { audioCtrl.playSE('click'); openEdit(g.name) }}><span className="font-bold text-[var(--text)]">{g.name}</span><span className="text-[var(--text)] opacity-80 text-xs">{g.count}問</span></button>
+            <button type="button" aria-label={`「${g.name}」の きょうゆうコードを コピー`} className="shrink-0 bg-[var(--bg)] hover:bg-[var(--secondary)] hover:text-[var(--on-secondary)] text-[var(--text)] p-2 rounded-xl transition-colors border-2 border-[var(--text)] shadow-sm tap-44" onClick={(e) => copyShareCode(e, g.name)} title="共有コードをコピー"><Share2 size={18} /></button>
           </div>
         ))}
       </div>
@@ -3065,21 +3111,21 @@ const ImportView = ({ setView }) => {
 
   return (
     <div className="flex flex-col h-[70vh]">
-      <h3 className="font-bold text-xl text-center mb-4 shrink-0 flex items-center justify-center gap-2 text-[var(--text)]"><Download size={24} /> コースを追加</h3>
+      <h2 className="font-bold text-xl text-center mb-4 shrink-0 flex items-center justify-center gap-2 text-[var(--text)]"><Download size={24} /> コースを追加</h2>
       <div className="flex gap-2 mb-4 shrink-0 bg-[var(--text)] p-1 rounded-xl">
-        <button onClick={() => setMode('code')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition-colors ${mode === 'code' ? 'bg-[var(--panel)] text-[var(--text)]' : 'text-[var(--panel)] opacity-60'}`}>共有コード</button>
-        <button onClick={() => setMode('ai')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition-colors ${mode === 'ai' ? 'bg-[var(--panel)] text-[var(--text)]' : 'text-[var(--panel)] opacity-60'}`}>AI(CSV)</button>
+        <button type="button" aria-pressed={mode === 'code'} onClick={() => setMode('code')} className={`flex-1 min-h-[44px] py-2 rounded-lg font-bold text-sm transition-colors ${mode === 'code' ? 'bg-[var(--panel)] text-[var(--text)]' : 'text-[var(--panel)] opacity-80'}`}>共有コード</button>
+        <button type="button" aria-pressed={mode === 'ai'} onClick={() => setMode('ai')} className={`flex-1 min-h-[44px] py-2 rounded-lg font-bold text-sm transition-colors ${mode === 'ai' ? 'bg-[var(--panel)] text-[var(--text)]' : 'text-[var(--panel)] opacity-80'}`}>AI(CSV)</button>
       </div>
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] shadow-sm flex-grow flex flex-col p-5 mb-4 gap-4">
         <p className="text-sm font-bold text-[var(--text)] opacity-80 shrink-0">{mode === 'code' ? 'もらった「共有コード」を貼り付けてください。' : 'AI(ChatGPT等)が作った「問題,答え」のリストを貼り付けてください。'}</p>
 
         {mode === 'ai' && (
-          <button className="border-[3px] border-[var(--secondary)] text-[var(--secondary-d)] font-bold rounded-xl py-2 text-sm shrink-0 active:scale-95 transition-transform" onClick={copyPrompt}>
+          <button type="button" className="min-h-[44px] border-[3px] border-[var(--secondary)] text-[var(--secondary-d)] font-bold rounded-xl py-2 text-sm shrink-0 active:scale-95 transition-transform" onClick={copyPrompt}>
             AIへの指示(プロンプト)をコピー
           </button>
         )}
 
-        <textarea className="flex-grow border-[3px] border-[var(--text)] rounded-xl p-3 resize-none font-mono text-sm outline-none bg-[var(--bg)] text-[var(--text)]" value={text} onChange={e => setText(e.target.value)}></textarea>
+        <textarea aria-label={mode === 'code' ? '共有コード' : '問題と答えのリスト（CSV）'} className="flex-grow border-[3px] border-[var(--text)] rounded-xl p-3 resize-none font-mono text-sm outline-none bg-[var(--bg)] text-[var(--text)]" value={text} onChange={e => setText(e.target.value)}></textarea>
         <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] py-4 shrink-0 border-[3px] border-[var(--text)]" onClick={process}>読み込んで追加</MotionButton>
       </div>
       <button className="tap-44 text-[var(--text)] opacity-80 font-bold py-3 shrink-0 pb-4" onClick={() => { audioCtrl.playSE('click'); setView('manager') }}>もどる</button>
@@ -4072,6 +4118,7 @@ export default function App() {
 
   // ルームからぬけるときは、まちがえて全員のへやを閉じてしまわないように一度たしかめる
   const [leaveConfirm, setLeaveConfirm] = useState(false);
+  const leaveDialogRef = useModalFocus(leaveConfirm);
   // ルームが先に閉じた(リーダーが解散した等)ときは、たしかめの表示も引っこめる
   useEffect(() => { if (!peerState.role) setLeaveConfirm(false); }, [peerState.role]);
   useBackHandler(leaveConfirm, () => { audioCtrl.playSE('click'); setLeaveConfirm(false); return true; }, BACK_PRIORITY.overlay);
@@ -4123,10 +4170,13 @@ export default function App() {
           // 上端のノッチ・ステータスバーにタイトルが潜りこまないようにする
           style={{ paddingTop: 'calc(0.75rem + var(--safe-t))' }}
         >
-          <div className="flex items-center cursor-pointer gap-2" onClick={handleHomeClick}>
-            <div className="bg-[var(--secondary)] p-1.5 rounded-lg text-[var(--on-secondary)] shadow-sm border-2 border-[var(--text)]"><Calculator size={22} strokeWidth={3} /></div>
-            <h1 className="text-2xl font-black text-[var(--text)] tracking-wide">Qalc<span className="text-[var(--primary-d)]">.</span></h1>
-          </div>
+          {/* 以前は div に onClick をつけていて、キーボードではホームにもどれなかった */}
+          <h1 className="m-0">
+            <button type="button" aria-label="Qalc ホームへ" className="flex items-center cursor-pointer gap-2 rounded-lg min-h-[44px]" onClick={handleHomeClick}>
+              <span aria-hidden="true" className="bg-[var(--secondary)] p-1.5 rounded-lg text-[var(--on-secondary)] shadow-sm border-2 border-[var(--text)]"><Calculator size={22} strokeWidth={3} /></span>
+              <span className="text-2xl font-black text-[var(--text)] tracking-wide">Qalc<span className="text-[var(--primary-d)]">.</span></span>
+            </button>
+          </h1>
           <div className="flex items-center gap-3">
             {peerState.role && <span className="font-bold text-xs bg-[var(--accent)] px-2 py-1 rounded border-2 border-[var(--text)]">{peerState.role === 'host' ? 'リーダー' : 'メンバー'}</span>}
             {/* ホーム画面に置くための案内。入れ終わったら自分で消える */}
@@ -4210,16 +4260,16 @@ export default function App() {
       <AnimatePresence>
         {leaveConfirm && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="へやから 出るかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={leaveDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="へやから 出るかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
               <Users size={48} className="text-[var(--primary-d)] mb-3" />
-              <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text">へやから<R c="出" r="で" />ますか？</h3>
+              <h2 className="font-black text-xl text-[var(--text)] mb-2 ruby-text">へやから<R c="出" r="で" />ますか？</h2>
               <p className="text-sm text-[var(--text)] opacity-80 mb-5 ruby-text">
                 {peerState.role === 'host'
                   ? <>リーダーが<R c="出" r="で" />ると、みんなのへやも<R c="終" r="お" />わります</>
                   : <>ホーム<R c="画" r="が" /><R c="面" r="めん" />にもどります</>}
               </p>
               <div className="flex w-full gap-3">
-                <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => setLeaveConfirm(false)}>やめる</MotionButton>
+                <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => setLeaveConfirm(false)}>やめる</MotionButton>
                 <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 flex-1 ruby-text" onClick={() => { setLeaveConfirm(false); leaveRoom(); }}><R c="出" r="で" />る</MotionButton>
               </div>
             </motion.div>

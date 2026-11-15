@@ -19,19 +19,22 @@ const ToolHint = ({ children }) => (
 );
 
 // ---- 算数ブロック ----
-const Block = ({ color, marked, crossed, onClick }) => (
+// 読み上げでは「ブロック 3、しるし」のように、何番めか と ようすを伝える（以前は名前が無かった）
+const Block = ({ index, color, marked, crossed, onClick }) => (
   <button
+    type="button"
+    aria-label={`ブロック ${index + 1}${crossed ? '、ばつ' : marked ? '、しるし' : ''}`}
     onClick={onClick}
     className={`relative w-11 h-11 rounded-lg border-2 border-[var(--text)] shadow-[0_2px_0_var(--text)] active:translate-y-[2px] active:shadow-none transition-all select-none touch-manipulation ${color} ${crossed ? 'opacity-30' : ''} ${marked ? 'ring-4 ring-[var(--accent)]' : ''}`}
   >
-    {crossed && <span className="absolute inset-0 flex items-center justify-center text-xl font-black text-[var(--text)]">✕</span>}
+    {crossed && <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center text-xl font-black text-[var(--text)]">✕</span>}
   </button>
 );
 
 const BlockGrid = ({ count, color, states, onToggle }) => (
   <div className="grid grid-cols-5 gap-1.5 justify-items-center">
     {Array.from({ length: count }).map((_, i) => (
-      <Block key={i} color={color} marked={states?.[i] === 'marked'} crossed={states?.[i] === 'crossed'} onClick={() => onToggle && onToggle(i)} />
+      <Block key={i} index={i} color={color} marked={states?.[i] === 'marked'} crossed={states?.[i] === 'crossed'} onClick={() => onToggle && onToggle(i)} />
     ))}
   </div>
 );
@@ -52,6 +55,9 @@ const BlocksTool = ({ p, qText, onFx }) => {
             return (
               <button
                 key={i}
+                type="button"
+                aria-label={`へや ${i + 1}${filled ? '、はいっている' : marked ? '、しるし' : '、あいている'}`}
+                aria-pressed={filled ? undefined : !!marked}
                 disabled={filled}
                 onClick={() => { onFx?.(); setStates((s) => ({ ...s, [`t_${i}`]: !s[`t_${i}`] })); }}
                 className={`w-10 h-10 rounded-lg border-2 border-[var(--text)] transition-colors touch-manipulation ${filled ? 'bg-orange-400' : marked ? 'bg-sky-400' : 'bg-[var(--panel)]'}`}
@@ -69,9 +75,9 @@ const BlocksTool = ({ p, qText, onFx }) => {
       <div className="flex flex-col items-center gap-4">
         <ToolHint>ブロックを ふやしたり へらしたりして かんがえよう</ToolHint>
         <div className="flex items-center gap-4">
-          <button onClick={() => { onFx?.(); setFreeCount((c) => Math.max(0, c - 1)); }} className="w-14 h-14 rounded-2xl bg-[var(--bg)] border-[3px] border-[var(--text)] font-black text-3xl text-[var(--primary-d)] shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none touch-manipulation">−</button>
+          <button type="button" aria-label="ブロックを 1つ へらす" onClick={() => { onFx?.(); setFreeCount((c) => Math.max(0, c - 1)); }} className="w-14 h-14 rounded-2xl bg-[var(--bg)] border-[3px] border-[var(--text)] font-black text-3xl text-[var(--primary-d)] shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none touch-manipulation">−</button>
           <div className="font-black text-4xl text-[var(--text)] w-16 text-center">{freeCount}</div>
-          <button onClick={() => { onFx?.(); setFreeCount((c) => Math.min(20, c + 1)); }} className="w-14 h-14 rounded-2xl bg-[var(--bg)] border-[3px] border-[var(--text)] font-black text-3xl text-[var(--secondary-d)] shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none touch-manipulation">＋</button>
+          <button type="button" aria-label="ブロックを 1つ ふやす" onClick={() => { onFx?.(); setFreeCount((c) => Math.min(20, c + 1)); }} className="w-14 h-14 rounded-2xl bg-[var(--bg)] border-[3px] border-[var(--text)] font-black text-3xl text-[var(--secondary-d)] shadow-[0_3px_0_var(--text)] active:translate-y-[2px] active:shadow-none touch-manipulation">＋</button>
         </div>
         <BlockGrid count={freeCount} color="bg-orange-400" />
       </div>
@@ -268,7 +274,7 @@ const OokiiKazuView = ({ unit }) => {
             <div className="flex">
               {Array.from({ length: 4 }).map((_, i) => <div key={i} className="flex-1 h-8 border-r border-[var(--text)] border-opacity-40 last:border-r-0" />)}
             </div>
-            <div className="py-0.5 text-[9px] font-bold text-center text-[var(--text)] opacity-80">{sub}</div>
+            <div className="py-0.5 text-[11px] font-bold text-center text-[var(--text)] opacity-80">{sub}</div>
           </div>
         ))}
       </div>
@@ -1827,7 +1833,7 @@ export const LearningToolPanel = ({ open, onClose, courseName, qText, onFx, onTo
                   );
                 })}
               </div>
-              <button onClick={onClose} className="tap-44 w-9 h-9 shrink-0 rounded-full bg-[var(--bg)] border-2 border-[var(--text)] flex items-center justify-center text-[var(--text)] active:scale-90 transition-transform touch-manipulation" aria-label="とじる">
+              <button type="button" onClick={onClose} className="tap-44 w-9 h-9 shrink-0 rounded-full bg-[var(--bg)] border-2 border-[var(--text)] flex items-center justify-center text-[var(--text)] active:scale-90 transition-transform touch-manipulation" aria-label="とじる">
                 <X size={18} />
               </button>
             </div>
