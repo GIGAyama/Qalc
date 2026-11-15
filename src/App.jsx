@@ -12,9 +12,12 @@ import {
   Store, CheckCircle2, PaintBucket, Shirt, Users, Radio,
   Lightbulb
 } from 'lucide-react';
-// どの「かんがえるどうぐ」を出すかの判定は毎問ひつようなので、最初から読みこむ。
-// どうぐの絵そのもの(SVGが多く約140KB)はゲーム画面に入ってから取りにいく（Part I §5）
-import { getAvailableTools, TOOL_META } from './learningTools/detect.js';
+// どの「かんがえるどうぐ」を出すかの判定（detect.js）は、ゲームの画面でしか使わない。
+// 最初に読みこむ JS には入れず、アプリを開いて少ししてから・ゲームに入るときに取りにいく（Part I §5）。
+// （以前は最初から読みこんでいて、ホームを出すまでの JS が約30KB 重かった）
+// どうぐの絵そのもの(SVGが多く約140KB)はゲーム画面に入ってから取りにいく
+let detectModule = null;
+const loadDetect = () => import('./learningTools/detect.js').then((m) => { detectModule = m; return m; });
 const LearningToolPanel = lazy(() =>
   import('./LearningTools.jsx').then((m) => ({ default: m.LearningToolPanel })));
 const preloadLearningTools = () => import('./LearningTools.jsx');
@@ -2433,7 +2436,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   // どうぐを開いて解いた問題は、自力で解いたのとは分けて記録する（hint: true）。
   // ext.tools は教師が読む値なので、内部IDではなく画面と同じ名前で残す
   const handleToolUse = useCallback((toolId) => {
-    studyRef.current?.markTool(TOOL_META[toolId]?.label || toolId);
+    studyRef.current?.markTool(detectModule?.TOOL_META[toolId]?.label || toolId);
   }, []);
   const handleSubmit = useCallback(() => { submitAnsRef.current(); }, []);
 
@@ -2444,15 +2447,18 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   // 画面上は◯×とスコアの動きで分かるが、それだけだと目で追えない児童に届かない
   const [answerAnnounce, setAnswerAnnounce] = useState('');
   const [toolsReady, setToolsReady] = useState(false);
+  // どうぐの判定。ふつうはアプリを開いたあと読みこみずみ。まだなら読めしだい電球を出す
+  const [detect, setDetect] = useState(() => detectModule);
   useEffect(() => {
     let alive = true;
     preloadConfetti();
     preloadLearningTools().then(() => { if (alive) setToolsReady(true); }).catch(() => {});
+    if (!detectModule) loadDetect().then((m) => { if (alive) setDetect(m); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
   const q = state.problemSet[qIndex] || { q: '?', a: ['?'] };
-  const availableTools = getAvailableTools(state.courseName, q.q);
+  const availableTools = detect ? detect.getAvailableTools(state.courseName, q.q) : [];
 
   const textLen = q.q.length;
   // 高さの足りない画面（short / tiny。tailwind.config.js）では、テンキーの場所をあけるために小さくする
@@ -3091,6 +3097,12 @@ export default function App() {
   const [state, setState] = useState({ problemSet: [], timeLimitSec: 0, courseName: '', finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0, gameMode: 'SCORE_ATTACK', mistakes: [] });
   const [stats, setStats] = useState(() => StorageAPI.getStats());
   const [resumeData, setResumeData] = useState(() => StorageAPI.getResume());
+
+  // どうぐの判定を、最初の画面が出たあとで読んでおく（ゲームに入ったとき、すぐ電球を出せるように）
+  useEffect(() => {
+    const id = setTimeout(() => { loadDetect().catch(() => {}); }, 1500);
+    return () => clearTimeout(id);
+  }, []);
 
   // タブを開いたまま日がかわったら、ミッションと周回の数をその日のものにする。
   // 以前はアプリを開いたときにしか日をたしかめず、前の日のミッションが残ったまま遊んでも進まなかった。
