@@ -281,7 +281,9 @@ GIGA山の学習アプリ群で共通の形式（**スキーマ版 `study.v1` / 
 
 ### 端末に保存されるもの・外に出ないもの
 
-学習ログ・成績・コイン・きせかえ・にがて問題は、すべてその端末の `localStorage` に保存され、**外部へ送信されない**。アカウント登録もなく、氏名・メールアドレス・生年月日などは一切あつかわない。広告やアクセス解析のタグも入っていない。
+学習ログ・成績・コイン・きせかえ・にがて問題は、すべてその端末の `localStorage` に保存され、**Qalc のサーバーや外部のサービスへは送らない**。アカウント登録もなく、氏名・メールアドレス・生年月日などは一切あつかわない。広告やアクセス解析のタグも入っていない。
+
+ただし**学習ログ（`study.records.v1`）だけは、同じ端末のブラウザの中で、GIGA school の学習ポータルの「記録ボックス」（`gamification.giga-school.com`）にも写す**（`public/records-hub-client.js`。正本は `GIGAyama.github.io/standards/records/`）。まだ写していない学習ログがあるとき（アプリを開いたとき・60秒ごと・画面を切りかえたとき）だけ、見えない iframe（`gamification.giga-school.com/records-hub.html`）を開いて `postMessage` で渡す（送り先のオリジンは固定。`*.giga-school.com` から開いたときだけ動く）。CSP の `frame-src` で、この1つだけを許可している。原本の学習ログには さわらない（消しも書きかえもしない）。どこまで写したかの控えは `study.hub.mirrored.v1` に置く。学習ポータルのリポジトリでは、写した記録をほかのアプリの記録とあわせて集計する
 
 | キー | 中身 |
 |---|---|
@@ -295,7 +297,7 @@ GIGA山の学習アプリ群で共通の形式（**スキーマ版 `study.v1` / 
 
 保存データは、古い版が書いたもの・書きこみがとちゅうで切れたものでも読めるように、**読むたびに形をそろえる**（`src/statsStore.js`。読めたものは残し、読めないものだけ はじめの値にもどす。成績まるごとを捨てることはしない）。再開できない形の中断データは消す。以前は形をたしかめずに使っていて、成績の一部が配列でないだけでホームを描くところで例外になり、画面がまっ白のまま何もできなくなった（保存を止めた端末でも同じだった）。それでも画面を描くとちゅうで例外が出たときは、まっ白にせず「ホームに もどる」「よみこみ なおす」を出す（`src/ErrorBoundary.jsx`）。保存データを消すボタンは置かない
 
-「みんなであそぶ」で他の端末に伝わるのは、児童が自分で入力したニックネーム（8文字まで）とスコア・コンボだけ。
+「みんなであそぶ」で他の端末に伝わるのは、児童が自分で入力したニックネーム（8文字まで）とスコア・コンボ・ゲームの進みぐあいだけ。端末どうしをつなぐために、PeerJS のシグナリングサーバー（`0.peerjs.com`）にへやの番号と接続情報（IP アドレスなど）が、STUN／TURN サーバー（`stun.l.google.com`・`eu-0.turn.peerjs.com`・`us-0.turn.peerjs.com`）に接続情報が届く（TURN を中継するときも中身は暗号化されている）。くわしくは `public/privacy.html`。
 
 共用端末で使う場合、学習ログはその端末に残るため、次に使う児童からも見える点に注意（個人の特定はできない）。
 
@@ -304,12 +306,13 @@ GIGA山の学習アプリ群で共通の形式（**スキーマ版 `study.v1` / 
 | ホスト | 用途 | ブロックした場合 |
 |--------|------|------------------|
 | `qalc.giga-school.com` | アプリ本体の配信 | アプリが開けない |
+| `gamification.giga-school.com` | 学習ログを、学習ポータルの「記録ボックス」へ写す（見えない iframe） | ひとりでも みんなでも遊べる。ポータルに記録が集まらないだけ（記録は端末に残る） |
 | `0.peerjs.com` | みんなであそぶ（へやの番号のやりとり） | **みんなであそぶだけが使えなくなる** |
 | `stun.l.google.com` / `eu-0.turn.peerjs.com` / `us-0.turn.peerjs.com` | みんなであそぶ（端末同士のつなぎ役） | 環境によってつながらない |
 
 みんなであそぶを使わせない運用にする場合は、**`0.peerjs.com` をブロックすればひとりで遊ぶモードだけに限定できる**。
 
-**ひとりで遊ぶだけなら、必要な通信は `qalc.giga-school.com` のみ。** JavaScript（PeerJS・QRCode・Canvas Confetti）と本文フォント（Zen Maru Gothic）はすべて同梱しており、外部CDNやGoogleへの通信は発生しない。フォントは unicode-range でサブセットに分かれているため、画面に出た文字ぶんだけ（ホーム画面なら14ファイル程度）が落ちてきて Service Worker にキャッシュされる。2回目以降は通信ゼロ、オフラインでも本来の書体で表示される。
+**ひとりで遊ぶだけなら、アプリが動くのに必要な通信は `qalc.giga-school.com` のみ。** まだ写していない学習ログがあると、記録ボックスへ写すために `gamification.giga-school.com` の見えない iframe も開く（止めても遊べる）。JavaScript（PeerJS・QRCode・Canvas Confetti）と本文フォント（Zen Maru Gothic）はすべて同梱しており、外部CDNやGoogleへの通信は発生しない。フォントは unicode-range でサブセットに分かれているため、画面に出た文字ぶんだけ（ホーム画面なら14ファイル程度）が落ちてきて Service Worker にキャッシュされる。2回目以降は通信ゼロ、オフラインでも本来の書体で表示される。
 
 ### 受けとったデータの検証
 
@@ -328,6 +331,7 @@ P2P で届くメッセージは、開発者ツールから改造した端末な�
 - `style-src` に `'unsafe-inline'` が必要 … テーマ切り替えが動的な `<style>`、Framer Motion が `style` 属性を書きかえるため。**外すとテーマとアニメーションが壊れる**
 - `font-src 'self'` … フォントも同梱したので外部は不要。`data:` を許可しなくてよいよう、Vite の `assetsInlineLimit` でフォントの data: URI 化を止めている（`vite.config.js`）
 - `connect-src` … PeerJS のシグナリング（`0.peerjs.com`）のみ許可
+- `frame-src` … 学習ログを記録ボックスへ写す見えない iframe（`https://gamification.giga-school.com`）のみ許可
 - `worker-src 'self'` … `blob:` の Worker は許可しない。canvas-confetti は既定で `blob:` の Worker を使うので、そのままだと紙ふぶきが一度も出なかった（例外にならず、コンソールに CSP 違反が1行出るだけ）。CSP はゆるめず、`useWorker: false` で作ってメインスレッドで描いている（`src/App.jsx` の `makeConfetti`）
 - WebRTC の ICE（STUN/TURN）は CSP では制御できない（`stun:` / `turn:` を書いてもブラウザが無視する）。接続先は `src/roomAccess.js` の `PEER_OPTIONS` に明示している
 
