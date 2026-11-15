@@ -99,6 +99,13 @@ const fromBase64 = (b64) => {
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 };
 
+/** URL の中に入れられる base64（+ / = を使わない）。かだいリンク（kadai.js）で使う */
+export const toBase64Url = (str) => toBase64(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+export const fromBase64Url = (s) => {
+  const b64 = String(s).replace(/-/g, '+').replace(/_/g, '/');
+  return fromBase64(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+};
+
 /** コースを共有コードにする */
 export const encodeCourse = (name, problems) => V2_PREFIX + toBase64(JSON.stringify({
   v: 2,
