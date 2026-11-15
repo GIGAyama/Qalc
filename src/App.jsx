@@ -56,7 +56,7 @@ import {
 // 問題データ・ショップ・ミッションの定義は src/data/ に切りだした。
 // App.jsx が5,000行を超えて追いきれなくなっていたため（Part I §5）。
 import {
-  normalizeStr, getParsedDefaultProblems, buildPresetProblems, courseCompare,
+  checkAnswer, getParsedDefaultProblems, buildPresetProblems, courseCompare,
   PRESET_SEED, LEGACY_DEFAULT_KEYS,
 } from './data/problems.js';
 // コースの保存（プリセットは保存せず、自作と書きかえだけ）。node でテストしている
@@ -1878,6 +1878,10 @@ const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correc
 TimerProgressBar.displayName = 'TimerProgressBar';
 
 // --- ゲーム画面 ---
+// まちがえた直後に入力を受けながす時間（カードがゆれているあいだ）と、まちがえた答えを見せておく時間
+const WRONG_HOLD_MS = 400;
+const WRONG_FLASH_MS = 900;
+
 const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, sendTerrSpecial, collectTerritoryResult, leaderFinishRef }) => {
   const isMultiplayer = peerState && peerState.role;
   const isRaid = state.gameMode === 'BOSS_RAID';
@@ -1899,6 +1903,15 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const wrongCountRef = useRef(resumeSnapshot?.wrongCount || 0);
   const isResumedSessionRef = useRef(!!resumeSnapshot);
   const [quitDialog, setQuitDialog] = useState(false);
+  // 勝負がついた（サドンデスでまちがえた・タイムアタックの最後の問題に正解した）あと、
+  // 結果画面へ移るまでの0.5秒は答えを受けつけない。以前はこのあいだに打った正解も数えていて、
+  // 1問目でまちがえたサドンデスが「2問正解」になったり、タイムアタックが「21 / 20問」になったりした
+  const settledRef = useRef(false);
+  // まちがえた直後の少しのあいだ、打ちかけていた答えの残りの文字を受けながす。
+  // 「81」で まちがいと決まったあとの「5」が、つぎの答えの1文字目にならないようにする
+  const wrongHoldUntilRef = useRef(0);
+  const [wrongFlash, setWrongFlash] = useState(null); // まちがえた答えを、消す前に少しだけ見せる
+  const answerBlocked = () => settledRef.current || Date.now() < wrongHoldUntilRef.current;
 
   // --- 学習ログ（study.v1）---
   // 端末に保存するだけで、外部へは一切送信しない。氏名などの識別情報も持たない。
@@ -1957,7 +1970,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   useBackHandler(showTools, () => { audioCtrl.playSE('click'); setShowTools(false); return true; }, BACK_PRIORITY.overlay);
   useBackHandler(quitDialog, () => { audioCtrl.playSE('click'); setQuitDialog(false); return true; }, BACK_PRIORITY.overlay);
   useBackHandler(showMemo, () => { audioCtrl.playSE('click'); setShowMemo(false); return true; }, BACK_PRIORITY.panel);
-  useBackHandler(true, () => { audioCtrl.playSE('click'); setQuitDialog(true); return true; }, BACK_PRIORITY.view);
+  useBackHandler(true, () => { if (settledRef.current) return true; audioCtrl.playSE('click'); setQuitDialog(true); return true; }, BACK_PRIORITY.view);
 
   const participantsList = isMultiplayer ? Object.entries(peerState.participants || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => b.score - a.score) : [];
   const top5 = participantsList.slice(0, 5);
@@ -2300,9 +2313,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   }, [state.problemSet, state.timeLimitSec, state.courseName, state.courseNames, state.gameMode, qIndex, combo, startTime, stats, setState, setView, setResumeData]);
 
   const submitAns = useCallback(() => {
-    if (!ans || isRaidLocked()) return; const q = state.problemSet[qIndex];
-    const normalizedAns = normalizeStr(ans);
-    const isCorrect = q.a.some(correctStr => normalizeStr(correctStr) === normalizedAns);
+    if (!ans || settledRef.current || isRaidLocked()) return; const q = state.problemSet[qIndex];
+    const isCorrect = checkAnswer(ans, q.a) === 'correct';
 
     // 学習ログ: 初回正答（firstTryCorrect）を出すため、正解・誤答の両方を1回の解答として数える
     studyRef.current?.answer(isCorrect, ans);
@@ -2351,7 +2363,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         mistakesRef.current = mistakesRef.current.filter(m => m.q !== q.q);
       }
 
-      if (state.gameMode === 'TIME_ATTACK' && correctCount + 1 >= state.problemSet.length) { setTimeout(finishGame, 500); }
+      setWrongFlash(null);
+      if (state.gameMode === 'TIME_ATTACK' && correctCount + 1 >= state.problemSet.length) { settledRef.current = true; setTimeout(finishGame, 500); }
       else {
         const nextIndex = (qIndex + 1) % state.problemSet.length;
         setQIndex(nextIndex);
@@ -2363,25 +2376,35 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       if (isTerritory) setTerrMissAt(Date.now()); // ペンキーが「ドンマイ！」と はげましてくれる
       setCardAnim({ x: [-15, 15, -10, 10, 0], boxShadow: ["0 8px 0 var(--text)", "0 0 20px var(--primary)", "0 8px 0 var(--text)"], transition: { duration: 0.4 } });
       setAns(''); mistakesRef.current.push({ q: q.q, a: q.a.join('|') });
-      if (state.gameMode === 'SUDDEN_DEATH') setTimeout(finishGame, 500);
+      wrongHoldUntilRef.current = Date.now() + WRONG_HOLD_MS;
+      setWrongFlash({ text: ans, at: Date.now() });
+      if (state.gameMode === 'SUDDEN_DEATH') { settledRef.current = true; setTimeout(finishGame, 500); }
     }
   }, [ans, qIndex, combo, correctCount, state.problemSet, state.gameMode, state.courseName, finishGame]);
 
-  // 正解の瞬間に自動で次の問題へ進む
+  // 打っているとちゅうで答え合わせする。正解ならすぐ次の問題へ進み、
+  // もう正解にならない答えを正解と同じ長さまで打ったら、OK を待たずに まちがいにする（checkAnswer）
   useEffect(() => {
     if (!ans) return;
+    setWrongFlash(null); // つぎの答えを打ちはじめたら、まちがえた答えはもう見せない
     const q = state.problemSet[qIndex];
     if (!q) return;
-    const normalizedAns = normalizeStr(ans);
-    const isCorrect = q.a.some(correctStr => normalizeStr(correctStr) === normalizedAns);
-    if (isCorrect) submitAns();
+    if (checkAnswer(ans, q.a) !== 'pending') submitAns();
   }, [ans]);
+
+  // まちがえた答えは少しだけ見せてから消す
+  useEffect(() => {
+    if (!wrongFlash) return undefined;
+    const id = setTimeout(() => setWrongFlash(null), WRONG_FLASH_MS);
+    return () => clearTimeout(id);
+  }, [wrongFlash]);
 
   useEffect(() => {
     const handleKey = (e) => {
       if (quitDialog) return; // ダイアログ表示中は背後のゲームに入力を流さない
       if (isRaidLocked()) return; // ボスの凍結攻撃・撃破演出中は物理キーボードもロック
       const key = e.key;
+      if (answerBlocked()) { if (key === 'Enter') e.preventDefault(); return; }
       if ((key >= '0' && key <= '9') || ['.', '/', '-', '(', ')'].includes(key)) { audioCtrl.playSE('click'); setAns(a => (a.length < ANSWER_MAX_LEN ? a + key : a)); }
       else if (key === 'Backspace') { audioCtrl.playSE('click'); setAns(a => a.slice(0, -1)); }
       else if (key === 'Enter') { e.preventDefault(); submitAns(); }
@@ -2393,8 +2416,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   // キーパッドへ渡す安定コールバック（submitAns は ref 経由で最新を参照し、Keypad の memo を維持する）
   const submitAnsRef = useRef(submitAns); useEffect(() => { submitAnsRef.current = submitAns; }, [submitAns]);
   const isRaidLockedRef = useRef(isRaidLocked); useEffect(() => { isRaidLockedRef.current = isRaidLocked; });
-  const handleAppend = useCallback((c) => { if (isRaidLockedRef.current()) return; audioCtrl.playSE('click'); setAns(a => (a.length < ANSWER_MAX_LEN ? a + c : a)); }, []);
-  const handleClear = useCallback(() => { audioCtrl.playSE('click'); setAns(''); }, []);
+  const answerBlockedRef = useRef(answerBlocked); useEffect(() => { answerBlockedRef.current = answerBlocked; });
+  const handleAppend = useCallback((c) => { if (isRaidLockedRef.current() || answerBlockedRef.current()) return; audioCtrl.playSE('click'); setAns(a => (a.length < ANSWER_MAX_LEN ? a + c : a)); }, []);
+  const handleClear = useCallback(() => { if (answerBlockedRef.current()) return; audioCtrl.playSE('click'); setAns(''); }, []);
   // どうぐを開いて解いた問題は、自力で解いたのとは分けて記録する（hint: true）。
   // ext.tools は教師が読む値なので、内部IDではなく画面と同じ名前で残す
   const handleToolUse = useCallback((toolId) => {
@@ -2484,7 +2508,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : `w-full ${isTerritory ? 'md:flex-grow md:w-auto max-w-4xl' : 'max-w-4xl h-full'} mx-auto`} md:h-full p-4`}>
 
           <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
-            <button onClick={() => { audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-3 min-h-[44px] font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center justify-center gap-1"><XCircle size={16} /> やめる</button>
+            <button onClick={() => { if (settledRef.current) return; audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-3 min-h-[44px] font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center justify-center gap-1"><XCircle size={16} /> やめる</button>
             <TimerClock gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} />
             <div className="font-black text-2xl text-[var(--primary-d)] flex items-center gap-2 drop-shadow-sm">
               {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : state.gameMode === 'BOSS_RAID' ? <>⚔ {score} <span className="text-sm text-[var(--text)] opacity-80">ダメージ</span></> : state.gameMode === 'TERRITORY' ? <>🖌 {score} <span className="text-sm text-[var(--text)] opacity-80">ぬり</span></> : <>{score} <span className="text-sm text-[var(--text)] opacity-80">pt</span></>}
@@ -2521,7 +2545,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
                 <Lightbulb size={24} />
               </motion.button>
             )}
-            <span className="text-5xl font-black text-[var(--secondary-d)] tracking-widest">{ans || <span className="text-4xl font-bold text-[var(--text)] opacity-70">?</span>}</span>
+            <span className="text-5xl font-black text-[var(--secondary-d)] tracking-widest">{ans || (wrongFlash ? <span className="text-[var(--primary-d)] line-through decoration-4">{wrongFlash.text}</span> : <span className="text-4xl font-bold text-[var(--text)] opacity-70">?</span>)}</span>
             {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 w-12 h-12 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
             <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--on-secondary)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
           </motion.div>

@@ -1,7 +1,7 @@
 // コースの共有コード・CSV 取りこみ・答えの検査（src/courseShare.js）のテスト。
 //   実行: npm run test:share
 // どれも実際に起きていた「取りこむとデータが壊れる」「その問題から先へ進めない」を止めるためのもの。
-import { normalizeStr, getParsedDefaultProblems } from '../src/data/problems.js';
+import { normalizeStr, checkAnswer, getParsedDefaultProblems } from '../src/data/problems.js';
 import {
   isTypeableAnswer, encodeCourse, decodeCourse, parseProblemText, validateProblems,
   uniqueCourseName, sanitizeCourseName, PROBLEM_MAX,
@@ -26,6 +26,48 @@ eq('位取りの「,」は取る', normalizeStr('1,000,000'), '1000000');
 eq('全角の「，」も取る', normalizeStr('１，０００'), '1000');
 eq('「数字, 数字」（空白あり）は位取りではない', normalizeStr('13, 16'), '13,16');
 eq('空白は取る', normalizeStr(' 1 2 '), '12');
+
+eq('0 をはぶいた小数', normalizeStr('.5'), '0.5');
+eq('0 をはぶいたマイナスの小数', normalizeStr('-.25'), '-0.25');
+eq('とちゅうの「.」も 0. とみなす', normalizeStr('.'), '0.');
+eq('ふつうの小数はそのまま', normalizeStr('10.5'), '10.5');
+
+// --- 打っているとちゅうの答え合わせ（サドンデスで消して打ちなおせた穴をふさぐ） ---
+eq('正解', checkAnswer('85', ['85']), 'correct');
+eq('正解の長さまで打って ちがう', checkAnswer('75', ['85']), 'wrong');
+eq('1文字目が ちがっても、正解の長さまでは何も知らせない', checkAnswer('7', ['85']), 'pending');
+eq('正解の頭と同じなら打っているとちゅう', checkAnswer('8', ['85']), 'pending');
+eq('空はとちゅう', checkAnswer('', ['85']), 'pending');
+eq('別解のどちらでも正解', [checkAnswer('6/4', ['6/4', '3/2']), checkAnswer('3/2', ['6/4', '3/2'])], ['correct', 'correct']);
+eq('長さのちがう別解: 短いほうと同じ長さで ちがえば まちがい', checkAnswer('3', ['2', '18/9']), 'wrong');
+eq('長さのちがう別解: 長いほうの頭なら とちゅう', checkAnswer('1', ['2', '18/9']), 'pending');
+eq('長さのちがう別解: 長いほうを とちゅうで ちがえる', checkAnswer('17', ['2', '18/9']), 'wrong');
+eq('「.5」でも正解', checkAnswer('.5', ['0.5']), 'correct');
+eq('「.」は 0.5 のとちゅう', checkAnswer('.', ['0.5']), 'pending');
+eq('全角の正解にも、とちゅうの判定が効く', checkAnswer('0.', ['０．５']), 'pending');
+eq('正解より長く打っても まちがい', checkAnswer('855', ['85']), 'wrong');
+eq('答えが無い問題は、OK を押すまで決めない', checkAnswer('3', []), 'pending');
+
+// プリセットの全問で、正解を1文字ずつ打つと、とちゅうで まちがいにならず、最後に正解になる
+{
+  let checked = 0; const broken = [];
+  for (const [name, list] of Object.entries(getParsedDefaultProblems())) {
+    for (const p of list) {
+      const alts = String(p.a).split('|');
+      for (const alt of alts) {
+        const typed = normalizeStr(alt);
+        for (let i = 1; i <= typed.length; i++) {
+          const r = checkAnswer(typed.slice(0, i), alts);
+          const want = i === typed.length ? 'correct' : null;
+          // 別解の頭がべつの別解と同じなら、そこで正解になってよい（いまのプリセットには無い）
+          if ((want && r !== want) || (!want && r === 'wrong')) { broken.push(`${name}: ${p.q} → ${typed.slice(0, i)} (${r})`); break; }
+        }
+        checked++;
+      }
+    }
+  }
+  eq(`プリセットの正解 ${checked} 通りを打つと、とちゅうで まちがいにならない`, broken.slice(0, 3), []);
+}
 
 // --- テンキーで打てる答えか ---
 eq('整数', isTypeableAnswer('12'), true);

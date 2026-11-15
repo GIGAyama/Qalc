@@ -1461,13 +1461,33 @@ Object.assign(DEFAULT_PROBLEMS, generateDynamicProblems());
 // 先生が自作コースの答えを全角で書いても（「０．５」「－３」「（１）」）、
 // 位取りの「,」を入れても（「1,000」）、テンキーで打った答えと一致するようにする。
 // （全角の数字しか直していなかったので「０．５」は「0．5」になり、だれも正解できなかった）
+// 「.5」のように 0 をはぶいて打っても「0.5」と同じにあつかう。
 const FULLWIDTH_SIGNS = { '．': '.', '／': '/', '－': '-', '−': '-', '‐': '-', '（': '(', '）': ')' };
 export const normalizeStr = (str) => {
   return String(str)
     .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
     .replace(/[．／－−‐（）]/g, (s) => FULLWIDTH_SIGNS[s])
     .replace(/(\d)[,，](?=\d)/g, '$1')
-    .replace(/\s+/g, '');
+    .replace(/\s+/g, '')
+    .replace(/^(-?)\./, (_, sign) => `${sign}0.`);
+};
+
+// 打っているとちゅうの答えを見る。answers は正解（別解をふくむ）の配列。
+//   'correct' … どれかの正解と同じ
+//   'wrong'   … もうどの正解にもならず、いちばん短い正解と同じ長さまで打った
+//   'pending' … まだ打っているとちゅう（空のときもここ）
+// 以前は OK（Enter）を押すまで まちがいにならず、消して打ちなおせば何度でもためせた。
+// サドンデスが1問ミスで終わらず、学習ログの「1回目で正解」も多めに出ていた。
+// 1文字目で すぐ まちがいにしないのは、まちがえた答えを最後まで記録に残すため
+// （47+38 を「75」と打った子の、くり上がりのわすれが先生に見えるように）。
+// 短い入力のうちは正しいかどうかを何も知らせないので、これでためし打ちはできない。
+export const checkAnswer = (input, answers) => {
+  const typed = normalizeStr(input);
+  if (!typed) return 'pending';
+  const alts = (answers || []).map(normalizeStr).filter(Boolean);
+  if (alts.includes(typed)) return 'correct';
+  if (alts.length === 0 || alts.some((a) => a.startsWith(typed))) return 'pending';
+  return typed.length >= Math.min(...alts.map((a) => a.length)) ? 'wrong' : 'pending';
 };
 
 // DEFAULT_PROBLEMS のパース結果は不変なので一度だけ計算して使い回す
