@@ -23,7 +23,8 @@ const src = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 
 // themeVars = `--bg: #xxxxxx; ...` の行からテーマを取り出す
 const themes = {};
-const reTheme = /stats\.theme === '([\w-]+)'\)?\s*themeVars = `([^`]+)`/g;
+// GlobalStyle は App の外にあり、テーマを props の theme で受けとる（以前は stats.theme だった）
+const reTheme = /(?:stats\.)?theme === '([\w-]+)'\)?\s*themeVars = `([^`]+)`/g;
 let m;
 while ((m = reTheme.exec(src))) {
   const vars = {};

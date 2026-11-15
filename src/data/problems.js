@@ -4,7 +4,16 @@
  * 静的な一覧(DEFAULT_PROBLEMS)と、規則的に作れるものを実行時に生やす
  * generateDynamicProblems() の2本立てになっている。
  * 全部を手で書くと数万行になるので、九九や単位換算のように規則があるものは生成している。
+ *
+ * ⚠️ 生成に使う乱数は種つき（PRESET_SEED）。どの端末で何度ひらいても同じ問題になる。
+ *    以前は Math.random() で作り、はじめて開いた日の1回ぶんを端末に保存して使っていた。
+ *    そのため端末ごとに問題がちがい、ここを直しても すでに使っている端末には届かなかった。
+ *    いまはプリセットを端末に保存しない（App.jsx の StorageAPI と problemStore.js）。
+ *    種を変えると、全員の文章題の数字が入れかわる。理由なく変えないこと。
  */
+import { seededRandom, shuffle, sample } from '../random.js';
+
+export const PRESET_SEED = 20261115;
 
 const DEFAULT_PROBLEMS = {
   "4年_計算のきまり": ["50-(10+20)|20", "100-(30+40)|30", "80-(20+30)|30", "60-(15+15)|30", "25-(5+10)|10", "40-(12+8)|20", "90-(50+10)|30", "120-(20+80)|20", "35-(5+15)|15", "200-(100+50)|50", "(3+2)×4|20", "(5+5)×6|60", "(10+20)×3|90", "(4+6)×8|80", "(20+5)×2|50", "(12+8)×5|100", "(7+3)×9|90", "(50+10)×2|120", "(2+8)×7|70", "(15+15)×3|90", "4×(10-2)|32", "5×(20-10)|50", "6×(8-3)|30", "3×(15-5)|30", "9×(10-1)|81", "2×(50-25)|50", "8×(6-4)|16", "10×(30-20)|100", "7×(20-15)|35", "4×(25-5)|80", "(10+20)÷3|10", "(15+5)÷4|5", "(30+10)÷5|8", "(18+12)÷6|5", "(40+24)÷8|8", "(50+40)÷9|10", "(2+12)÷7|2", "(60+40)÷10|10", "(14+14)÷4|7", "(27+3)÷3|10", "5+2×3|11", "10+4×5|30", "20+3×6|38", "50+10×2|70", "8+5×4|28", "15+2×10|35", "6+8×8|70", "12+3×9|39", "40+5×5|65", "100+10×10|200", "20-2×5|10", "50-4×8|18", "30-3×9|3", "100-10×5|50", "60-6×7|18", "45-5×5|20", "25-2×10|5", "80-8×8|16", "15-3×4|3", "40-4×9|4", "10+10÷2|15", "20+20÷4|25", "30+15÷3|35", "5+40÷8|10", "6+42÷6|13", "12+18÷2|21", "50+50÷5|60", "100+100÷10|110", "8+24÷3|16", "15+45÷9|20", "20-10÷2|15", "30-15÷3|25", "50-20÷4|45", "18-12÷6|16", "40-32÷8|36", "100-50÷5|90", "60-24÷6|56", "25-25÷5|20", "80-40÷10|76", "15-12÷4|12", "2×5+10|20", "3×4+8|20", "6×6+14|50", "5×9+5|50", "8×2+30|46", "4×10+60|100", "7×3+9|30", "9×8+8|80", "10×10+100|200", "2×50+50|150", "20÷2-5|5", "30÷3-8|2", "48÷6-5|3", "100÷5-10|10", "56÷8-4|3", "25÷5-1|4", "72÷9-6|2", "40÷4-9|1", "60÷6-5|5", "120÷2-10|50"],
@@ -19,9 +28,25 @@ const DEFAULT_PROBLEMS = {
   "チャレンジ_四則混合": ["2+3×4|14", "(2+3)×4|20", "10-4÷2|8", "15÷(3+2)|3", "2×3+4×5|26", "20-(4+6)|10"]
 };
 
-const generateDynamicProblems = () => {
+// 生成したものを混ぜる前の、手で書いた一覧の写し。DEFAULT_PROBLEMS はこのあと生成したもので
+// 上書きされるので、生成の中で手書きの一覧を読むときは必ずこちらを読む（何度作っても同じになるように）
+const STATIC_PROBLEMS = Object.freeze({ ...DEFAULT_PROBLEMS });
+
+const generateDynamicProblems = (seed = PRESET_SEED) => {
+  // 乱数は種つき。どの端末で何度ひらいても、同じ問題が同じ順で作られる
+  const rand = seededRandom(seed);
   const problems = {};
   const gcd = (x, y) => y === 0 ? x : gcd(y, x % y);
+  // 3〜4年の同じ分母の分数の答え。どの書きかたでも正解にする。
+  //   ・約分していない形（6/4）と約分した形（3/2）
+  //   ・答えが整数のときは 整数（1）と 分母がそのままの形（3/3）
+  // 約分は5年で習う。習う前でも、習ったあとでも、正しい答えをまちがいにしない
+  // （以前は 4年の 274問で約分した形が、3〜4年の 262問で 3/3 の形が不正解だった）
+  const sameDenomAns = (n, d) => {
+    if (n % d === 0) return `${n / d}|${n}/${d}`;
+    const g = gcd(n, d);
+    return g > 1 ? `${n}/${d}|${n / g}/${d / g}` : `${n}/${d}`;
+  };
 
   const awasete10 = [];
   for (let i = 1; i <= 9; i++) {
@@ -129,10 +154,7 @@ const generateDynamicProblems = () => {
     for (let a = 1; a < d; a++) {
       for (let b = 1; b < d; b++) {
         if (a + b <= d) {
-          let ans = (a + b) === d ? "1" : `${a + b}/${d}`;
-          let g = gcd(a + b, d);
-          if ((a + b) !== d && g > 1) ans += `|${(a + b) / g}/${d / g}`;
-          bunsuTashi3.push(`${a}/${d}+${b}/${d}|${ans}`);
+          bunsuTashi3.push(`${a}/${d}+${b}/${d}|${sameDenomAns(a + b, d)}`);
         }
       }
     }
@@ -144,10 +166,7 @@ const generateDynamicProblems = () => {
     for (let a = 2; a <= d; a++) {
       for (let b = 1; b < a; b++) {
         let aStr = a === d ? "1" : `${a}/${d}`;
-        let ans = `${a - b}/${d}`;
-        let g = gcd(a - b, d);
-        if (g > 1) ans += `|${(a - b) / g}/${d / g}`;
-        bunsuHiki3.push(`${aStr}-${b}/${d}|${ans}`);
+        bunsuHiki3.push(`${aStr}-${b}/${d}|${sameDenomAns(a - b, d)}`);
       }
     }
   }
@@ -259,7 +278,7 @@ const generateDynamicProblems = () => {
       awasete.push(`${itemSub.name}が ${a}${itemSub.unit} あります。${b}${itemSub.unit} ${itemSub.action} ${itemSub.word}|${a - b}`);
     }
   }
-  problems["1年_ことば（あわせて・のこりは）"] = awasete.sort(() => Math.random() - 0.5).slice(0, 100);
+  problems["1年_ことば（あわせて・のこりは）"] = sample(awasete, 100, rand);
 
   const tashizan10 = [];
   for (let a = 0; a <= 10; a++) {
@@ -361,12 +380,12 @@ const generateDynamicProblems = () => {
   for (let a = 5; a <= 35; a += 5) {
     narabi.push(`${a}、${a + 5}、${a + 10}、つぎは？|${a + 15}`);
   }
-  problems["1年_ことば（かずのならび）"] = narabi.sort(() => Math.random() - 0.5).slice(0, 100);
+  problems["1年_ことば（かずのならび）"] = sample(narabi, 100, rand);
 
   const okiichisai = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 100);
-    let b = Math.floor(Math.random() * 100);
+    let a = Math.floor(rand() * 100);
+    let b = Math.floor(rand() * 100);
     if (a === b) b = (b + 1) % 100;
     okiichisai.push(`${a}と ${b}、おおきい ほうは？|${Math.max(a, b)}`);
     okiichisai.push(`${a}と ${b}、ちいさい ほうは？|${Math.min(a, b)}`);
@@ -388,8 +407,8 @@ const generateDynamicProblems = () => {
   const tashizan2keta = [];
   for (let i = 0; i < 100; i++) {
     // 「2けた＋2けた」のドリルなので、くり上がりで99をこえるときは a のほうを小さくする
-    let a = Math.floor(Math.random() * 80) + 10;
-    let b = Math.floor(Math.random() * 80) + 10;
+    let a = Math.floor(rand() * 80) + 10;
+    let b = Math.floor(rand() * 80) + 10;
     if (a + b > 99) a = 99 - b;
     tashizan2keta.push(`${a}+${b}|${a + b}`);
   }
@@ -397,8 +416,8 @@ const generateDynamicProblems = () => {
 
   const hikizan2keta = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 90) + 10;
-    let b = Math.floor(Math.random() * 89) + 10;
+    let a = Math.floor(rand() * 90) + 10;
+    let b = Math.floor(rand() * 89) + 10;
     if (a <= b) { let tmp = a; a = b; b = tmp; }
     if (a === b) { a += 1; }
     hikizan2keta.push(`${a}-${b}|${a - b}`);
@@ -407,22 +426,22 @@ const generateDynamicProblems = () => {
 
   const bigCalc2 = [];
   for (let i = 0; i < 100; i++) {
-    const type = Math.floor(Math.random() * 4);
+    const type = Math.floor(rand() * 4);
     if (type === 0) {
-      let a = Math.floor(Math.random() * 9) + 1;
-      let b = Math.floor(Math.random() * (10 - a)) + 1;
+      let a = Math.floor(rand() * 9) + 1;
+      let b = Math.floor(rand() * (10 - a)) + 1;
       bigCalc2.push(`${a * 100}+${b * 100}|${(a + b) * 100}`);
     } else if (type === 1) {
-      let a = Math.floor(Math.random() * 9) + 2;
-      let b = Math.floor(Math.random() * (a - 1)) + 1;
+      let a = Math.floor(rand() * 9) + 2;
+      let b = Math.floor(rand() * (a - 1)) + 1;
       bigCalc2.push(`${a * 100}-${b * 100}|${(a - b) * 100}`);
     } else if (type === 2) {
-      let a = Math.floor(Math.random() * 9) + 1;
-      let b = Math.floor(Math.random() * (10 - a)) + 1;
+      let a = Math.floor(rand() * 9) + 1;
+      let b = Math.floor(rand() * (10 - a)) + 1;
       bigCalc2.push(`${a * 1000}+${b * 1000}|${(a + b) * 1000}`);
     } else {
-      let a = Math.floor(Math.random() * 9) + 2;
-      let b = Math.floor(Math.random() * (a - 1)) + 1;
+      let a = Math.floor(rand() * 9) + 2;
+      let b = Math.floor(rand() * (a - 1)) + 1;
       bigCalc2.push(`${a * 1000}-${b * 1000}|${(a - b) * 1000}`);
     }
   }
@@ -438,8 +457,8 @@ const generateDynamicProblems = () => {
 
   const okiichisai2 = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 9900) + 100;
-    let b = Math.floor(Math.random() * 9900) + 100;
+    let a = Math.floor(rand() * 9900) + 100;
+    let b = Math.floor(rand() * 9900) + 100;
     if (a === b) b = (b + 1) % 10000;
     if (i % 2 === 0) {
       okiichisai2.push(`${a}と ${b}、おおきい ほうは？|${Math.max(a, b)}`);
@@ -490,18 +509,18 @@ const generateDynamicProblems = () => {
       }
     }
   }
-  problems["2年_ことば（かけ算）"] = kakezanWord.sort(() => Math.random() - 0.5);
+  problems["2年_ことば（かけ算）"] = shuffle(kakezanWord, rand);
 
   const nagasaCalc = [];
   for (let i = 0; i < 100; i++) {
-    let type = Math.floor(Math.random() * 2);
+    let type = Math.floor(rand() * 2);
     if (type === 0) {
-      let a = Math.floor(Math.random() * 50) + 1;
-      let b = Math.floor(Math.random() * 49) + 1;
+      let a = Math.floor(rand() * 50) + 1;
+      let b = Math.floor(rand() * 49) + 1;
       nagasaCalc.push(`${a}cmの テープと ${b}cmの テープを つなぐと なんcm？|${a + b}`);
     } else {
-      let a = Math.floor(Math.random() * 50) + 20;
-      let b = Math.floor(Math.random() * 19) + 1;
+      let a = Math.floor(rand() * 50) + 20;
+      let b = Math.floor(rand() * 19) + 1;
       nagasaCalc.push(`${a}cmの ひもから ${b}cm きりとると のこりは なんcm？|${a - b}`);
     }
   }
@@ -509,14 +528,14 @@ const generateDynamicProblems = () => {
 
   const kasaCalc = [];
   for (let i = 0; i < 100; i++) {
-    let type = Math.floor(Math.random() * 2);
+    let type = Math.floor(rand() * 2);
     if (type === 0) {
-      let a = Math.floor(Math.random() * 9) + 1;
-      let b = Math.floor(Math.random() * 9) + 1;
+      let a = Math.floor(rand() * 9) + 1;
+      let b = Math.floor(rand() * 9) + 1;
       kasaCalc.push(`${a}Lの 水と ${b}Lの 水を あわせると なんL？|${a + b}`);
     } else {
-      let a = Math.floor(Math.random() * 10) + 5;
-      let b = Math.floor(Math.random() * 4) + 1;
+      let a = Math.floor(rand() * 10) + 5;
+      let b = Math.floor(rand() * 4) + 1;
       kasaCalc.push(`${a}dLの ジュースから ${b}dL のむと のこりは なんdL？|${a - b}`);
     }
   }
@@ -524,31 +543,31 @@ const generateDynamicProblems = () => {
 
   const kakezan2x1 = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 90) + 10;
-    let b = Math.floor(Math.random() * 9) + 1;
+    let a = Math.floor(rand() * 90) + 10;
+    let b = Math.floor(rand() * 9) + 1;
     kakezan2x1.push(`${a}×${b}|${a * b}`);
   }
   problems["3年_かけ算（2けた×1けた）"] = kakezan2x1;
 
   const kakezan3x1 = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 900) + 100;
-    let b = Math.floor(Math.random() * 9) + 1;
+    let a = Math.floor(rand() * 900) + 100;
+    let b = Math.floor(rand() * 9) + 1;
     kakezan3x1.push(`${a}×${b}|${a * b}`);
   }
   problems["3年_かけ算（3けた×1けた）"] = kakezan3x1;
 
   const warizanBig = [];
   for (let i = 0; i < 100; i++) {
-    let type = Math.floor(Math.random() * 2);
+    let type = Math.floor(rand() * 2);
     if (type === 0) {
-      let b = Math.floor(Math.random() * 8) + 2;
-      let sho = Math.floor(Math.random() * 9) + 1;
+      let b = Math.floor(rand() * 8) + 2;
+      let sho = Math.floor(rand() * 9) + 1;
       let a = b * sho;
       warizanBig.push(`${a * 10}÷${b}|${sho * 10}`);
     } else {
-      let b = Math.floor(Math.random() * 8) + 2;
-      let sho = Math.floor(Math.random() * 20) + 10;
+      let b = Math.floor(rand() * 8) + 2;
+      let sho = Math.floor(rand() * 20) + 10;
       let a = b * sho;
       if (a < 100) {
         warizanBig.push(`${a}÷${b}|${sho}`);
@@ -561,16 +580,16 @@ const generateDynamicProblems = () => {
 
   const anzanTashi = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 90) + 10;
-    let b = Math.floor(Math.random() * 90) + 10;
+    let a = Math.floor(rand() * 90) + 10;
+    let b = Math.floor(rand() * 90) + 10;
     anzanTashi.push(`${a}+${b}|${a + b}`);
   }
   problems["3年_暗算（2けたのたし算）"] = anzanTashi;
 
   const anzanHiki = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 90) + 10;
-    let b = Math.floor(Math.random() * 90) + 10;
+    let a = Math.floor(rand() * 90) + 10;
+    let b = Math.floor(rand() * 90) + 10;
     if (a < b) { let tmp = a; a = b; b = tmp; }
     if (a === b) { a += 1; }
     anzanHiki.push(`${a}-${b}|${a - b}`);
@@ -579,22 +598,22 @@ const generateDynamicProblems = () => {
 
   const bigCalc3 = [];
   for (let i = 0; i < 100; i++) {
-    let type = Math.floor(Math.random() * 4);
+    let type = Math.floor(rand() * 4);
     if (type === 0) {
-      let a = Math.floor(Math.random() * 9) + 1;
-      let b = Math.floor(Math.random() * 9) + 1;
+      let a = Math.floor(rand() * 9) + 1;
+      let b = Math.floor(rand() * 9) + 1;
       bigCalc3.push(`${a * 1000}+${b * 1000}|${(a + b) * 1000}`);
     } else if (type === 1) {
-      let a = Math.floor(Math.random() * 9) + 2;
-      let b = Math.floor(Math.random() * (a - 1)) + 1;
+      let a = Math.floor(rand() * 9) + 2;
+      let b = Math.floor(rand() * (a - 1)) + 1;
       bigCalc3.push(`${a * 1000}-${b * 1000}|${(a - b) * 1000}`);
     } else if (type === 2) {
-      let a = Math.floor(Math.random() * 9) + 1;
-      let b = Math.floor(Math.random() * 9) + 1;
+      let a = Math.floor(rand() * 9) + 1;
+      let b = Math.floor(rand() * 9) + 1;
       bigCalc3.push(`${a}万+${b}万は なん万？|${a + b}`);
     } else {
-      let a = Math.floor(Math.random() * 9) + 2;
-      let b = Math.floor(Math.random() * (a - 1)) + 1;
+      let a = Math.floor(rand() * 9) + 2;
+      let b = Math.floor(rand() * (a - 1)) + 1;
       bigCalc3.push(`${a}万-${b}万は なん万？|${a - b}`);
     }
   }
@@ -616,8 +635,8 @@ const generateDynamicProblems = () => {
 
   const warizanWord3 = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 9) + 1;
-    let b = Math.floor(Math.random() * 8) + 2;
+    let a = Math.floor(rand() * 9) + 1;
+    let b = Math.floor(rand() * 8) + 2;
     let total = a * b;
     if (i % 2 === 0) {
       warizanWord3.push(`${total}この あめを ${b}にんで おなじ かずずつ わけると、1にんぶんは なんこ？|${a}`);
@@ -629,9 +648,9 @@ const generateDynamicProblems = () => {
 
   const amariWord3 = [];
   for (let i = 0; i < 100; i++) {
-    let b = Math.floor(Math.random() * 5) + 3;
-    let sho = Math.floor(Math.random() * 7) + 2;
-    let amari = Math.floor(Math.random() * (b - 1)) + 1;
+    let b = Math.floor(rand() * 5) + 3;
+    let sho = Math.floor(rand() * 7) + 2;
+    let amari = Math.floor(rand() * (b - 1)) + 1;
     let total = b * sho + amari;
     if (i % 2 === 0) {
       amariWord3.push(`${total}こ の ケーキを 1つの はこに ${b}こ ずつ いれます。ぜんぶ いれるには、はこは いくつ いる？|${sho + 1}`);
@@ -661,8 +680,8 @@ const generateDynamicProblems = () => {
 
   const warizan4_1 = [];
   for (let i = 0; i < 100; i++) {
-    let b = Math.floor(Math.random() * 8) + 2;
-    let ans = Math.floor(Math.random() * 190) + 10;
+    let b = Math.floor(rand() * 8) + 2;
+    let ans = Math.floor(rand() * 190) + 10;
     let a = b * ans;
     warizan4_1.push(`${a}÷${b}|${ans}`);
   }
@@ -670,14 +689,14 @@ const generateDynamicProblems = () => {
 
   const warizan4_2 = [];
   for (let i = 0; i < 100; i++) {
-    let type = Math.floor(Math.random() * 2);
+    let type = Math.floor(rand() * 2);
     if (type === 0) {
-      let b0 = Math.floor(Math.random() * 9) + 1;
-      let ans = Math.floor(Math.random() * 9) + 1;
+      let b0 = Math.floor(rand() * 9) + 1;
+      let ans = Math.floor(rand() * 9) + 1;
       warizan4_2.push(`${b0 * ans * 10}÷${b0 * 10}|${ans}`);
     } else {
-      let b = Math.floor(Math.random() * 89) + 11;
-      let ans = Math.floor(Math.random() * 9) + 2;
+      let b = Math.floor(rand() * 89) + 11;
+      let ans = Math.floor(rand() * 9) + 2;
       let a = b * ans;
       if (a < 1000) {
         warizan4_2.push(`${a}÷${b}|${ans}`);
@@ -690,11 +709,11 @@ const generateDynamicProblems = () => {
 
   const shosuWari4 = [];
   for (let i = 0; i < 100; i++) {
-    let b = Math.floor(Math.random() * 8) + 2;
-    let ans = Math.floor(Math.random() * 99) + 1;
+    let b = Math.floor(rand() * 8) + 2;
+    let ans = Math.floor(rand() * 99) + 1;
     if (ans % 10 === 0) ans += 1;
     let a = b * ans;
-    if (Math.random() < 0.5) {
+    if (rand() < 0.5) {
       shosuWari4.push(`${(a / 10).toFixed(1)}÷${b}|${(ans / 10).toFixed(1)}`);
     } else {
       shosuWari4.push(`${(a / 100).toFixed(2)}÷${b}|${(ans / 100).toFixed(2)}`);
@@ -707,8 +726,7 @@ const generateDynamicProblems = () => {
     for (let a = 1; a <= 9; a++) {
       for (let b = 1; b <= 9; b++) {
         if (a + b > d && a + b <= 18) {
-          let ansStr = (a + b) % d === 0 ? String((a + b) / d) : `${a + b}/${d}`;
-          bunsuTashi4.push(`${a}/${d}+${b}/${d}|${ansStr}`);
+          bunsuTashi4.push(`${a}/${d}+${b}/${d}|${sameDenomAns(a + b, d)}`);
         }
       }
     }
@@ -719,8 +737,7 @@ const generateDynamicProblems = () => {
   for (let d = 3; d <= 9; d++) {
     for (let a = d + 1; a <= 18; a++) {
       for (let b = 1; b < a; b++) {
-        let ansStr = (a - b) % d === 0 ? String((a - b) / d) : `${a - b}/${d}`;
-        bunsuHiki4.push(`${a}/${d}-${b}/${d}|${ansStr}`);
+        bunsuHiki4.push(`${a}/${d}-${b}/${d}|${sameDenomAns(a - b, d)}`);
       }
     }
   }
@@ -728,9 +745,9 @@ const generateDynamicProblems = () => {
 
   const bigNum4 = [];
   for (let i = 0; i < 100; i++) {
-    let type = Math.floor(Math.random() * 4);
-    let a = Math.floor(Math.random() * 90) + 10;
-    let b = Math.floor(Math.random() * 90) + 10;
+    let type = Math.floor(rand() * 4);
+    let a = Math.floor(rand() * 90) + 10;
+    let b = Math.floor(rand() * 90) + 10;
     if (type === 0) {
       bigNum4.push(`${a}億+${b}億は なん億？|${a + b}`);
     } else if (type === 1) {
@@ -765,12 +782,12 @@ const generateDynamicProblems = () => {
 
   const mensekiCalc4 = [];
   for (let i = 0; i < 100; i++) {
-    if (Math.random() < 0.3) {
-      let a = Math.floor(Math.random() * 20) + 2;
+    if (rand() < 0.3) {
+      let a = Math.floor(rand() * 20) + 2;
       mensekiCalc4.push(`1辺が ${a}cmの 正方形の 面積は なん㎠？|${a * a}`);
     } else {
-      let a = Math.floor(Math.random() * 20) + 2;
-      let b = Math.floor(Math.random() * 20) + 2;
+      let a = Math.floor(rand() * 20) + 2;
+      let b = Math.floor(rand() * 20) + 2;
       if (a === b) b += 1;
       mensekiCalc4.push(`たてが ${a}cm、よこが ${b}cmの 長方形の 面積は なん㎠？|${a * b}`);
     }
@@ -779,10 +796,10 @@ const generateDynamicProblems = () => {
 
   const shosuShikumi4 = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 9) + 1;
-    let b = Math.floor(Math.random() * 9) + 1;
-    let c = Math.floor(Math.random() * 9) + 1;
-    if (Math.random() < 0.5) {
+    let a = Math.floor(rand() * 9) + 1;
+    let b = Math.floor(rand() * 9) + 1;
+    let c = Math.floor(rand() * 9) + 1;
+    if (rand() < 0.5) {
       shosuShikumi4.push(`1を ${a}こ、0.1を ${b}こ あわせた 数は？|${a}.${b}`);
     } else {
       shosuShikumi4.push(`1を ${a}こ、0.1を ${b}こ、0.01を ${c}こ あわせた 数は？|${a}.${b}${c}`);
@@ -792,10 +809,10 @@ const generateDynamicProblems = () => {
 
   const shosu10_100 = [];
   for (let i = 0; i < 100; i++) {
-    let num = Math.floor(Math.random() * 999) + 1;
-    let shift = Math.floor(Math.random() * 3);
+    let num = Math.floor(rand() * 999) + 1;
+    let shift = Math.floor(rand() * 3);
     let baseVal = num / Math.pow(10, shift);
-    let op = Math.floor(Math.random() * 4);
+    let op = Math.floor(rand() * 4);
 
     let ansVal;
     if (op === 0) ansVal = baseVal * 10;
@@ -818,7 +835,7 @@ const generateDynamicProblems = () => {
       if (g > 1) { yakubun.push(`${n}/${d}を 約分すると？|${n / g}/${d / g}`); }
     }
   }
-  problems["5年_約分"] = yakubun.sort(() => Math.random() - 0.5).slice(0, 100);
+  problems["5年_約分"] = sample(yakubun, 100, rand);
 
   const piCalc = [];
   for (let i = 1; i <= 20; i++) {
@@ -850,7 +867,7 @@ const generateDynamicProblems = () => {
       if (g > 2 && g !== a) { koubaisuu.push(`${a}と${b}の 最大公約数は？|${g}`); }
     }
   }
-  problems["5年_公倍数・公約数"] = koubaisuu.sort(() => Math.random() - 0.5).slice(0, 100);
+  problems["5年_公倍数・公約数"] = sample(koubaisuu, 100, rand);
 
   const kaku5 = [
     "三角形の 内角の和は なんど？|180", "四角形の 内角の和は なんど？|360",
@@ -870,13 +887,13 @@ const generateDynamicProblems = () => {
 
   const taiseki5 = [];
   for (let i = 0; i < 100; i++) {
-    if (Math.random() < 0.3) {
-      let a = Math.floor(Math.random() * 9) + 2;
+    if (rand() < 0.3) {
+      let a = Math.floor(rand() * 9) + 2;
       taiseki5.push(`1辺が ${a}cmの 立方体の 体積は なん㎤？|${a * a * a}`);
     } else {
-      let a = Math.floor(Math.random() * 9) + 2;
-      let b = Math.floor(Math.random() * 9) + 2;
-      let c = Math.floor(Math.random() * 9) + 2;
+      let a = Math.floor(rand() * 9) + 2;
+      let b = Math.floor(rand() * 9) + 2;
+      let c = Math.floor(rand() * 9) + 2;
       taiseki5.push(`たて ${a}cm、よこ ${b}cm、高さ ${c}cmの 直方体の 体積は なん㎤？|${a * b * c}`);
     }
   }
@@ -884,13 +901,13 @@ const generateDynamicProblems = () => {
 
   const menseki5 = [];
   for (let i = 0; i < 100; i++) {
-    if (Math.random() < 0.5) {
-      let b = Math.floor(Math.random() * 19) + 2;
-      let h = Math.floor(Math.random() * 19) + 2;
+    if (rand() < 0.5) {
+      let b = Math.floor(rand() * 19) + 2;
+      let h = Math.floor(rand() * 19) + 2;
       menseki5.push(`底辺 ${b}cm、高さ ${h}cmの 平行四辺形の 面積は なん㎠？|${b * h}`);
     } else {
-      let b = Math.floor(Math.random() * 19) + 2;
-      let h = Math.floor(Math.random() * 19) + 2;
+      let b = Math.floor(rand() * 19) + 2;
+      let h = Math.floor(rand() * 19) + 2;
       if ((b * h) % 2 !== 0) b += 1;
       menseki5.push(`底辺 ${b}cm、高さ ${h}cmの 三角形の 面積は なん㎠？|${(b * h) / 2}`);
     }
@@ -899,9 +916,9 @@ const generateDynamicProblems = () => {
 
   const heikin5 = [];
   for (let i = 0; i < 100; i++) {
-    let a = Math.floor(Math.random() * 40) + 10;
-    let b = Math.floor(Math.random() * 40) + 10;
-    let c = Math.floor(Math.random() * 40) + 10;
+    let a = Math.floor(rand() * 40) + 10;
+    let b = Math.floor(rand() * 40) + 10;
+    let c = Math.floor(rand() * 40) + 10;
     let sum = a + b + c;
     let rem = sum % 3;
     if (rem !== 0) { c += (3 - rem); }
@@ -942,7 +959,7 @@ const generateDynamicProblems = () => {
       }
     }
   }
-  problems["6年_比のけいさん"] = hiCalc6.sort(() => Math.random() - 0.5).slice(0, 100);
+  problems["6年_比のけいさん"] = sample(hiCalc6, 100, rand);
 
   const baai6 = [
     "2人を 1列に ならべる ならべ方は なん通り？|2", "3人を 1列に ならべる ならべ方は なん通り？|6",
@@ -964,13 +981,13 @@ const generateDynamicProblems = () => {
 
   const kakushuku6 = [];
   for (let i = 0; i < 100; i++) {
-    if (Math.random() < 0.5) {
-      let a = Math.floor(Math.random() * 20) + 2;
-      let k = Math.floor(Math.random() * 4) + 2;
+    if (rand() < 0.5) {
+      let a = Math.floor(rand() * 20) + 2;
+      let k = Math.floor(rand() * 4) + 2;
       kakushuku6.push(`長さ ${a}cm の ${k}倍の 拡大図の 長さは なんcm？|${a * k}`);
     } else {
-      let a = Math.floor(Math.random() * 10) + 2;
-      let k_hundreds = Math.floor(Math.random() * 10) + 1;
+      let a = Math.floor(rand() * 10) + 2;
+      let k_hundreds = Math.floor(rand() * 10) + 1;
       let k = k_hundreds * 100;
       kakushuku6.push(`${k}分の1 の 縮図で ${a}cm の 長さは、実際には なんm？|${(a * k) / 100}`);
     }
@@ -979,9 +996,9 @@ const generateDynamicProblems = () => {
 
   const rittai6 = [];
   for (let i = 0; i < 100; i++) {
-    let s = Math.floor(Math.random() * 50) + 10;
-    let h = Math.floor(Math.random() * 20) + 2;
-    if (Math.random() < 0.5) {
+    let s = Math.floor(rand() * 50) + 10;
+    let h = Math.floor(rand() * 20) + 2;
+    if (rand() < 0.5) {
       rittai6.push(`底面積が ${s}㎠、高さが ${h}cm の 角柱の 体積は なん㎤？|${s * h}`);
     } else {
       rittai6.push(`底面積が ${s}㎠、高さが ${h}cm の 円柱の 体積は なん㎤？|${s * h}`);
@@ -991,18 +1008,18 @@ const generateDynamicProblems = () => {
 
   const daihyo6 = [];
   for (let i = 0; i < 100; i++) {
-    if (Math.random() < 0.5) {
-      let start = Math.floor(Math.random() * 10) + 1;
-      let arr = [start, start + Math.floor(Math.random() * 3), start + Math.floor(Math.random() * 5) + 2, start + Math.floor(Math.random() * 8) + 5, start + Math.floor(Math.random() * 10) + 8];
+    if (rand() < 0.5) {
+      let start = Math.floor(rand() * 10) + 1;
+      let arr = [start, start + Math.floor(rand() * 3), start + Math.floor(rand() * 5) + 2, start + Math.floor(rand() * 8) + 5, start + Math.floor(rand() * 10) + 8];
       arr.sort((a, b) => a - b);
       daihyo6.push(`${arr.join(', ')} の 中央値(メジアン)は？|${arr[2]}`);
     } else {
       // 最頻値。0や負の数が混ざらないよう、mode は 6 以上から選ぶ
-      let mode = Math.floor(Math.random() * 10) + 6;
-      let other1 = mode + Math.floor(Math.random() * 5) + 1;
-      let other2 = mode - Math.floor(Math.random() * 5) - 1;
+      let mode = Math.floor(rand() * 10) + 6;
+      let other1 = mode + Math.floor(rand() * 5) + 1;
+      let other2 = mode - Math.floor(rand() * 5) - 1;
       let arr = [mode, mode, mode, other1, other2];
-      arr.sort(() => Math.random() - 0.5);
+      arr = shuffle(arr, rand);
       daihyo6.push(`${arr.join(', ')} の 最頻値(モード)は？|${mode}`);
     }
   }
@@ -1010,22 +1027,22 @@ const generateDynamicProblems = () => {
 
   const hirei6 = [];
   for (let i = 0; i < 100; i++) {
-    if (Math.random() < 0.5) {
-      let a = Math.floor(Math.random() * 9) + 2;
-      let x1 = Math.floor(Math.random() * 5) + 2;
+    if (rand() < 0.5) {
+      let a = Math.floor(rand() * 9) + 2;
+      let x1 = Math.floor(rand() * 5) + 2;
       let y1 = a * x1;
-      let x2 = x1 + Math.floor(Math.random() * 4) + 1;
+      let x2 = x1 + Math.floor(rand() * 4) + 1;
       hirei6.push(`yはxに 比例します。xが${x1}のとき yは${y1}です。xが${x2}のとき yはいくつ？|${a * x2}`);
     } else {
-      let y2 = Math.floor(Math.random() * 8) + 2;
-      let x2 = Math.floor(Math.random() * 5) + 2;
+      let y2 = Math.floor(rand() * 8) + 2;
+      let x2 = Math.floor(rand() * 5) + 2;
       let a = x2 * y2;
       let divisors = [];
       for (let d = 2; d <= a; d++) {
         if (a % d === 0 && d !== x2) divisors.push(d);
       }
       if (divisors.length > 0) {
-        let x1 = divisors[Math.floor(Math.random() * divisors.length)];
+        let x1 = divisors[Math.floor(rand() * divisors.length)];
         let y1 = a / x1;
         hirei6.push(`yはxに 反比例します。xが${x1}のとき yは${y1}です。xが${x2}のとき yはいくつ？|${y2}`);
       } else {
@@ -1041,8 +1058,8 @@ const generateDynamicProblems = () => {
   //   通分・倍数と約数・分数と小数・単位量あたり・割合の3用法 など）
   // ==========================================================
   const num = (v) => parseFloat(Number(v).toPrecision(12)).toString();
-  const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-  const shuffled = (arr, n = 100) => arr.sort(() => Math.random() - 0.5).slice(0, n);
+  const rnd = (min, max) => Math.floor(rand() * (max - min + 1)) + min;
+  const shuffled = (arr, n = 100) => sample(arr, n, rand);
   // 分数の答え。約分できるときは約分前・約分後のどちらも正解にする
   const fracAns = (n, d) => {
     if (n % d === 0) return String(n / d);
@@ -1419,7 +1436,7 @@ const generateDynamicProblems = () => {
 
   // チャレンジ_四則混合: 静的な6問に加え、計算の順序（×÷が先・カッコが先）を
   // 意識させる問題を決定的に生成して拡充する
-  const shisoku = [...DEFAULT_PROBLEMS["チャレンジ_四則混合"]];
+  const shisoku = [...STATIC_PROBLEMS["チャレンジ_四則混合"]];
   for (let b = 2; b <= 9; b++) {
     for (let c = 2; c <= 9; c++) {
       const a = ((b * 5 + c * 3) % 8) + 2;
@@ -1444,26 +1461,51 @@ Object.assign(DEFAULT_PROBLEMS, generateDynamicProblems());
 // 先生が自作コースの答えを全角で書いても（「０．５」「－３」「（１）」）、
 // 位取りの「,」を入れても（「1,000」）、テンキーで打った答えと一致するようにする。
 // （全角の数字しか直していなかったので「０．５」は「0．5」になり、だれも正解できなかった）
+// 「.5」のように 0 をはぶいて打っても「0.5」と同じにあつかう。
 const FULLWIDTH_SIGNS = { '．': '.', '／': '/', '－': '-', '−': '-', '‐': '-', '（': '(', '）': ')' };
 export const normalizeStr = (str) => {
   return String(str)
     .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
     .replace(/[．／－−‐（）]/g, (s) => FULLWIDTH_SIGNS[s])
     .replace(/(\d)[,，](?=\d)/g, '$1')
-    .replace(/\s+/g, '');
+    .replace(/\s+/g, '')
+    .replace(/^(-?)\./, (_, sign) => `${sign}0.`);
+};
+
+// 打っているとちゅうの答えを見る。answers は正解（別解をふくむ）の配列。
+//   'correct' … どれかの正解と同じ
+//   'wrong'   … もうどの正解にもならず、いちばん短い正解と同じ長さまで打った
+//   'pending' … まだ打っているとちゅう（空のときもここ）
+// 以前は OK（Enter）を押すまで まちがいにならず、消して打ちなおせば何度でもためせた。
+// サドンデスが1問ミスで終わらず、学習ログの「1回目で正解」も多めに出ていた。
+// 1文字目で すぐ まちがいにしないのは、まちがえた答えを最後まで記録に残すため
+// （47+38 を「75」と打った子の、くり上がりのわすれが先生に見えるように）。
+// 短い入力のうちは正しいかどうかを何も知らせないので、これでためし打ちはできない。
+export const checkAnswer = (input, answers) => {
+  const typed = normalizeStr(input);
+  if (!typed) return 'pending';
+  const alts = (answers || []).map(normalizeStr).filter(Boolean);
+  if (alts.includes(typed)) return 'correct';
+  if (alts.length === 0 || alts.some((a) => a.startsWith(typed))) return 'pending';
+  return typed.length >= Math.min(...alts.map((a) => a.length)) ? 'wrong' : 'pending';
 };
 
 // DEFAULT_PROBLEMS のパース結果は不変なので一度だけ計算して使い回す
+const parseAll = (raw) => {
+  const out = {};
+  for (const [key, list] of Object.entries(raw)) {
+    out[key] = list.map(str => { const parts = str.split('|'); return { q: parts[0], a: parts.slice(1).join('|') }; });
+  }
+  return out;
+};
 let parsedDefaultProblemsCache = null;
 export const getParsedDefaultProblems = () => {
-  if (!parsedDefaultProblemsCache) {
-    parsedDefaultProblemsCache = {};
-    for (const [key, list] of Object.entries(DEFAULT_PROBLEMS)) {
-      parsedDefaultProblemsCache[key] = list.map(str => { const parts = str.split('|'); return { q: parts[0], a: parts.slice(1).join('|') }; });
-    }
-  }
+  if (!parsedDefaultProblemsCache) parsedDefaultProblemsCache = parseAll(DEFAULT_PROBLEMS);
   return parsedDefaultProblemsCache;
 };
+
+/** ほかの種でプリセットを作る。乱数で中身が変わるコースを見分けるとき（旧データの移しかえ）だけ使う */
+export const buildPresetProblems = (seed) => parseAll(Object.assign({}, STATIC_PROBLEMS, generateDynamicProblems(seed)));
 
 // 既定コースの表示順（学年内は学習する順序）。ここにない自作コースは各学年の末尾に五十音順で並ぶ
 const COURSE_DISPLAY_ORDER = [
@@ -1514,9 +1556,10 @@ export const courseCompare = (a, b) => {
   return a.localeCompare(b, 'ja');
 };
 
-// 既定コースの名前・内容を更新したときにインクリメントする。
-// 保存済みバージョンが古い場合、旧名称のコースを取り除き既定コースを最新内容で入れ直す
-export const DEFAULTS_VERSION = 2;
+// 改名する前のプリセットの名前。旧データ（qalc_problems）を移すときに捨てる（problemStore.js）。
+// プリセットの中身を直したときに、版の番号を上げる必要はもう無い（プリセットは端末に保存しないので、
+// 直したものが そのまま全員に届く）。名前を変えたときは、ここに古い名前を足し、
+// studySession.js の UNIT_IDS で古い名前も同じ単元IDに向けること。
 export const LEGACY_DEFAULT_KEYS = [
   '4年_がい数(四捨五入)', '4年_小数x整数', '5年_割合パッ！(%)', '6年_速さ・時間・道',
   '1年_ひきざん', '1年_10と いくつ', '1年_おおきいかずの けいさん', '1年_なん十の けいさん（100まで）',

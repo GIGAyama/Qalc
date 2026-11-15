@@ -12,9 +12,12 @@ import {
   Store, CheckCircle2, PaintBucket, Shirt, Users, Radio,
   Lightbulb
 } from 'lucide-react';
-// どの「かんがえるどうぐ」を出すかの判定は毎問ひつようなので、最初から読みこむ。
-// どうぐの絵そのもの(SVGが多く約140KB)はゲーム画面に入ってから取りにいく（Part I §5）
-import { getAvailableTools, TOOL_META } from './learningTools/detect.js';
+// どの「かんがえるどうぐ」を出すかの判定（detect.js）は、ゲームの画面でしか使わない。
+// 最初に読みこむ JS には入れず、アプリを開いて少ししてから・ゲームに入るときに取りにいく（Part I §5）。
+// （以前は最初から読みこんでいて、ホームを出すまでの JS が約30KB 重かった）
+// どうぐの絵そのもの(SVGが多く約140KB)はゲーム画面に入ってから取りにいく
+let detectModule = null;
+const loadDetect = () => import('./learningTools/detect.js').then((m) => { detectModule = m; return m; });
 const LearningToolPanel = lazy(() =>
   import('./LearningTools.jsx').then((m) => ({ default: m.LearningToolPanel })));
 const preloadLearningTools = () => import('./LearningTools.jsx');
@@ -56,14 +59,22 @@ import {
 // 問題データ・ショップ・ミッションの定義は src/data/ に切りだした。
 // App.jsx が5,000行を超えて追いきれなくなっていたため（Part I §5）。
 import {
-  normalizeStr, getParsedDefaultProblems, courseCompare,
-  DEFAULTS_VERSION, LEGACY_DEFAULT_KEYS,
+  checkAnswer, getParsedDefaultProblems, buildPresetProblems, courseCompare,
+  PRESET_SEED, LEGACY_DEFAULT_KEYS,
 } from './data/problems.js';
+// コースの保存（プリセットは保存せず、自作と書きかえだけ）。node でテストしている
+import {
+  COURSES_KEY, LEGACY_KEY, LEGACY_VERSION_KEY, cleanCourses, migrateLegacyCourses, mergeCourses,
+} from './problemStore.js';
 import {
   SHOP_ITEMS, RARITY_INFO, getRarity, GACHA_COST, GACHA_DUP_REFUND,
   getGachaPool, rollGacha,
 } from './data/shop.js';
-import { getRandomMissions } from './data/missions.js';
+import { getRandomMissions, missionProfile } from './data/missions.js';
+// 出題順をまぜる。sort(() => Math.random() - 0.5) は かたよる（random.js の説明）
+import { shuffle } from './random.js';
+import { normalizeStats, normalizeMistakes, normalizeResume, dateKey, addDays, rolloverDay, currentStreak } from './statsStore.js';
+import { DECAY, realCoursesOf, computeRewardDecay, recordCourseSession, masteryPace } from './mastery.js';
 // コースの共有コード・CSV 取りこみ・「テンキーで打てる答えか」の検査（node でテストしている）
 import {
   encodeCourse, decodeCourse, parseProblemText, validateProblems, uniqueCourseName,
@@ -192,33 +203,6 @@ const audioCtrl = new AudioController();
 // 2. データ構造 & Storage API
 // ==========================================
 
-// ==========================================
-// マスター判定 & 報酬減衰（コイン・EXP稼ぎ目的の周回対策）
-// 方針: プレイ自体は制限しない（復習は自由）。ただし
-//  1) 高正答率・高速で安定してクリアできる＝「マスター済み」コースを楽々クリアしたとき
-//  2) 同じコースを同じ日に何度も繰り返したとき（難易度によらず。自作コース悪用対策も兼ねる）
-// はEXP・コイン・ミッション進捗が減衰し、代わりに「つぎのドリルへ挑戦しよう」と促す。
-const DECAY = {
-  REPEAT_SCHEDULE: [1, 1, 0.5, 0.25], // その日すでに遊んだ回数 → 倍率（3回目から半減）
-  REPEAT_FLOOR: 0.1,                  // 5回目以降の倍率
-  MASTERED_MULT: 0.2,                 // マスター済みコースを楽々クリアしたときの倍率
-  FLOOR: 0.05,                        // 合成倍率の下限（ゼロにはしない）
-  MASTER_MIN_CORRECT: 10,             // マスター判定に必要な1セッションの正解数
-  MASTER_MIN_ACC: 0.95,               // マスター判定に必要な正答率
-  MASTER_MAX_SPQ: 5,                  // マスター判定: 1問あたりの秒数上限（指折り計算では届かない速さ）
-  MASTER_STREAK: 3,                   // 連続何セッション条件を満たせばマスターか
-  DEMOTE_ACC: 0.8,                    // マスター済みでもこれを下回ったら「忘れていた」として解除
-  EASY_ACC: 0.9,                      // マスター減衰が発動する正答率（苦戦した復習は減衰しない）
-  MIN_ATTEMPTS_FOR_REPEAT: 5          // これ未満の回答数のセッションは周回カウントに入れない（誤タップ即終了の救済）
-};
-
-// セッションの正答率。サドンデスは終了のきっかけになった1ミスを除外して評価する
-const sessionAccuracy = (session) => {
-  const wrongAdj = session.gameMode === 'SUDDEN_DEATH' ? Math.max(0, session.wrongCount - 1) : session.wrongCount;
-  const attempts = session.correctCount + wrongAdj;
-  return { attempts, acc: attempts > 0 ? session.correctCount / attempts : 0 };
-};
-
 // 中断データに入れる問題の数の上限。スコアアタックとサドンデスは問題を くりかえし出す
 // （次の問題は qIndex を問題数で割ったあまり）ので、いまの問題から先の分だけあれば つづきが遊べる。
 // 以前は えらんだ問題を全部入れていて、全コースを選ぶと約42万文字になった。端末の保存容量を
@@ -232,58 +216,8 @@ const resumeProblems = (problemSet, qIndex, gameMode) => {
   return { problemSet: out, qIndex: 0 };
 };
 
-// にがて克服ボックス('mistakes')は常に減衰対象外（まちがい直しはいつでも全額）
-const realCoursesOf = (courseNames) => (courseNames || []).filter(n => n !== 'mistakes');
-
-const isCourseMastered = (stats, name) => !!(stats.courseStats && stats.courseStats[name] && stats.courseStats[name].mastered);
-
-// 減衰倍率を計算する（stats は変更しない。今セッションを記録する「前」の値で呼ぶこと）
-const computeRewardDecay = (stats, courseNames, session) => {
-  const real = realCoursesOf(courseNames);
-  if (real.length === 0) return { mult: 1, masteredApplied: false, repeatPlays: 0, repeatMult: 1 };
-  const today = new Date().toLocaleDateString();
-  const counts = (stats.repeat && stats.repeat.date === today) ? stats.repeat.counts : {};
-  // 複数ドリル選択時は「いちばん周回されているコース」に合わせる（稼ぎコースに新規1つ混ぜる抜け道の防止）
-  const repeatPlays = Math.max(...real.map(n => counts[n] || 0));
-  const repeatMult = repeatPlays < DECAY.REPEAT_SCHEDULE.length ? DECAY.REPEAT_SCHEDULE[repeatPlays] : DECAY.REPEAT_FLOOR;
-  const { acc } = sessionAccuracy(session);
-  // マスター減衰は「選んだ全コースがマスター済み」かつ「今回も楽々だった」ときだけ。苦戦したなら復習が必要だった証拠なので全額
-  const masteredApplied = real.every(n => isCourseMastered(stats, n)) && acc >= DECAY.EASY_ACC;
-  const mult = Math.max(DECAY.FLOOR, repeatMult * (masteredApplied ? DECAY.MASTERED_MULT : 1));
-  return { mult, masteredApplied, repeatPlays, repeatMult };
-};
-
-// 今セッションを周回カウント・マスター判定に記録する（stats を直接変更する）
-// 戻り値: { newlyMastered: 新しくマスターになったコース名 | null }
-const recordCourseSession = (stats, courseNames, session) => {
-  const real = realCoursesOf(courseNames);
-  if (real.length === 0) return { newlyMastered: null };
-  const today = new Date().toLocaleDateString();
-  if (!stats.repeat || stats.repeat.date !== today) stats.repeat = { date: today, counts: {} };
-  const { attempts, acc } = sessionAccuracy(session);
-  if (attempts >= DECAY.MIN_ATTEMPTS_FOR_REPEAT) {
-    real.forEach(n => { stats.repeat.counts[n] = (stats.repeat.counts[n] || 0) + 1; });
-  }
-  if (!stats.courseStats) stats.courseStats = {};
-  let newlyMastered = null;
-  // 複数ドリル混合ではコース別の正答率が分からないため、単一コースのセッションだけを判定の証拠にする
-  if (real.length === 1) {
-    const name = real[0];
-    const cs = stats.courseStats[name] || (stats.courseStats[name] = { plays: 0, streak: 0, mastered: false });
-    cs.plays += 1;
-    const spq = session.correctCount > 0 ? session.elapsedSec / session.correctCount : Infinity;
-    const qualifies = session.correctCount >= DECAY.MASTER_MIN_CORRECT && acc >= DECAY.MASTER_MIN_ACC && spq <= DECAY.MASTER_MAX_SPQ;
-    if (qualifies) {
-      cs.streak += 1;
-      if (!cs.mastered && cs.streak >= DECAY.MASTER_STREAK) { cs.mastered = true; cs.masteredAt = today; newlyMastered = name; }
-    } else {
-      cs.streak = 0;
-      // 久しぶりに遊んで正答率が落ちていたらマスター解除（忘れていた復習は全額で報いる）
-      if (cs.mastered && attempts >= DECAY.MIN_ATTEMPTS_FOR_REPEAT && acc < DECAY.DEMOTE_ACC) cs.mastered = false;
-    }
-  }
-  return { newlyMastered };
-};
+// 旧データを新しい形へ移したのに保存できなかったとき、開いているあいだだけ使う写し
+let userCoursesCache = null;
 
 const StorageAPI = {
   safeGet: (key, fallback = null) => { try { const v = window.localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; } },
@@ -299,53 +233,53 @@ const StorageAPI = {
   },
 
   getStats: () => {
-    let stats = StorageAPI.safeGet('qalc_stats');
-    if (!stats || !stats.inventory) {
-      stats = {
-        totalExp: parseInt(window.localStorage.getItem('qalc_exp') || '0', 10),
-        streak: parseInt(window.localStorage.getItem('qalc_streak') || '0', 10),
-        lastDate: window.localStorage.getItem('qalc_last_date') || '',
-        maxComboRecord: 0, suddenDeathRecord: 0, timeAttackRecord: 0, bossRaidRecord: 0,
-        coins: 100, inventory: { bases: ['b_dog'], hats: [], faces: [], props: [], themes: ['default'] },
-        equipped: { base: 'b_dog', hat: null, face: null, prop: null }, theme: 'default', missions: null, daily: {}
-      };
-    }
-    // カテゴリ追加時のマイグレーション: 旧データに新カテゴリのキーを補う
-    stats.inventory = { bases: ['b_dog'], hats: [], faces: [], props: [], themes: ['default'], backgrounds: [], effects: [], titles: [], ...stats.inventory };
-    stats.equipped = { base: 'b_dog', hat: null, face: null, prop: null, background: null, effect: null, title: null, ...stats.equipped };
-    const todayStr = new Date().toLocaleDateString();
-    if (!stats.missions || stats.missions.date !== todayStr) {
-      stats.missions = {
-        date: todayStr,
-        list: getRandomMissions(3, stats.streak || 0)
-      };
-    }
-    // マスター判定・周回カウントのマイグレーション（周回カウントは日替わりでリセット）
-    if (!stats.courseStats) stats.courseStats = {};
-    if (!stats.repeat || stats.repeat.date !== todayStr) stats.repeat = { date: todayStr, counts: {} };
+    // 成績がひとつのキーにまとまる前の版が、別々に残した値（成績に値が無いときだけ使う）。
+    // 保存が止められている端末では、localStorage にさわるだけで例外になるので try の中で読む。
+    // （以前はここを try の外で読んでいて、そういう端末では画面がまっ白になった）
+    const legacy = {};
+    try {
+      legacy.exp = window.localStorage.getItem('qalc_exp');
+      legacy.streak = window.localStorage.getItem('qalc_streak');
+      legacy.lastDate = window.localStorage.getItem('qalc_last_date');
+    } catch (e) { /* 読めない端末 */ }
+    // 壊れた・古い形の成績でも、読めたものは残して はじめの値でうめる（statsStore.js）
+    // 日がかわっていたら、その日のミッションと周回の数をはじめる
+    const stats = StorageAPI.rollover(normalizeStats(StorageAPI.safeGet('qalc_stats'), legacy));
     StorageAPI.safeSet('qalc_stats', stats);
     return stats;
+  },
+  // 日がかわっていたら、ミッションと周回の数をその日のものにする（変わっていなければ同じものを返す）。
+  // 受けとりわすれた前の日のミッションのコインは、なくさずに わたして知らせる
+  rollover: (stats) => {
+    const today = dateKey();
+    // ミッションは その子の記録にあわせて えらぶ（ひとりで達成できるもの・記録の1.5倍まで。missions.js）
+    const last7 = Array.from({ length: 7 }, (_, i) => addDays(today, -i));
+    const { stats: next, autoClaimed } = rolloverDay(stats, today, () => getRandomMissions(3, stats.streak || 0, missionProfile(stats, today, last7)));
+    if (autoClaimed > 0) showToast('success', `うけとりわすれた ミッションの コイン +${autoClaimed}`);
+    return next;
   },
   saveStats: (stats) => StorageAPI.safeSet('qalc_stats', stats),
 
   // missionPlayCredit: 減衰の強いセッションはミッションの「あそぶ系」進捗に数えない（省略時は playCount と同じ）
-  updateDailyAndMissions: (stats, exp, combo, playCount, gameMode, correctCount, missionPlayCredit = playCount) => {
-    const today = new Date().toLocaleDateString();
-    if (!stats.daily) stats.daily = {};
-    if (!stats.daily[today]) stats.daily[today] = { exp: 0, count: 0 };
-    stats.daily[today].exp += exp;
-    stats.daily[today].count += playCount;
+  // 前の stats の中身（daily・missions）は書きかえず、写しを作ってから足す（React の前の状態をこわさない）
+  updateDailyAndMissions: (statsIn, exp, combo, playCount, gameMode, correctCount, missionPlayCredit = playCount) => {
+    const today = dateKey();
+    // 遊んでいるあいだに日がかわっても、きょうのミッションに数える
+    const stats = { ...StorageAPI.rollover(statsIn) };
+    const day = { exp: 0, count: 0, ...(stats.daily || {})[today] };
+    day.exp += exp;
+    day.count += playCount;
+    stats.daily = { ...(stats.daily || {}), [today]: day };
     stats.totalExp = (stats.totalExp || 0) + exp;
+    stats.bestPlayExp = Math.max(stats.bestPlayExp || 0, exp);
 
     if (stats.lastDate !== today) {
-      if (stats.lastDate) {
-        const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-        if (stats.lastDate === yesterday.toLocaleDateString()) stats.streak += 1; else stats.streak = 1;
-      } else stats.streak = 1;
+      stats.streak = stats.lastDate === addDays(today, -1) ? (stats.streak || 0) + 1 : 1;
       stats.lastDate = today;
     }
 
     if (stats.missions && stats.missions.date === today) {
+      stats.missions = { ...stats.missions, list: stats.missions.list.map(m => ({ ...m })) };
       stats.missions.list.forEach(m => {
         if (m.type === 'play' && !m.claimed) m.current += missionPlayCredit;
         if (m.type === 'combo' && !m.claimed && combo > m.current) m.current = combo;
@@ -362,7 +296,7 @@ const StorageAPI = {
     return stats;
   },
 
-  getMistakes: () => StorageAPI.safeGet('qalc_mistakes', []),
+  getMistakes: () => normalizeMistakes(StorageAPI.safeGet('qalc_mistakes', [])),
   addMistakes: (newMistakes) => {
     if (newMistakes.length === 0) return;
     let mistakes = StorageAPI.getMistakes(); mistakes = [...newMistakes, ...mistakes];
@@ -374,32 +308,66 @@ const StorageAPI = {
     StorageAPI.safeSet('qalc_mistakes', mistakes.filter(m => !correctSet.has(m.q)));
   },
 
-  getRawData: () => {
-    let data = StorageAPI.safeGet('qalc_problems', {});
-    const parsedDefaults = getParsedDefaultProblems();
-    let isUpdated = false;
-    // 既定コースの改名・内容更新のマイグレーション（自作コースはそのまま残す）
-    if (StorageAPI.safeGet('qalc_defaults_version', 1) < DEFAULTS_VERSION) {
-      LEGACY_DEFAULT_KEYS.forEach(key => { if (data[key]) delete data[key]; });
-      for (const key of Object.keys(parsedDefaults)) data[key] = parsedDefaults[key];
-      StorageAPI.safeSet('qalc_defaults_version', DEFAULTS_VERSION);
-      isUpdated = true;
+  // ── コース ──────────────────────────────────────
+  // プリセットは毎回コードから作り、端末には保存しない。保存するのは自作コースと
+  // 書きかえたプリセットだけ（qalc_courses）。くわしくは problemStore.js
+  getUserCourses: () => {
+    if (userCoursesCache) return { ...userCoursesCache };
+    let courses = cleanCourses(StorageAPI.safeGet(COURSES_KEY, {}));
+    // 旧データ（プリセットまるごとの写し qalc_problems）が残っていれば、新しい形へ移す。
+    // 手を入れていないプリセットの写しは捨て、自作コースと書きかえたプリセットは残す
+    let hasLegacy = false;
+    try { hasLegacy = window.localStorage.getItem(LEGACY_KEY) !== null; } catch (e) { /* 読めない端末 */ }
+    if (hasLegacy) {
+      const moved = migrateLegacyCourses(
+        StorageAPI.safeGet(LEGACY_KEY, {}), courses,
+        getParsedDefaultProblems(), buildPresetProblems(PRESET_SEED + 1), LEGACY_DEFAULT_KEYS,
+      ).courses;
+      courses = moved;
+      if (StorageAPI.safeSet(COURSES_KEY, moved, { quiet: true })) {
+        try { window.localStorage.removeItem(LEGACY_KEY); window.localStorage.removeItem(LEGACY_VERSION_KEY); } catch (e) { /* 次に開いたときにやり直す */ }
+      } else {
+        // 保存できなかった（容量がいっぱい など）。旧データは消さずに残し、
+        // この開いているあいだは移したものを使う（次に開いたときにやり直す）
+        userCoursesCache = moved;
+      }
     }
-    for (const key of Object.keys(parsedDefaults)) { if (!data[key]) { data[key] = parsedDefaults[key]; isUpdated = true; } }
-    if (isUpdated || Object.keys(data).length === 0) StorageAPI.safeSet('qalc_problems', data);
-    return Object.keys(data).length > 0 ? data : parsedDefaults;
+    return courses;
   },
+  getRawData: () => mergeCourses(getParsedDefaultProblems(), StorageAPI.getUserCourses()),
+  // preset: プリセットか / edited: 書きかえたプリセットか（コース管理で「もとにもどす」を出す）
   getProblemGroups: () => {
-    const data = StorageAPI.getRawData();
-    return Object.keys(data).sort(courseCompare).map(key => ({ name: key, count: data[key].length }));
+    const presets = getParsedDefaultProblems();
+    const user = StorageAPI.getUserCourses();
+    const data = mergeCourses(presets, user);
+    return Object.keys(data).sort(courseCompare).map(key => ({
+      name: key, count: data[key].length, preset: key in presets, edited: key in presets && key in user,
+    }));
   },
   getProblemsByGroup: (name) => StorageAPI.getRawData()[name] || [],
   // コースの保存・削除。失敗したときの文言は呼んだ側（コース管理・取りこみ）が出す。
+  // プリセットを保存すると「書きかえ」、書きかえを消すと はじめの問題にもどる。
   // 共有コードの作りかた・読みかたは courseShare.js
-  saveProblemSet: (name, problems) => { const data = StorageAPI.getRawData(); data[name] = problems; return StorageAPI.safeSet('qalc_problems', data, { quiet: true }); },
-  deleteProblemGroup: (name) => { const data = StorageAPI.getRawData(); delete data[name]; return StorageAPI.safeSet('qalc_problems', data, { quiet: true }); },
+  saveProblemSet: (name, problems) => {
+    const user = StorageAPI.getUserCourses(); user[name] = problems;
+    const ok = StorageAPI.safeSet(COURSES_KEY, user, { quiet: true });
+    if (ok) userCoursesCache = null;
+    return ok;
+  },
+  deleteProblemGroup: (name) => {
+    const user = StorageAPI.getUserCourses(); delete user[name];
+    const ok = StorageAPI.safeSet(COURSES_KEY, user, { quiet: true });
+    if (ok) userCoursesCache = null;
+    return ok;
+  },
 
-  getResume: () => StorageAPI.safeGet('qalc_resume', null),
+  // 再開できない形の中断データ（古い版・壊れたもの）は消して、ホームに「つづきから」を出さない
+  getResume: () => {
+    const raw = StorageAPI.safeGet('qalc_resume', null);
+    const resume = normalizeResume(raw);
+    if (raw !== null && !resume) StorageAPI.clearResume();
+    return resume;
+  },
   // 失敗したときの文言は呼んだ側(pauseAndExit)が出す
   saveResume: (data) => StorageAPI.safeSet('qalc_resume', data, { quiet: true }),
   clearResume: () => { try { window.localStorage.removeItem('qalc_resume'); } catch (e) { /* ignore */ } }
@@ -428,7 +396,10 @@ const isQuotaError = (e) => !!e && (e.name === 'QuotaExceededError' || e.name ==
 let lastSaveError = null;
 let lastSaveWarnAt = 0;
 const SAVE_WARN_INTERVAL_MS = 8000; // つづけて失敗しても、同じお知らせは8秒に1回にする
-const saveFailureReason = () => (isQuotaError(lastSaveError) ? 'この たんまつの ほぞんする ばしょが いっぱいです。' : '');
+const saveFailureReason = () => (
+  isQuotaError(lastSaveError) ? 'この たんまつの ほぞんする ばしょが いっぱいです。'
+    : lastSaveError?.name === 'SecurityError' ? 'この たんまつでは ほぞんが とめられて います。'
+      : '');
 const warnSaveFailure = (text) => {
   const now = Date.now();
   // 呼んだ側が文言を決めるとき(text あり)は必ず出す。ないときは間引く
@@ -454,14 +425,18 @@ export const preloadConfetti = () => {
   if (confettiFn) return;
   import('canvas-confetti').then((m) => { confettiFn = confettiFn || makeConfetti(m); }).catch(() => {});
 };
+// 紙ふぶきの canvas は body の直下に作られる（飛びおわると消える）。飾りなので読み上げからは外す
+const hideConfettiCanvas = () => {
+  document.querySelectorAll('body > canvas:not([aria-hidden])').forEach((c) => c.setAttribute('aria-hidden', 'true'));
+};
 const triggerConfetti = (options) => {
   if (prefersReducedMotion()) return;
   if (confettiFn) {
-    try { confettiFn(options); } catch (e) { /* 演出なので失敗しても進める */ }
+    try { confettiFn(options); hideConfettiCanvas(); } catch (e) { /* 演出なので失敗しても進める */ }
     return;
   }
   import('canvas-confetti')
-    .then((m) => { confettiFn = confettiFn || makeConfetti(m); confettiFn(options); })
+    .then((m) => { confettiFn = confettiFn || makeConfetti(m); confettiFn(options); hideConfettiCanvas(); })
     .catch(() => { /* 取れなくても正解の判定には関係ない */ });
 };
 
@@ -541,6 +516,40 @@ const PageWrapper = ({ children, keyName }) => (
     <div className="m-auto w-full max-w-lg md:max-w-xl">{children}</div>
   </motion.div>
 );
+
+// ダイアログを開いたら、中のボタンへフォーカスを移し、Tab は中だけを回す。閉じたら開く前の場所へもどす。
+// 以前はフォーカスが背後の画面に残ったままで、キーボードや読み上げで使う子には
+// ダイアログが出たことも、どこを押せばよいかも分からなかった（Part I §4）。
+// 最初に移すのは data-autofocus のついたボタン（「やめる」など、押しても困らないほう）
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const useModalFocus = (open) => {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const before = document.activeElement;
+    const list = () => (ref.current ? [...ref.current.querySelectorAll(FOCUSABLE)] : []);
+    const id = requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el || el.contains(document.activeElement)) return;
+      (el.querySelector('[data-autofocus]') || list()[0] || el).focus();
+    });
+    const onKey = (e) => {
+      if (e.key !== 'Tab' || !ref.current) return;
+      const items = list();
+      if (items.length === 0) { e.preventDefault(); return; }
+      const first = items[0]; const last = items[items.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !ref.current.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (document.activeElement === last || !ref.current.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      cancelAnimationFrame(id);
+      document.removeEventListener('keydown', onKey);
+      if (before && typeof before.focus === 'function' && document.contains(before)) before.focus();
+    };
+  }, [open]);
+  return ref;
+};
 
 const MotionButton = ({ children, onClick, className, ...props }) => (
   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95, y: 2, boxShadow: "none" }} onClick={() => { audioCtrl.playSE('click'); if (onClick) onClick(); }} className={`rounded-[20px] font-bold shadow-[0_4px_0_rgba(0,0,0,0.2)] border-none outline-none flex items-center justify-center gap-2 select-none touch-manipulation ${className}`} {...props}>
@@ -694,7 +703,7 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
     // 無限ループでバッファが数万pxまで膨張し、操作不能なほど重くなる。
     <div className="w-full h-full relative overflow-hidden border-2 border-[var(--text)] bg-[var(--panel)]">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full touch-none" />
-      <button className="absolute top-3 right-3 w-11 h-11 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 z-20 active:scale-90 transition-transform" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} /></button>
+      <button type="button" aria-label="メモを ぜんぶ けす" className="absolute top-3 right-3 w-11 h-11 bg-[var(--panel)] border-2 border-[var(--text)] rounded-full flex items-center justify-center text-red-500 z-20 active:scale-90 transition-transform" onClick={() => { audioCtrl.playSE('click'); ref.current?.clear(); }}><Trash2 size={24} aria-hidden="true" /></button>
     </div>
   );
 }));
@@ -703,15 +712,17 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
 // digitLayout: ボスバトルのシャッフルデバフ用。省略時は通常配列
 const DEFAULT_DIGIT_LAYOUT = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0'];
 const Keypad = React.memo(({ onAppend, onClear, onSubmit, digitLayout = DEFAULT_DIGIT_LAYOUT }) => (
-  <div className="flex-grow flex flex-col gap-2 z-30 min-h-[30vh]">
-    <div className="flex h-14 gap-2 shrink-0">
-      {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary-d)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }}>{c}</motion.button>)}
+  // 行は 44px（タップ領域の下限）まで縮み、あまった高さは均等に分ける。
+  // 文字は1行なので leading-none にして、行の高さを文字の行間が押し広げないようにする
+  <div className="flex-grow flex flex-col gap-2 short:gap-1.5 tiny:gap-1 z-30 min-h-[30vh]">
+    <div className="flex h-14 short:h-11 gap-2 short:gap-1.5 shrink-0">
+      {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary-d)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl leading-none shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }} onClick={(e) => { if (e.detail === 0) onAppend(c); }}>{c}</motion.button>)}
     </div>
-    <div className="grid grid-cols-3 gap-2 flex-grow">
-      {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }}>C</motion.button>
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--on-secondary)] border-[3px] border-[var(--text)] font-black text-3xl rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }}>OK</motion.button>
+    <div className="grid grid-cols-3 grid-rows-[repeat(4,minmax(44px,1fr))] gap-2 short:gap-1.5 tiny:gap-1 flex-grow">
+      {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl leading-none shadow-[0_4px_0_var(--primary)] short:shadow-[0_3px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }} onClick={(e) => { if (e.detail === 0) onAppend(n); }}>{n}</motion.button>)}
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl leading-none rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }} onClick={(e) => { if (e.detail === 0) onClear(); }}>C</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl leading-none shadow-[0_4px_0_var(--primary)] short:shadow-[0_3px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }} onClick={(e) => { if (e.detail === 0) onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--on-secondary)] border-[3px] border-[var(--text)] font-black text-3xl leading-none rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }} onClick={(e) => { if (e.detail === 0) onSubmit(); }}>OK</motion.button>
     </div>
   </div>
 ));
@@ -738,6 +749,67 @@ const PEER_TIMEOUT_MS = 30000;
 // 4. アプリケーション Views
 // ==========================================
 
+// テーマの色（CSS 変数）と、アプリ全体の決まった見た目を入れる <style>。
+// App の外で定義し、テーマが変わったときだけ描きなおす。
+// 以前は App の中で定義していたので、App が描きなおされるたびに別の部品とみなされ、
+// <style> が外されて付け直され、そのたびに画面全体の見た目の計算がやりなおしになっていた
+// （みんなであそぶでは、スコアが届くたびに起きていた）。
+// ⚠️ scripts/check-contrast.mjs が「theme === '…') themeVars = `…`」の形を読んでテーマの色を測っている。書きかたを変えないこと
+const GlobalStyle = React.memo(({ theme }) => {
+  let themeVars = `
+    --bg: #fffbf0; --primary: #FF6B6B; --secondary: #4ECDC4; --accent: #FFE66D; --text: #292f36; --panel: #ffffff; --primary-d: #e50000; --secondary-d: #247f79; --on-accent: #292f36; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'dark') themeVars = `--bg: #0f172a; --primary: #f43f5e; --secondary: #0ea5e9; --accent: #f59e0b; --text: #e2e8f0; --panel: #1e293b; --primary-d: #f65c76; --secondary-d: #0ea5e9; --on-accent: #111111; --on-primary: #111111; --on-secondary: #1e293b;`;
+  if (theme === 'sakura') themeVars = `--bg: #fdf2f8; --primary: #d946ef; --secondary: #f472b6; --accent: #fbcfe8; --text: #831843; --panel: #ffffff; --primary-d: #ba12d4; --secondary-d: #d31076; --on-accent: #831843; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'ocean') themeVars = `--bg: #f0f9ff; --primary: #0284c7; --secondary: #38bdf8; --accent: #7dd3fc; --text: #0c4a6e; --panel: #ffffff; --primary-d: #0277b3; --secondary-d: #0678ab; --on-accent: #0c4a6e; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'forest') themeVars = `--bg: #f0fdf4; --primary: #16a34a; --secondary: #f59e0b; --accent: #bbf7d0; --text: #14532d; --panel: #ffffff; --primary-d: #11813b; --secondary-d: #9e6506; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'space') themeVars = `--bg: #17153B; --primary: #c084fc; --secondary: #2dd4bf; --accent: #4338ca; --text: #e2e8f0; --panel: #2e2b5f; --primary-d: #c084fc; --secondary-d: #2dd4bf; --on-accent: #e2e8f0; --on-primary: #2e2b5f; --on-secondary: #2e2b5f;`;
+  if (theme === 'gold') themeVars = `--bg: #fefce8; --primary: #b45309; --secondary: #eab308; --accent: #fef08a; --text: #713f12; --panel: #ffffff; --primary-d: #b45309; --secondary-d: #8f6d05; --on-accent: #713f12; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'mint') themeVars = `--bg: #f0fdfa; --primary: #14b8a6; --secondary: #2dd4bf; --accent: #ccfbf1; --text: #134e4a; --panel: #ffffff; --primary-d: #0e7e72; --secondary-d: #1a7f72; --on-accent: #134e4a; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'sunset') themeVars = `--bg: #fff7ed; --primary: #ea580c; --secondary: #f97316; --accent: #fcd34d; --text: #7c2d12; --panel: #ffffff; --primary-d: #c3490a; --secondary-d: #bb5005; --on-accent: #7c2d12; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'cyber') themeVars = `--bg: #000000; --primary: #39ff14; --secondary: #ff00ff; --accent: #0ff0fc; --text: #ffffff; --panel: #111111; --primary-d: #39ff14; --secondary-d: #ff00ff; --on-accent: #111111; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'choco') themeVars = `--bg: #fdf8f5; --primary: #92400e; --secondary: #d97706; --accent: #fde68a; --text: #451a03; --panel: #ffffff; --primary-d: #92400e; --secondary-d: #aa5d05; --on-accent: #451a03; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'retro') themeVars = `--bg: #f5eedc; --primary: #c25953; --secondary: #6a7f72; --accent: #e0b469; --text: #3d312d; --panel: #faf6ee; --primary-d: #b44640; --secondary-d: #5c6e63; --on-accent: #3d312d; --on-primary: #000000; --on-secondary: #000000;`;
+  if (theme === 'monochrome') themeVars = `--bg: #f8f9fa; --primary: #000000; --secondary: #666666; --accent: #d4d4d4; --text: #1a1a1a; --panel: #ffffff; --primary-d: #000000; --secondary-d: #666666; --on-accent: #1a1a1a; --on-primary: #ffffff; --on-secondary: #ffffff;`;
+  if (theme === 'lavender') themeVars = `--bg: #f5f3ff; --primary: #7c3aed; --secondary: #a78bfa; --accent: #ddd6fe; --text: #4c1d95; --panel: #ffffff; --primary-d: #7c3aed; --secondary-d: #774bf7; --on-accent: #4c1d95; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'candy') themeVars = `--bg: #fff0f6; --primary: #ec4899; --secondary: #60a5fa; --accent: #a5f3fc; --text: #9d174d; --panel: #ffffff; --primary-d: #d21673; --secondary-d: #0768e0; --on-accent: #9d174d; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'soda') themeVars = `--bg: #eff6ff; --primary: #2563eb; --secondary: #22d3ee; --accent: #bfdbfe; --text: #1e3a8a; --panel: #ffffff; --primary-d: #2563eb; --secondary-d: #0b7a8b; --on-accent: #1e3a8a; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'matcha') themeVars = `--bg: #f7fee7; --primary: #4d7c0f; --secondary: #84cc16; --accent: #d9f99d; --text: #365314; --panel: #ffffff; --primary-d: #4d7c0f; --secondary-d: #517e0e; --on-accent: #365314; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'ruby') themeVars = `--bg: #fff1f2; --primary: #be123c; --secondary: #fb7185; --accent: #fecdd3; --text: #881337; --panel: #ffffff; --primary-d: #be123c; --secondary-d: #dc0625; --on-accent: #881337; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'hero') themeVars = `--bg: #f8fafc; --primary: #dc2626; --secondary: #2563eb; --accent: #fde047; --text: #111827; --panel: #ffffff; --primary-d: #dc2626; --secondary-d: #2563eb; --on-accent: #111827; --on-primary: #ffffff; --on-secondary: #ffffff;`;
+  if (theme === 'aurora') themeVars = `--bg: #042f2e; --primary: #34d399; --secondary: #818cf8; --accent: #115e59; --text: #ccfbf1; --panel: #134e4a; --primary-d: #34d399; --secondary-d: #aab1fa; --on-accent: #ccfbf1; --on-primary: #134e4a; --on-secondary: #111111;`;
+  if (theme === 'hanabi') themeVars = `--bg: #1e1b4b; --primary: #f472b6; --secondary: #facc15; --accent: #6d28d9; --text: #ede9fe; --panel: #312e81; --primary-d: #f57ebc; --secondary-d: #facc15; --on-accent: #ede9fe; --on-primary: #111111; --on-secondary: #312e81;`;
+  if (theme === 'midnight') themeVars = `--bg: #020617; --primary: #38bdf8; --secondary: #818cf8; --accent: #1e293b; --text: #e0f2fe; --panel: #0f172a; --primary-d: #38bdf8; --secondary-d: #818cf8; --on-accent: #e0f2fe; --on-primary: #0f172a; --on-secondary: #0f172a;`;
+  if (theme === 'ninja') themeVars = `--bg: #18181b; --primary: #ef4444; --secondary: #a1a1aa; --accent: #3f3f46; --text: #f4f4f5; --panel: #27272a; --primary-d: #f15e5e; --secondary-d: #a1a1aa; --on-accent: #f4f4f5; --on-primary: #111111; --on-secondary: #27272a;`;
+  if (theme === 'royal') themeVars = `--bg: #faf5ff; --primary: #7e22ce; --secondary: #eab308; --accent: #e9d5ff; --text: #581c87; --panel: #ffffff; --primary-d: #7e22ce; --secondary-d: #8c6b05; --on-accent: #581c87; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'rainbow') themeVars = `--bg: #fdf4ff; --primary: #e11d48; --secondary: #0ea5e9; --accent: #fde047; --text: #3b0764; --panel: #ffffff; --primary-d: #da1c46; --secondary-d: #0a77a8; --on-accent: #3b0764; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'sunflower') themeVars = `--bg: #fefce8; --primary: #ca8a04; --secondary: #22c55e; --accent: #fde047; --text: #422006; --panel: #ffffff; --primary-d: #986803; --secondary-d: #17843f; --on-accent: #422006; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'watermelon') themeVars = `--bg: #f0fdf4; --primary: #ef4444; --secondary: #22c55e; --accent: #fecaca; --text: #14532d; --panel: #ffffff; --primary-d: #e21313; --secondary-d: #16823e; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'milktea') themeVars = `--bg: #f5f0e8; --primary: #a16207; --secondary: #78716c; --accent: #e7d8c0; --text: #44403c; --panel: #fffaf3; --primary-d: #9a5e07; --secondary-d: #716b66; --on-accent: #44403c; --on-primary: #fffaf3; --on-secondary: #fffaf3;`;
+  if (theme === 'tropical') themeVars = `--bg: #ecfeff; --primary: #f59e0b; --secondary: #06b6d4; --accent: #a7f3d0; --text: #164e63; --panel: #ffffff; --primary-d: #9e6506; --secondary-d: #047d91; --on-accent: #164e63; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'halloween') themeVars = `--bg: #1c1917; --primary: #f97316; --secondary: #a855f7; --accent: #78350f; --text: #fed7aa; --panel: #292524; --primary-d: #f97316; --secondary-d: #b36bf8; --on-accent: #fed7aa; --on-primary: #292524; --on-secondary: #111111;`;
+  if (theme === 'christmas') themeVars = `--bg: #fef2f2; --primary: #dc2626; --secondary: #16a34a; --accent: #fde68a; --text: #7f1d1d; --panel: #ffffff; --primary-d: #d82323; --secondary-d: #117f3a; --on-accent: #7f1d1d; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'prism') themeVars = `--bg: #f5fffa; --primary: #8b5cf6; --secondary: #ec4899; --accent: #99f6e4; --text: #1e1b4b; --panel: #ffffff; --primary-d: #8250f5; --secondary-d: #db1778; --on-accent: #1e1b4b; --on-primary: #000000; --on-secondary: #111111;`;
+
+  return (
+    <style>{`
+      /* フォントの読みこみは main.jsx (同梱の woff2)。外部への通信はない */
+      :root { ${themeVars} }
+      body { font-family: var(--font-ui); background-color: var(--bg); color: var(--text); touch-action: manipulation; transition: background-color 0.3s ease; }
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      ::selection { background-color: var(--accent); color: var(--text); }
+      ruby { ruby-align: center; }
+      ruby rt { font-size: 0.5em; font-weight: 500; letter-spacing: 0; }
+      .ruby-text { line-height: 1.8; }
+      .avatar-fx { animation: fxTwinkle 1.8s ease-in-out infinite; }
+      .avatar-fx-delay { animation: fxTwinkle 1.8s ease-in-out 0.6s infinite; }
+      .avatar-fx-delay2 { animation: fxTwinkle 1.8s ease-in-out 1.2s infinite; }
+      @keyframes fxTwinkle { 0%, 100% { opacity: 0.25; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1.2); } }
+    `}</style>
+  );
+});
+GlobalStyle.displayName = 'GlobalStyle';
+
 // --- ホーム画面 ---
 const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeData, onResume, onDiscardResume }) => {
   const { level, title, badge, progress, nextLevelExp } = getLevelInfo(stats.totalExp);
@@ -746,11 +818,14 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
   // 満たす色は存在しない（readableColor.js に理由を書いた）
   const lightSurface = useLightSurface(stats.theme);
   const rankColor = pickOn(RANK_TEXT[title] ?? { light: 'var(--text)', dark: 'var(--text)' }, lightSurface);
+  const today = dateKey();
   const chartData = Array.from({ length: 7 }).map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i));
-    const dayData = stats.daily[d.toLocaleDateString()] || { exp: 0 };
-    return { label: `${d.getDate()}日`, exp: dayData.exp };
+    const key = addDays(today, -(6 - i));
+    const dayData = stats.daily[key] || { exp: 0 };
+    return { label: `${Number(key.slice(8))}日`, exp: dayData.exp };
   });
+  // 最後に遊んだ日が きのうより前なら、連続日数はもう切れている（以前は次に遊ぶまで前の数を出していた）
+  const streak = currentStreak(stats, today);
   const maxExp = Math.max(...chartData.map(d => d.exp), 500);
 
   // 学習ログ(study.v1)のふりかえり。読み出し専用で、ここから書きかえは行わない
@@ -784,9 +859,9 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
       {/* Profile Card */}
       <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-4 relative">
         <div className="absolute top-3 right-3 flex items-center gap-2">
-          {(stats.streak || 0) > 0 && (
+          {streak > 0 && (
             <div className="flex items-center gap-1 font-black text-sm text-[var(--on-primary)] bg-[var(--primary)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm" title="連続学習日数">
-              <Flame size={16} /> {stats.streak}<span className="text-[10px]">日</span>
+              <Flame size={16} /> {streak}<span className="text-[10px]">日</span>
             </div>
           )}
           <div className="flex items-center gap-1 font-black text-sm text-[var(--on-accent)] bg-[var(--accent)] px-3 py-1 rounded-full border-2 border-[var(--text)] shadow-sm"><Coins size={16} /> {stats.coins}</div>
@@ -823,7 +898,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
               {resumeData.gameMode === 'SCORE_ATTACK' ? 'スコア' : resumeData.gameMode === 'TIME_ATTACK' ? 'タイム' : 'サドンデス'}
             </span>
             <span className="truncate">{resumeData.courseName}</span>
-            <span className="ml-1 opacity-70 ruby-text">／ {resumeData.correctCount || 0}<R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></span>
+            <span className="ml-1 ruby-text">／ {resumeData.correctCount || 0}<R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></span>
           </div>
           <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-3 text-lg border-[3px] border-[var(--text)] ruby-text" onClick={onResume}>
             <Rocket size={20} /> つづきから<R c="始" r="はじ" />める
@@ -855,7 +930,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
 
       {/* ミッションパネル */}
       <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-4">
-        <h4 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text"><CheckCircle2 size={20} className="text-[var(--secondary-d)]" /> <R c="今" r="きょ" /><R c="日" r="う" />のミッション</h4>
+        <h3 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text"><CheckCircle2 size={20} className="text-[var(--secondary-d)]" /> <R c="今" r="きょ" /><R c="日" r="う" />のミッション</h3>
         <div className="flex flex-col gap-2">
           {stats.missions?.list.map(m => {
             const isCleared = m.current >= m.target;
@@ -879,7 +954,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
 
       {/* がんばりグラフ */}
       <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-4">
-        <h4 className="font-bold text-[var(--text)] mb-4 flex items-center gap-2 ruby-text"><BarChart3 size={18} /> がんばりグラフ (<R c="直" r="ちょっ" /><R c="近" r="きん" />7<R c="日" r="にち" />)</h4>
+        <h3 className="font-bold text-[var(--text)] mb-4 flex items-center gap-2 ruby-text"><BarChart3 size={18} /> がんばりグラフ (<R c="直" r="ちょっ" /><R c="近" r="きん" />7<R c="日" r="にち" />)</h3>
         <div className="flex justify-between h-24 gap-1">
           {chartData.map((d, i) => (
             <div key={i} className="flex flex-col items-center flex-1 h-full group">
@@ -887,7 +962,7 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
                 <div className="absolute -top-6 opacity-0 group-hover:opacity-100 text-[10px] font-bold text-[var(--text)] transition-opacity bg-[var(--panel)] px-1 rounded border z-10 shadow-sm">{d.exp}</div>
                 <motion.div initial={{ height: 0 }} animate={{ height: `${Math.max((d.exp / maxExp) * 100, 2)}%` }} className={`w-full max-w-[20px] rounded-t-sm ${d.exp > 0 ? 'bg-[var(--secondary)]' : 'bg-gray-200'}`}></motion.div>
               </div>
-              <div className="text-[9px] font-bold text-[var(--text)] opacity-80 mt-1 shrink-0">{d.label}</div>
+              <div className="text-[11px] font-bold text-[var(--text)] opacity-80 mt-1 shrink-0">{d.label}</div>
             </div>
           ))}
         </div>
@@ -896,9 +971,9 @@ const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeDat
       {/* まなびのきろく: 学習ログ(study.v1)を読んで、自分のがんばりをふりかえる */}
       {study.summary.sessions > 0 && (
         <div className="w-full bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] p-4">
-          <h4 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text">
+          <h3 className="font-bold text-[var(--text)] mb-3 flex items-center gap-2 ruby-text">
             <Trophy size={18} className="text-[var(--accent)]" /> まなびのきろく（<R c="直" r="ちょっ" /><R c="近" r="きん" />7<R c="日" r="にち" />）
-          </h4>
+          </h3>
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-[var(--bg)] rounded-xl border-2 border-[var(--text)] p-2 text-center">
               <div className="text-2xl font-black text-[var(--text)]">{study.summary.sessions}</div>
@@ -1026,7 +1101,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
     if (selectedGroups.length === 0) return showToast('warning', 'ドリルを選んでください');
     let probs = collectProblems(selectedGroups);
     if (probs.length === 0) return showToast('error', '問題がありません');
-    probs = [...probs].sort(() => Math.random() - 0.5);
+    probs = shuffle(probs);
     if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
 
     // 開始直前にもう一度「いま つながっている人」だけにしぼる。
@@ -1087,7 +1162,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
   return (
     <div className="flex flex-col h-[85vh] gap-4">
       <div className="flex justify-between items-center bg-[var(--panel)] p-3 rounded-2xl border-[3px] border-[var(--text)] shrink-0 shadow-sm">
-        <h3 className="font-black text-xl flex items-center gap-2 text-[var(--text)]"><Users size={24} className="text-[var(--secondary-d)]" /> みんなのへや</h3>
+        <h2 className="font-black text-xl flex items-center gap-2 text-[var(--text)]"><Users size={24} className="text-[var(--secondary-d)]" /> みんなのへや</h2>
         <div className="font-bold bg-[var(--secondary)] text-white px-3 py-1 rounded-full border-2 border-[var(--text)]"><RNin n={Object.keys(peerState.participants).length} /></div>
       </div>
 
@@ -1095,7 +1170,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
         <div className="flex flex-col items-center justify-center p-4 bg-[var(--bg)] rounded-xl border-2 border-dashed border-[var(--text)] shrink-0">
           <p className="font-bold text-[var(--primary-d)] mb-1 text-sm ruby-text">ルーム<R c="番" r="ばん" /><R c="号" r="ごう" /></p>
           {/* 10けたは長いので 4-3-3 に区切って見せる。打つときは数字だけでよい（すきまは読みやすさのため） */}
-          <h4 className="font-black text-3xl sm:text-4xl text-[var(--text)] mb-4 tracking-wider tabular-nums">{formatRoomId(peerState.hostId)}</h4>
+          <h3 className="font-black text-3xl sm:text-4xl text-[var(--text)] mb-4 tracking-wider tabular-nums">{formatRoomId(peerState.hostId)}</h3>
           <p className="font-bold text-sm text-[var(--text)] mb-3 ruby-text">この<R c="数" r="すう" /><R c="字" r="じ" />を<R c="入" r="にゅう" /><R c="力" r="りょく" />するか、QRコードを<R c="読" r="よ" />みこんでね</p>
           <canvas ref={qrRef} className="bg-white p-3 rounded-xl mb-3 shadow-inner" />
           <div className="w-full flex items-center bg-white border-2 border-gray-200 rounded-lg p-2">
@@ -1186,16 +1261,16 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
         {(configMode === 'SCORE_ATTACK' || configMode === 'BOSS_RAID' || configMode === 'TERRITORY') && (
           <div className="shrink-0 mb-2">
             <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <RFun n={time} /></span></label>
-            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full slider-44" />
+            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} aria-label="せいげんじかん" aria-valuetext={`${time}ふん`} className="w-full slider-44" />
           </div>
         )}
 
         {/* 入室のきょか。ここを通した人だけが参加者リスト・問題・ゲーム開始を受けとれる */}
         <div className="shrink-0">
-          <h4 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text flex items-center justify-between">
+          <h3 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text flex items-center justify-between">
             <span><R c="入" r="はい" />りたい<R c="人" r="ひと" /></span>
             {pendingList.length > 0 && <span className="text-sm text-[var(--on-primary)] bg-[var(--primary)] rounded-full px-3 py-0.5">{pendingList.length}</span>}
-          </h4>
+          </h3>
 
           <div className="flex gap-2 mb-3">
             <button
@@ -1232,7 +1307,7 @@ const HostRoomView = ({ peerState, setPeerState, broadcast, setView, setState, c
             ))}
           </div>
 
-          <h4 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text"><R c="参" r="さん" /><R c="加" r="か" /><R c="者" r="しゃ" />の<R c="状" r="じょう" /><R c="況" r="きょう" /></h4>
+          <h3 className="font-black text-lg text-[var(--text)] border-b-2 border-dashed border-gray-200 pb-2 mb-3 ruby-text"><R c="参" r="さん" /><R c="加" r="か" /><R c="者" r="しゃ" />の<R c="状" r="じょう" /><R c="況" r="きょう" /></h3>
           <div className="flex flex-col gap-2">
             {Object.keys(peerState.participants).length === 0 && <p className="text-center text-gray-400 py-4 font-bold text-sm ruby-text"><R c="参" r="さん" /><R c="加" r="か" /><R c="者" r="しゃ" />がいません</p>}
             {Object.entries(peerState.participants).sort((a, b) => b[1].score - a[1].score).map(([id, p], index) => (
@@ -1273,7 +1348,7 @@ const ClientJoinView = ({ initClient, urlHostId, setView }) => {
       <div className="bg-[var(--accent)] w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-[var(--text)] shrink-0">
         <Users size={32} className="text-[var(--text)]" />
       </div>
-      <h3 className="font-black text-2xl mb-4 text-[var(--text)] shrink-0 ruby-text">へやに<R c="入" r="はい" />ります</h3>
+      <h2 className="font-black text-2xl mb-4 text-[var(--text)] shrink-0 ruby-text">へやに<R c="入" r="はい" />ります</h2>
 
       <div className="mb-4 shrink-0">
         <p className="font-bold mb-2 text-[var(--text)] opacity-80 text-sm ruby-text">ルーム<R c="番" r="ばん" /><R c="号" r="ごう" />（<R c="数" r="すう" /><R c="字" r="じ" />{ROOM_ID_LEN}けた）</p>
@@ -1331,14 +1406,14 @@ const ClientWaitView = ({ peerState, leaveRoom }) => {
       </div>
       {approved ? (
         <>
-          <h3 className="font-black text-3xl text-[var(--text)] mb-3 ruby-text"><PupilName name={peerState.myName} /> さん、<br /><R c="準" r="じゅん" /><R c="備" r="び" />OK！</h3>
+          <h2 className="font-black text-3xl text-[var(--text)] mb-3 ruby-text"><PupilName name={peerState.myName} /> さん、<br /><R c="準" r="じゅん" /><R c="備" r="び" />OK！</h2>
           <p className="font-bold text-[var(--on-accent)] opacity-80 bg-[var(--accent)] px-4 py-2 rounded-lg border-2 border-[var(--text)] mb-6 ruby-text">
             リーダーがスタートするまで<br />このまま<R c="待" r="ま" />っていてね
           </p>
         </>
       ) : (
         <>
-          <h3 className="font-black text-2xl text-[var(--text)] mb-3 ruby-text">リーダーの<br /><R c="許" r="きょ" /><R c="可" r="か" />を<R c="待" r="ま" />っています</h3>
+          <h2 className="font-black text-2xl text-[var(--text)] mb-3 ruby-text">リーダーの<br /><R c="許" r="きょ" /><R c="可" r="か" />を<R c="待" r="ま" />っています</h2>
           <p className="font-bold text-[var(--text)] opacity-80 bg-[var(--bg)] border-2 border-dashed border-[var(--text)] px-4 py-2 rounded-lg mb-6 ruby-text text-sm">
             「<PupilName name={peerState.myName} />」で<R c="申" r="もう" />しこみました。<br />リーダーが「いれる」を おすまで<br />ちょっと<R c="待" r="ま" />っててね
           </p>
@@ -1355,6 +1430,8 @@ const ShopView = ({ setView, stats, setStats }) => {
   const [tab, setTab] = useState('bases');
   const [confirmItem, setConfirmItem] = useState(null);
   const [gachaResult, setGachaResult] = useState(null); // { category, item, isNew, refund, revealed }
+  const buyDialogRef = useModalFocus(!!confirmItem);
+  const gachaDialogRef = useModalFocus(!!gachaResult);
   const spinningRef = useRef(false);
   const { level } = getLevelInfo(stats.totalExp);
 
@@ -1447,16 +1524,16 @@ const ShopView = ({ setView, stats, setStats }) => {
       <AnimatePresence>
         {confirmItem && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="かうかどうかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={buyDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="かうかどうかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
               <div className="text-5xl mb-3 h-16 flex items-center justify-center">
                 {confirmItem.category === 'themes'
                   ? (confirmItem.item.c ? <div className="flex gap-1">{confirmItem.item.c.map((col, i) => <span key={i} className="w-8 h-8 rounded-full border-[3px] border-[var(--text)]" style={{ background: col }} />)}</div> : <PaintBucket size={48} className="text-[var(--text)]" />)
                   : confirmItem.item.char}
               </div>
-              <h3 className="font-black text-xl text-[var(--text)] mb-2 leading-snug">「{confirmItem.item.name}」を<br />買いますか？</h3>
+              <h2 className="font-black text-xl text-[var(--text)] mb-2 leading-snug">「{confirmItem.item.name}」を<br />買いますか？</h2>
               <p className="font-bold text-[var(--primary-d)] mb-6 flex items-center gap-1 justify-center"><Coins size={20} /> {confirmItem.item.price}</p>
               <div className="flex w-full gap-3">
-                <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmItem(null); }}>やめる</MotionButton>
+                <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmItem(null); }}>やめる</MotionButton>
                 <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={executeBuy}>かう！</MotionButton>
               </div>
             </motion.div>
@@ -1465,7 +1542,7 @@ const ShopView = ({ setView, stats, setStats }) => {
 
         {gachaResult && (
           <motion.div key="gachaModal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="ふしぎなたまごガチャ" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={gachaDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="ふしぎなたまごガチャ" aria-live="polite" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
               {!gachaResult.revealed ? (
                 <>
                   <motion.div animate={{ rotate: [0, -15, 15, -15, 15, 0], scale: [1, 1.05, 1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 0.7 }} className="text-7xl mb-4">🥚</motion.div>
@@ -1475,13 +1552,13 @@ const ShopView = ({ setView, stats, setStats }) => {
                 <>
                   <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.5 }} className="text-7xl mb-3">{gachaResult.item.char}</motion.div>
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-full mb-2" style={{ background: RARITY_INFO[getRarity(gachaResult.item)].color, color: RARITY_INFO[getRarity(gachaResult.item)].on }}>{RARITY_INFO[getRarity(gachaResult.item)].label}</span>
-                  <h3 className="font-black text-xl text-[var(--text)] leading-snug">{gachaResult.item.name}</h3>
+                  <h2 className="font-black text-xl text-[var(--text)] leading-snug">{gachaResult.item.name}</h2>
                   <p className="text-[10px] font-bold text-[var(--text)] opacity-80 mb-2">({CATEGORY_LABELS[gachaResult.category]})</p>
                   {gachaResult.isNew
                     ? <p className="font-black text-[var(--primary-d)] mb-4">✨ NEW! てにいれた！</p>
                     : <p className="font-black text-[var(--text)] opacity-80 mb-4 flex items-center gap-1 justify-center">もってた！ <Coins size={16} /> +{gachaResult.refund} もどってきた</p>}
                   <div className="flex w-full gap-3">
-                    <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setGachaResult(null); }}>とじる</MotionButton>
+                    <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setGachaResult(null); }}>とじる</MotionButton>
                     <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={spinGacha} disabled={stats.coins < GACHA_COST}>もう1かい</MotionButton>
                   </div>
                 </>
@@ -1492,7 +1569,7 @@ const ShopView = ({ setView, stats, setStats }) => {
       </AnimatePresence>
 
       <div className="flex justify-between items-center mb-2 shrink-0">
-        <h3 className="font-bold text-xl text-[var(--text)] flex items-center gap-2"><Store size={24} /> ショップ＆きせかえ</h3>
+        <h2 className="font-bold text-xl text-[var(--text)] flex items-center gap-2"><Store size={24} /> ショップ＆きせかえ</h2>
         <div className="flex items-center gap-1 font-black text-sm text-[var(--on-accent)] bg-[var(--accent)] px-3 py-1.5 rounded-full border-[3px] border-[var(--text)]"><Coins size={16} /> {stats.coins}</div>
       </div>
 
@@ -1524,7 +1601,7 @@ const ShopView = ({ setView, stats, setStats }) => {
             { id: 'themes', icon: <PaintBucket size={14} />, label: 'テーマ' },
             { id: 'gacha', icon: <span className="text-xs">🥚</span>, label: 'ガチャ' },
           ].map(t => (
-            <button key={t.id} onClick={() => { audioCtrl.playSE('click'); setTab(t.id); }} className={`flex flex-col items-center justify-center p-1 rounded-lg border-2 font-bold text-[9px] transition-all ${tab === t.id ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--panel)] text-[var(--text)] opacity-80 border-transparent hover:bg-[var(--bg)]'}`}>
+            <button key={t.id} onClick={() => { audioCtrl.playSE('click'); setTab(t.id); }} className={`flex flex-col items-center justify-center p-1 rounded-lg border-2 font-bold text-[11px] leading-tight min-h-[44px] transition-all ${tab === t.id ? 'bg-[var(--text)] text-[var(--panel)] border-[var(--text)]' : 'bg-[var(--panel)] text-[var(--text)] opacity-80 border-transparent hover:bg-[var(--bg)]'}`}>
               {t.icon} {t.label}
             </button>
           ))}
@@ -1534,7 +1611,7 @@ const ShopView = ({ setView, stats, setStats }) => {
       {tab === 'gacha' ? (
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] flex-grow p-4 overflow-y-auto shadow-sm flex flex-col items-center gap-3">
           <motion.div animate={{ rotate: [0, -6, 6, -6, 6, 0] }} transition={{ repeat: Infinity, duration: 2.5, repeatDelay: 1 }} className="text-7xl">🥚</motion.div>
-          <h4 className="font-black text-lg text-[var(--text)]">ふしぎなたまごガチャ</h4>
+          <h3 className="font-black text-lg text-[var(--text)]">ふしぎなたまごガチャ</h3>
           <p className="text-xs font-bold text-[var(--text)] opacity-80 text-center leading-relaxed">
             ここでしか手に入らないレアきせかえが ぜんぶで {gachaPool.length}しゅるい！<br />
             もっているものが 出たときは コインが すこし もどってくるよ
@@ -1552,7 +1629,7 @@ const ShopView = ({ setView, stats, setStats }) => {
               🥚 ガチャをまわす（<Coins size={18} /> {GACHA_COST}）
             </MotionButton>
           )}
-          <div className="flex gap-2 text-[9px] font-bold">
+          <div className="flex flex-wrap justify-center gap-2 text-[11px] font-bold">
             {Object.entries(RARITY_INFO).map(([k, v]) => (
               <span key={k} className="px-2 py-0.5 rounded-full" style={{ background: v.color, color: v.on }}>{v.label}{k === 'N' ? ' でやすい' : k === 'UR' ? ' ちょうレア' : ''}</span>
             ))}
@@ -1563,9 +1640,9 @@ const ShopView = ({ setView, stats, setStats }) => {
               const r = getRarity(item);
               return (
                 <div key={item.id} className={`relative flex flex-col items-center p-1.5 rounded-xl border-2 ${owned ? 'bg-[var(--bg)] border-[var(--text)]' : 'bg-[var(--panel)] border-gray-200'}`}>
-                  <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black px-1.5 rounded-full" style={{ background: RARITY_INFO[r].color, color: RARITY_INFO[r].on }}>{RARITY_INFO[r].label}</span>
+                  <span className="absolute -top-1.5 -right-1.5 text-[10px] font-black px-1.5 rounded-full" style={{ background: RARITY_INFO[r].color, color: RARITY_INFO[r].on }}>{RARITY_INFO[r].label}</span>
                   <div className={`text-2xl ${owned ? '' : 'grayscale opacity-40'}`}>{owned ? item.char : '❓'}</div>
-                  <div className="text-[8px] font-bold text-[var(--text)] text-center leading-tight truncate w-full">{owned ? item.name : '？？？'}</div>
+                  <div className="text-[11px] font-bold text-[var(--text)] text-center leading-tight truncate w-full">{owned ? item.name : '？？？'}</div>
                 </div>
               );
             })}
@@ -1580,24 +1657,25 @@ const ShopView = ({ setView, stats, setStats }) => {
             const isLocked = !isOwned && item.lv && level < item.lv;
             const isGachaOnly = item.gacha && !isOwned;
             return (
-              <div key={item.id} onClick={() => handleItemClick(item, tab)} className={`relative flex flex-col items-center p-2 rounded-xl border-[3px] cursor-pointer transition-transform active:scale-95 ${isEquipped ? 'bg-[var(--accent)] border-[var(--text)]' : isOwned ? 'bg-[var(--bg)] border-[var(--text)] opacity-80' : 'bg-[var(--panel)] border-gray-200 grayscale hover:grayscale-0'}`}>
-                {rarity !== 'N' && <span className="absolute -top-1.5 -right-1.5 text-[8px] font-black px-1.5 py-px rounded-full z-10" style={{ background: RARITY_INFO[rarity].color, color: RARITY_INFO[rarity].on }}>{RARITY_INFO[rarity].label}</span>}
-                <div className="text-3xl mb-1 h-10 flex items-center justify-center">
+              // 以前は div に onClick をつけていて、キーボードでは選べず、読み上げでは「ボタン」と伝わらなかった
+              <button type="button" key={item.id} onClick={() => handleItemClick(item, tab)} aria-pressed={isOwned ? isEquipped : undefined} className={`relative flex flex-col items-center p-2 rounded-xl border-[3px] cursor-pointer transition-transform active:scale-95 ${isEquipped ? 'bg-[var(--accent)] border-[var(--text)]' : isOwned ? 'bg-[var(--bg)] border-[var(--text)] opacity-80' : 'bg-[var(--panel)] border-gray-200 grayscale hover:grayscale-0'}`}>
+                {rarity !== 'N' && <span className="absolute -top-1.5 -right-1.5 text-[10px] font-black px-1.5 py-px rounded-full z-10" aria-hidden="true" style={{ background: RARITY_INFO[rarity].color, color: RARITY_INFO[rarity].on }}>{RARITY_INFO[rarity].label}</span>}
+                <span aria-hidden="true" className="text-3xl mb-1 h-10 flex items-center justify-center">
                   {tab === 'themes'
-                    ? (item.c ? <div className="flex gap-0.5">{item.c.map((col, i) => <span key={i} className="w-4 h-4 rounded-full border-2 border-[var(--text)]" style={{ background: col }} />)}</div> : <PaintBucket size={28} className={isEquipped ? 'text-[var(--text)]' : 'text-gray-400'} />)
+                    ? (item.c ? <span className="flex gap-0.5">{item.c.map((col, i) => <span key={i} className="w-4 h-4 rounded-full border-2 border-[var(--text)]" style={{ background: col }} />)}</span> : <PaintBucket size={28} className={isEquipped ? 'text-[var(--text)]' : 'text-gray-400'} />)
                     : isGachaOnly ? '❓' : isLocked ? '🔒' : item.char}
-                </div>
-                <div className="text-[9px] font-bold text-[var(--text)] text-center leading-tight h-6 overflow-hidden">{isGachaOnly ? '？？？' : item.name}</div>
-                <div className="mt-1 w-full text-center">
+                </span>
+                <span className="block text-[11px] font-bold text-[var(--text)] text-center leading-tight h-7 overflow-hidden">{isGachaOnly ? '？？？' : item.name}</span>
+                <span className="block mt-1 w-full text-center">
                   {isOwned
                     ? <span className="text-[10px] font-bold bg-[var(--text)] text-[var(--panel)] px-2 py-0.5 rounded-full">{isEquipped ? 'そうび中' : 'もってる'}</span>
                     : isGachaOnly
                       ? <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--bg)] border border-[var(--text)] px-1.5 py-0.5 rounded-full">🥚ガチャ</span>
                       : isLocked
                         ? <span className="text-[10px] font-bold text-[var(--text)] bg-[var(--bg)] border border-[var(--text)] px-1.5 py-0.5 rounded-full">🔒Lv.{item.lv}</span>
-                        : <span className="text-[10px] font-bold text-[var(--on-accent)] bg-[var(--accent)] border border-[var(--text)] px-1.5 py-0.5 rounded-full flex items-center justify-center gap-0.5"><Coins size={10} />{item.price}</span>}
-                </div>
-              </div>
+                        : <span className="text-[10px] font-bold text-[var(--on-accent)] bg-[var(--accent)] border border-[var(--text)] px-1.5 py-0.5 rounded-full flex items-center justify-center gap-0.5"><Coins size={10} aria-hidden="true" />{item.price}<span className="sr-only">コイン</span></span>}
+                </span>
+              </button>
             );
           })}
         </div>
@@ -1691,7 +1769,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
 
   // マスター済みコースと今日の周回状況（選ぶ前に「減るよ」を知らせるための情報）
   const masteredSet = new Set(Object.keys(stats?.courseStats || {}).filter(n => stats.courseStats[n].mastered));
-  const todayCounts = (stats?.repeat && stats.repeat.date === new Date().toLocaleDateString()) ? stats.repeat.counts : {};
+  const todayCounts = (stats?.repeat && stats.repeat.date === dateKey()) ? stats.repeat.counts : {};
   const realSelected = realCoursesOf(selectedGroups);
   const allSelectedMastered = realSelected.length > 0 && realSelected.every(n => masteredSet.has(n));
   const maxRepeatPlays = realSelected.length > 0 ? Math.max(...realSelected.map(n => todayCounts[n] || 0)) : 0;
@@ -1712,7 +1790,7 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
     if (selectedGroups.length === 0) return showToast('warning', 'ドリルを選んでください');
     let probs = collectProblems(selectedGroups);
     if (probs.length === 0) return showToast('error', '問題がありません');
-    if (isShuffle) probs = [...probs].sort(() => Math.random() - 0.5);
+    if (isShuffle) probs = shuffle(probs);
     if (configMode === 'TIME_ATTACK') probs = probs.slice(0, 20);
 
     setState({
@@ -1728,11 +1806,11 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
   return (
     <div>
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_rgba(0,0,0,0.1)] p-5 flex flex-col gap-4">
-        <h3 className="font-black text-2xl text-center mb-1 text-[var(--text)] flex items-center justify-center gap-2">
+        <h2 className="font-black text-2xl text-center mb-1 text-[var(--text)] flex items-center justify-center gap-2">
           {configMode === 'SCORE_ATTACK' && <><Award size={28} className="text-[var(--accent)]" /> スコアアタック</>}
           {configMode === 'TIME_ATTACK' && <><Timer size={28} className="text-[var(--secondary-d)]" /> タイムアタック</>}
           {configMode === 'SUDDEN_DEATH' && <><Swords size={28} className="text-[var(--primary-d)]" /> サドンデス</>}
-        </h3>
+        </h2>
 
         <div>
           <label className="font-bold text-sm block mb-1 text-[var(--text)] opacity-80 ruby-text"><R c="学" r="がく" /><R c="年" r="ねん" /></label>
@@ -1763,16 +1841,17 @@ const SingleConfigView = ({ setView, setState, configMode, stats }) => {
         {configMode === 'SCORE_ATTACK' && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
             <label className="font-bold text-sm block mb-1 text-[var(--text)] flex justify-between ruby-text"><span className="opacity-80"><R c="制" r="せい" /><R c="限" r="げん" /><R c="時" r="じ" /><R c="間" r="かん" /></span><span className="text-[var(--primary-d)] text-lg">{time} <RFun n={time} /></span></label>
-            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} className="w-full slider-44" />
+            <input type="range" min="1" max="10" value={time} onChange={e => setTime(e.target.value)} aria-label="せいげんじかん" aria-valuetext={`${time}ふん`} className="w-full slider-44" />
           </motion.div>
         )}
 
-        <div className="flex items-center gap-3 bg-[var(--bg)] p-3 rounded-xl border border-[var(--text)] cursor-pointer" onClick={() => { audioCtrl.playSE('click'); setIsShuffle(!isShuffle); }}>
-          <div className={`w-6 h-6 rounded flex items-center justify-center border-2 transition-colors ${isShuffle ? 'bg-[var(--secondary)] border-[var(--secondary)]' : 'bg-[var(--panel)] border-[var(--text)]'}`}>
+        {/* 以前は div に onClick をつけていて、キーボードでは切りかえられず、読み上げでは入っているかが伝わらなかった */}
+        <button type="button" role="switch" aria-checked={isShuffle} className="w-full flex items-center gap-3 bg-[var(--bg)] p-3 rounded-xl border border-[var(--text)] cursor-pointer text-left" onClick={() => { audioCtrl.playSE('click'); setIsShuffle(!isShuffle); }}>
+          <span aria-hidden="true" className={`w-6 h-6 shrink-0 rounded flex items-center justify-center border-2 transition-colors ${isShuffle ? 'bg-[var(--secondary)] border-[var(--secondary)]' : 'bg-[var(--panel)] border-[var(--text)]'}`}>
             {isShuffle && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
-          </div>
-          <label className="font-bold text-sm text-[var(--text)] select-none cursor-pointer">問題をランダムに出題する</label>
-        </div>
+          </span>
+          <span className="font-bold text-sm text-[var(--text)] select-none">問題をランダムに出題する</span>
+        </button>
 
         <div className="mt-2 space-y-3">
           <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] w-full py-4 text-xl border-[3px] border-[var(--text)]" onClick={start}><Gamepad2 size={24} /> スタート！</MotionButton>
@@ -1841,7 +1920,18 @@ const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correc
 TimerProgressBar.displayName = 'TimerProgressBar';
 
 // --- ゲーム画面 ---
-const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, sendTerrSpecial, collectTerritoryResult, leaderFinishRef }) => {
+// 正解1問でもらえるコイン（finishGame）
+const COINS_PER_CORRECT = 1;
+
+// みんなであそぶ: スコアの一覧を配る間かく（App の scheduleScoresBroadcast）
+const SCORES_BROADCAST_MS = 1000;
+const SCORES_MIN_WAIT_MS = 100;
+
+// まちがえた直後に入力を受けながす時間（カードがゆれているあいだ）と、まちがえた答えを見せておく時間
+const WRONG_HOLD_MS = 400;
+const WRONG_FLASH_MS = 900;
+
+const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, sendTerrSpecial, collectTerritoryResult, leaderFinishRef, scheduleScoresBroadcast, flushScoresBroadcast }) => {
   const isMultiplayer = peerState && peerState.role;
   const isRaid = state.gameMode === 'BOSS_RAID';
   const isTerritory = state.gameMode === 'TERRITORY';
@@ -1862,6 +1952,16 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const wrongCountRef = useRef(resumeSnapshot?.wrongCount || 0);
   const isResumedSessionRef = useRef(!!resumeSnapshot);
   const [quitDialog, setQuitDialog] = useState(false);
+  const quitDialogRef = useModalFocus(quitDialog);
+  // 勝負がついた（サドンデスでまちがえた・タイムアタックの最後の問題に正解した）あと、
+  // 結果画面へ移るまでの0.5秒は答えを受けつけない。以前はこのあいだに打った正解も数えていて、
+  // 1問目でまちがえたサドンデスが「2問正解」になったり、タイムアタックが「21 / 20問」になったりした
+  const settledRef = useRef(false);
+  // まちがえた直後の少しのあいだ、打ちかけていた答えの残りの文字を受けながす。
+  // 「81」で まちがいと決まったあとの「5」が、つぎの答えの1文字目にならないようにする
+  const wrongHoldUntilRef = useRef(0);
+  const [wrongFlash, setWrongFlash] = useState(null); // まちがえた答えを、消す前に少しだけ見せる
+  const answerBlocked = () => settledRef.current || Date.now() < wrongHoldUntilRef.current;
 
   // --- 学習ログ（study.v1）---
   // 端末に保存するだけで、外部へは一切送信しない。氏名などの識別情報も持たない。
@@ -1920,7 +2020,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   useBackHandler(showTools, () => { audioCtrl.playSE('click'); setShowTools(false); return true; }, BACK_PRIORITY.overlay);
   useBackHandler(quitDialog, () => { audioCtrl.playSE('click'); setQuitDialog(false); return true; }, BACK_PRIORITY.overlay);
   useBackHandler(showMemo, () => { audioCtrl.playSE('click'); setShowMemo(false); return true; }, BACK_PRIORITY.panel);
-  useBackHandler(true, () => { audioCtrl.playSE('click'); setQuitDialog(true); return true; }, BACK_PRIORITY.view);
+  useBackHandler(true, () => { if (settledRef.current) return true; audioCtrl.playSE('click'); setQuitDialog(true); return true; }, BACK_PRIORITY.view);
 
   const participantsList = isMultiplayer ? Object.entries(peerState.participants || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => b.score - a.score) : [];
   const top5 = participantsList.slice(0, 5);
@@ -2101,15 +2201,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     if (peerState && peerState.role === 'client' && peerState.conn) {
       safeSend(peerState.conn, { type: 'score_update', data: { score, combo } });
     } else if (peerState && peerState.role === 'host' && setPeerState) {
-      // ホストのスコアを参加者リストに反映し、全クライアントにブロードキャスト
+      // ホストのスコアを参加者リストに反映する。全員へ配るのは まとめて1秒に1回（App の scheduleScoresBroadcast）
       setPeerState(p => {
         if (!p.hostId || !p.participants[p.hostId]) return p;
-        const newP = { ...p, participants: { ...p.participants, [p.hostId]: { ...p.participants[p.hostId], score, combo } } };
-        sendToApproved(newP, { type: 'participants_update', data: newP.participants });
-        return newP;
+        return { ...p, participants: { ...p.participants, [p.hostId]: { ...p.participants[p.hostId], score, combo } } };
       });
+      scheduleScoresBroadcast?.();
     }
-  }, [score, combo, peerState?.role, setPeerState]);
+  }, [score, combo, peerState?.role, setPeerState, scheduleScoresBroadcast]);
 
   const scoreRef = useRef(score); useEffect(() => { scoreRef.current = score; }, [score]);
   const maxComboRef = useRef(maxCombo); useEffect(() => { maxComboRef.current = maxCombo; }, [maxCombo]);
@@ -2154,7 +2253,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
     // 報酬減衰: ソロモードのみ。マルチ(ボスバトル・じんとり)はリーダーがコースを決めるため対象外
     const isDecayMode = !isMultiplayer && state.gameMode !== 'BOSS_RAID' && state.gameMode !== 'TERRITORY';
-    const session = { correctCount: correctCountRef.current, wrongCount: wrongCountRef.current, elapsedSec: exactElapsedSec, gameMode: state.gameMode };
+    // マスターの目安は、その回に出た問題の長さで決める（文章題は読むのに時間がかかる。mastery.js）
+    const pace = masteryPace(state.problemSet);
+    const session = { correctCount: correctCountRef.current, wrongCount: wrongCountRef.current, elapsedSec: exactElapsedSec, gameMode: state.gameMode, paceSec: pace.sec, minCorrect: pace.minCorrect };
     // 減衰は「今セッションを記録する前」の状態で計算する（その日の1・2回目は満額のまま）
     const decay = isDecayMode ? computeRewardDecay(newStats, state.courseNames, session) : { mult: 1, masteredApplied: false, repeatPlays: 0, repeatMult: 1 };
     const earnedExp = baseExp > 0 ? Math.max(1, Math.round(baseExp * decay.mult)) : 0;
@@ -2162,6 +2263,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
     // 減衰の強いセッション(半額未満)は「あそぶ系」ミッションの進捗にも数えない
     newStats = StorageAPI.updateDailyAndMissions(newStats, earnedExp, maxComboRef.current, 1, state.gameMode, correctCountRef.current, decay.mult >= 0.5 ? 1 : 0);
+
+    // 正解1問につき1コイン。同じドリルのくりかえし・マスターずみの楽々クリアは EXP と同じ割合で へる。
+    // 以前はコインがミッションとレベルアップでしか入らず、ふつうに遊ぶ子で1日 約125コイン。
+    // 買える品（421こ、まんなかの値段が900コイン）に ほとんど手が届かなかった
+    const earnedCoins = Math.round(correctCountRef.current * COINS_PER_CORRECT * decay.mult);
+    newStats.coins = (newStats.coins || 0) + earnedCoins;
+    // さいきん「みんなであそぶ」で遊んだか（ボス・じんとりのミッションは、そういう子にだけ出す）
+    if (isMultiplayer) newStats.lastMultiplayerDate = dateKey();
 
     // レベルアップしたらコインボーナスを付与（上がったレベル数 × 50コイン）
     const levelBefore = getLevelInfo(stats.totalExp).level;
@@ -2190,7 +2299,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     const raidResult = (state.gameMode === 'BOSS_RAID' && peerState && peerState.role === 'host' && collectRaidResult) ? collectRaidResult() : null;
     const territoryResult = (state.gameMode === 'TERRITORY' && peerState && peerState.role === 'host' && collectTerritoryResult) ? collectTerritoryResult() : null;
 
-    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, decayInfo: { mult: decay.mult, mastered: decay.masteredApplied, repeatPlays: decay.repeatPlays, baseExp, newlyMastered: masteryResult.newlyMastered }, ...(raidResult ? { raidResult } : {}), ...(territoryResult ? { territoryResult } : {}) }));
+    setState(prev => ({ ...prev, finalScore: baseExp, finalCombo: maxComboRef.current, finalTime: exactElapsedSec, finalCorrect: correctCountRef.current, earnedExp, earnedCoins, previousExp: stats.totalExp, levelUpCoins, mistakes: mistakesRef.current, resumeSnapshot: null, decayInfo: { mult: decay.mult, mastered: decay.masteredApplied, repeatPlays: decay.repeatPlays, baseExp, newlyMastered: masteryResult.newlyMastered }, ...(raidResult ? { raidResult } : {}), ...(territoryResult ? { territoryResult } : {}) }));
 
     if (isResumedSessionRef.current) {
       StorageAPI.clearResume();
@@ -2202,12 +2311,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     if (peerState && peerState.role === 'client' && peerState.conn) {
       safeSend(peerState.conn, { type: 'game_finish', data: { finalScore: baseExp } });
     } else if (peerState && peerState.role === 'host') {
-      // ホストが終了した場合、全クライアントにも終了を通知
+      // ホストが終了した場合、全クライアントにも終了を通知。
+      // その前に、まだ配っていないスコアを配る（結果のランキングが1秒前のままにならないように）
+      flushScoresBroadcast?.();
       sendToApproved(peerState, { type: 'game_finish', data: raidResult ? { raidResult } : territoryResult ? { territoryResult } : undefined });
     }
 
     setView('result');
-  }, [stats, state.gameMode, state.problemSet, state.courseNames, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult, collectTerritoryResult, myTeam]);
+  }, [stats, state.gameMode, state.problemSet, state.courseNames, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult, collectTerritoryResult, myTeam, flushScoresBroadcast]);
 
   // みんなであそぶ: リーダーが先に終えたとき（時間切れ・20問ときおわった・1問まちがえた・
   // 「ポイントもらって終わる」）や へやが閉じられたときも、メンバーの端末はここを通って終える。
@@ -2263,9 +2374,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   }, [state.problemSet, state.timeLimitSec, state.courseName, state.courseNames, state.gameMode, qIndex, combo, startTime, stats, setState, setView, setResumeData]);
 
   const submitAns = useCallback(() => {
-    if (!ans || isRaidLocked()) return; const q = state.problemSet[qIndex];
-    const normalizedAns = normalizeStr(ans);
-    const isCorrect = q.a.some(correctStr => normalizeStr(correctStr) === normalizedAns);
+    if (!ans || settledRef.current || isRaidLocked()) return; const q = state.problemSet[qIndex];
+    const isCorrect = checkAnswer(ans, q.a) === 'correct';
 
     // 学習ログ: 初回正答（firstTryCorrect）を出すため、正解・誤答の両方を1回の解答として数える
     studyRef.current?.answer(isCorrect, ans);
@@ -2314,7 +2424,8 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
         mistakesRef.current = mistakesRef.current.filter(m => m.q !== q.q);
       }
 
-      if (state.gameMode === 'TIME_ATTACK' && correctCount + 1 >= state.problemSet.length) { setTimeout(finishGame, 500); }
+      setWrongFlash(null);
+      if (state.gameMode === 'TIME_ATTACK' && correctCount + 1 >= state.problemSet.length) { settledRef.current = true; setTimeout(finishGame, 500); }
       else {
         const nextIndex = (qIndex + 1) % state.problemSet.length;
         setQIndex(nextIndex);
@@ -2326,25 +2437,35 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       if (isTerritory) setTerrMissAt(Date.now()); // ペンキーが「ドンマイ！」と はげましてくれる
       setCardAnim({ x: [-15, 15, -10, 10, 0], boxShadow: ["0 8px 0 var(--text)", "0 0 20px var(--primary)", "0 8px 0 var(--text)"], transition: { duration: 0.4 } });
       setAns(''); mistakesRef.current.push({ q: q.q, a: q.a.join('|') });
-      if (state.gameMode === 'SUDDEN_DEATH') setTimeout(finishGame, 500);
+      wrongHoldUntilRef.current = Date.now() + WRONG_HOLD_MS;
+      setWrongFlash({ text: ans, at: Date.now() });
+      if (state.gameMode === 'SUDDEN_DEATH') { settledRef.current = true; setTimeout(finishGame, 500); }
     }
   }, [ans, qIndex, combo, correctCount, state.problemSet, state.gameMode, state.courseName, finishGame]);
 
-  // 正解の瞬間に自動で次の問題へ進む
+  // 打っているとちゅうで答え合わせする。正解ならすぐ次の問題へ進み、
+  // もう正解にならない答えを正解と同じ長さまで打ったら、OK を待たずに まちがいにする（checkAnswer）
   useEffect(() => {
     if (!ans) return;
+    setWrongFlash(null); // つぎの答えを打ちはじめたら、まちがえた答えはもう見せない
     const q = state.problemSet[qIndex];
     if (!q) return;
-    const normalizedAns = normalizeStr(ans);
-    const isCorrect = q.a.some(correctStr => normalizeStr(correctStr) === normalizedAns);
-    if (isCorrect) submitAns();
+    if (checkAnswer(ans, q.a) !== 'pending') submitAns();
   }, [ans]);
+
+  // まちがえた答えは少しだけ見せてから消す
+  useEffect(() => {
+    if (!wrongFlash) return undefined;
+    const id = setTimeout(() => setWrongFlash(null), WRONG_FLASH_MS);
+    return () => clearTimeout(id);
+  }, [wrongFlash]);
 
   useEffect(() => {
     const handleKey = (e) => {
       if (quitDialog) return; // ダイアログ表示中は背後のゲームに入力を流さない
       if (isRaidLocked()) return; // ボスの凍結攻撃・撃破演出中は物理キーボードもロック
       const key = e.key;
+      if (answerBlocked()) { if (key === 'Enter') e.preventDefault(); return; }
       if ((key >= '0' && key <= '9') || ['.', '/', '-', '(', ')'].includes(key)) { audioCtrl.playSE('click'); setAns(a => (a.length < ANSWER_MAX_LEN ? a + key : a)); }
       else if (key === 'Backspace') { audioCtrl.playSE('click'); setAns(a => a.slice(0, -1)); }
       else if (key === 'Enter') { e.preventDefault(); submitAns(); }
@@ -2356,12 +2477,13 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   // キーパッドへ渡す安定コールバック（submitAns は ref 経由で最新を参照し、Keypad の memo を維持する）
   const submitAnsRef = useRef(submitAns); useEffect(() => { submitAnsRef.current = submitAns; }, [submitAns]);
   const isRaidLockedRef = useRef(isRaidLocked); useEffect(() => { isRaidLockedRef.current = isRaidLocked; });
-  const handleAppend = useCallback((c) => { if (isRaidLockedRef.current()) return; audioCtrl.playSE('click'); setAns(a => (a.length < ANSWER_MAX_LEN ? a + c : a)); }, []);
-  const handleClear = useCallback(() => { audioCtrl.playSE('click'); setAns(''); }, []);
+  const answerBlockedRef = useRef(answerBlocked); useEffect(() => { answerBlockedRef.current = answerBlocked; });
+  const handleAppend = useCallback((c) => { if (isRaidLockedRef.current() || answerBlockedRef.current()) return; audioCtrl.playSE('click'); setAns(a => (a.length < ANSWER_MAX_LEN ? a + c : a)); }, []);
+  const handleClear = useCallback(() => { if (answerBlockedRef.current()) return; audioCtrl.playSE('click'); setAns(''); }, []);
   // どうぐを開いて解いた問題は、自力で解いたのとは分けて記録する（hint: true）。
   // ext.tools は教師が読む値なので、内部IDではなく画面と同じ名前で残す
   const handleToolUse = useCallback((toolId) => {
-    studyRef.current?.markTool(TOOL_META[toolId]?.label || toolId);
+    studyRef.current?.markTool(detectModule?.TOOL_META[toolId]?.label || toolId);
   }, []);
   const handleSubmit = useCallback(() => { submitAnsRef.current(); }, []);
 
@@ -2372,21 +2494,25 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   // 画面上は◯×とスコアの動きで分かるが、それだけだと目で追えない児童に届かない
   const [answerAnnounce, setAnswerAnnounce] = useState('');
   const [toolsReady, setToolsReady] = useState(false);
+  // どうぐの判定。ふつうはアプリを開いたあと読みこみずみ。まだなら読めしだい電球を出す
+  const [detect, setDetect] = useState(() => detectModule);
   useEffect(() => {
     let alive = true;
     preloadConfetti();
     preloadLearningTools().then(() => { if (alive) setToolsReady(true); }).catch(() => {});
+    if (!detectModule) loadDetect().then((m) => { if (alive) setDetect(m); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
   const q = state.problemSet[qIndex] || { q: '?', a: ['?'] };
-  const availableTools = getAvailableTools(state.courseName, q.q);
+  const availableTools = detect ? detect.getAvailableTools(state.courseName, q.q) : [];
 
   const textLen = q.q.length;
-  let fontSizeClass = "text-[5rem] md:text-8xl";
-  if (textLen >= 25) { fontSizeClass = "text-xl md:text-3xl"; }
-  else if (textLen >= 15) { fontSizeClass = "text-2xl md:text-5xl"; }
-  else if (textLen >= 8) { fontSizeClass = "text-4xl md:text-6xl"; }
+  // 高さの足りない画面（short / tiny。tailwind.config.js）では、テンキーの場所をあけるために小さくする
+  let fontSizeClass = "text-[5rem] md:text-8xl short:text-6xl tiny:text-5xl";
+  if (textLen >= 25) { fontSizeClass = "text-xl md:text-3xl short:text-2xl tiny:text-xl"; }
+  else if (textLen >= 15) { fontSizeClass = "text-2xl md:text-5xl short:text-3xl tiny:text-2xl"; }
+  else if (textLen >= 8) { fontSizeClass = "text-4xl md:text-6xl short:text-5xl tiny:text-4xl"; }
 
   return (
     <div
@@ -2414,9 +2540,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
       {/* ランキング表示（メインレイアウトの外に配置） */}
       {!isRaid && !isTerritory && isMultiplayer && top5.length > 0 && (
-        <div className="flex justify-center gap-2 p-2 overflow-x-auto no-scrollbar shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm">
+        <div className="flex justify-center gap-2 p-2 short:py-1 overflow-x-auto no-scrollbar shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm">
           {top5.map((p, idx) => (
-            <div key={p.id} className="bg-[var(--bg)] border-2 border-[var(--text)] rounded-lg px-3 py-1.5 flex flex-col items-center min-w-[80px]">
+            <div key={p.id} className="bg-[var(--bg)] border-2 border-[var(--text)] rounded-lg px-3 py-1.5 short:py-0.5 flex flex-col items-center min-w-[80px]">
               <div className="flex items-center gap-1">
                 <span className={`text-xs font-black px-1.5 py-0.5 rounded-sm ${idx === 0 ? 'bg-yellow-400 text-white' : idx === 1 ? 'bg-gray-400 text-white' : idx === 2 ? 'bg-orange-400 text-white' : 'text-[var(--text)] opacity-80'}`}>{idx + 1}</span>
                 <span className="text-xs font-bold truncate max-w-[60px]"><PupilName name={p.name} /></span>
@@ -2435,7 +2561,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             <div className="h-[27vh] md:h-auto md:w-full md:flex-grow md:min-h-0 flex items-center justify-center gap-1 w-full">
               <TerritoryBoard terrState={terrState} myTeam={myTeam} myId={myId} targetIdx={terrTarget} onSelect={selectTerrTarget} lastSpurt={lastSpurt} />
               {/* おうえんキャラクター(モバイル): 盤面は 27vh の正方形なので、あまった横のすきまに ならべて置く */}
-              <TerritoryCharacter mood={terrMood} line={terrLine} team={myTeam} bubbleClassName="max-w-[104px] text-[8px]" className="w-20 shrink-0 md:hidden" />
+              <TerritoryCharacter mood={terrMood} line={terrLine} team={myTeam} bubbleClassName="max-w-[110px] text-[10px]" className="w-20 shrink-0 md:hidden" />
             </div>
             <TerritoryRushBadge until={rushUntil} />
             {/* おうえんキャラクター(PC): 盤面の下にゆったり出す */}
@@ -2444,20 +2570,23 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           </div>
         )}
 
-        <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : `w-full ${isTerritory ? 'md:flex-grow md:w-auto max-w-4xl' : 'max-w-4xl h-full'} mx-auto`} md:h-full p-4`}>
+        {/* 画面が低くて入りきらないときは、この列の中でスクロールできるようにする（キーが画面の外に出たまま押せない、を起こさない）。
+            低い横長の画面（flat）では、問題と答えを左に、テンキーを右にならべる。手書きメモを開いているときは1列のまま */}
+        <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : `w-full ${isTerritory ? 'md:flex-grow md:w-auto max-w-4xl' : 'max-w-4xl h-full'} mx-auto flat:grid flat:grid-cols-2 flat:grid-rows-[auto_1fr_auto] flat:gap-x-4`} md:h-full p-4 short:py-2 tiny:py-1.5 overflow-y-auto overflow-x-hidden`}>
 
-          <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
-            <button onClick={() => { audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-3 min-h-[44px] font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center justify-center gap-1"><XCircle size={16} /> やめる</button>
+          <div className="flex justify-between items-center mb-2 short:mb-1 shrink-0 gap-2">
+            <button onClick={() => { if (settledRef.current) return; audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-3 min-h-[44px] font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center justify-center gap-1"><XCircle size={16} /> やめる</button>
             <TimerClock gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} />
             <div className="font-black text-2xl text-[var(--primary-d)] flex items-center gap-2 drop-shadow-sm">
               {state.gameMode === 'TIME_ATTACK' ? <>{correctCount} / {state.problemSet.length} <R c="問" r="もん" /></> : state.gameMode === 'SUDDEN_DEATH' ? <>{correctCount} <R c="問" r="もん" /><R c="正" r="せい" /><R c="解" r="かい" /></> : state.gameMode === 'BOSS_RAID' ? <>⚔ {score} <span className="text-sm text-[var(--text)] opacity-80">ダメージ</span></> : state.gameMode === 'TERRITORY' ? <>🖌 {score} <span className="text-sm text-[var(--text)] opacity-80">ぬり</span></> : <>{score} <span className="text-sm text-[var(--text)] opacity-80">pt</span></>}
             </div>
           </div>
 
-          <div className={`relative flex-grow flex flex-col justify-center items-center ${isTerritory ? 'min-h-[90px] mb-2 md:min-h-[150px] md:mb-4' : 'min-h-[150px] mb-4'}`}>
-            <div className="absolute top-0 h-10 flex justify-center items-center w-full">
+          <div className={`relative flex-grow flex flex-col justify-center items-center ${isTerritory ? 'min-h-[90px] mb-2 md:min-h-[150px] md:mb-4' : 'min-h-[150px] mb-4'} short:min-h-min short:mb-2 tiny:mb-1`}>
+            {/* 低い画面では問題文と重ならないよう、左上の すみに小さく出す */}
+            <div className="absolute top-0 h-10 tiny:h-7 flex justify-center tiny:justify-start items-center w-full">
               <AnimatePresence>
-                {combo > 1 && <motion.div initial={{ scale: 0, y: 10 }} animate={{ scale: [0, 1.3, 1], y: 0, rotate: -6 }} exit={{ scale: 0 }} className="bg-[var(--accent)] text-[var(--on-accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-sm shadow-[2px_2px_0_var(--text)] z-30">{combo} COMBO! 🔥</motion.div>}
+                {combo > 1 && <motion.div initial={{ scale: 0, y: 10 }} animate={{ scale: [0, 1.3, 1], y: 0, rotate: -6 }} exit={{ scale: 0 }} className="bg-[var(--accent)] text-[var(--on-accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 tiny:px-2 tiny:py-0.5 font-black text-sm tiny:text-xs shadow-[2px_2px_0_var(--text)] z-30">{combo} COMBO! 🔥</motion.div>}
               </AnimatePresence>
             </div>
             <AnimatePresence mode="wait">
@@ -2476,20 +2605,20 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             {isTerritory && <TerritorySpecialButton gauge={specialGauge} kind={specialKind} onFire={fireTerrSpecial} />}
           </div>
 
-          <motion.div animate={cardAnim} className={`bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] relative z-30 shrink-0 ${isTerritory ? 'h-16 mb-2 md:h-24 md:mb-4' : 'h-24 mb-4'}`}>
+          <motion.div animate={cardAnim} className={`bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] short:shadow-[0_5px_0_var(--text)] relative z-30 shrink-0 ${isTerritory ? 'h-16 mb-2 md:h-24 md:mb-4' : 'h-24 mb-4'} short:h-16 short:mb-3 tiny:h-14 tiny:mb-2`}>
             {/* onClick で開閉する(onPointerDown だと、開いた直後に指を離したときの合成 click が
                 最前面のオーバーレイに当たって即閉じてしまい、長押ししないと開けない挙動になる) */}
             {availableTools.length > 0 && (
-              <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 touch-manipulation ${showTools ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onClick={() => { audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
+              <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 short:left-2 w-14 h-14 short:w-12 short:h-12 tiny:w-11 tiny:h-11 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 touch-manipulation ${showTools ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onClick={() => { audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
                 <Lightbulb size={24} />
               </motion.button>
             )}
-            <span className="text-5xl font-black text-[var(--secondary-d)] tracking-widest">{ans || <span className="text-4xl font-bold text-[var(--text)] opacity-70">?</span>}</span>
-            {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 w-12 h-12 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
-            <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--on-secondary)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
+            <span className="text-5xl short:text-4xl font-black text-[var(--secondary-d)] tracking-widest">{ans || (wrongFlash ? <span className="text-[var(--primary-d)] line-through decoration-4">{wrongFlash.text}</span> : <span className="text-4xl short:text-3xl font-bold text-[var(--text)] opacity-70">?</span>)}</span>
+            {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 short:right-16 w-12 h-12 tiny:w-11 tiny:h-11 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" aria-label="メモを はんたいがわに うつす" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }} onClick={(e) => { if (e.detail === 0) { audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); } }}><ArrowLeftRight size={20} aria-hidden="true" /></motion.button>}
+            <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 short:right-2 w-14 h-14 short:w-12 short:h-12 tiny:w-11 tiny:h-11 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--on-secondary)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} aria-label="てがきメモ" aria-pressed={showMemo} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }} onClick={(e) => { if (e.detail === 0) { audioCtrl.playSE('click'); setShowMemo(m => !m); } }}><PenTool size={24} aria-hidden="true" /></motion.button>
           </motion.div>
 
-          <div className="relative flex-grow flex flex-col">
+          <div className="relative flex-grow flex flex-col flat:col-start-2 flat:row-start-1 flat:row-span-3">
             <Keypad onAppend={handleAppend} onClear={handleClear} onSubmit={handleSubmit} digitLayout={digitLayout} />
             {isRaid && <FreezeOverlay debuffs={myDebuffs} />}
           </div>
@@ -2531,10 +2660,10 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
       <AnimatePresence>
         {quitDialog && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="とちゅうで やめるかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-sm flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={quitDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="とちゅうで やめるかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-sm flex flex-col items-center text-center">
               <XCircle size={48} className="text-[var(--primary-d)] mb-3" />
-              <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text"><R c="途" r="と" /><R c="中" r="ちゅう" />で やめますか？</h3>
-              <p className="text-sm text-[var(--text)] opacity-80 mb-5 ruby-text">
+              <h2 className="font-black text-xl text-[var(--text)] mb-2 ruby-text"><R c="途" r="と" /><R c="中" r="ちゅう" />で やめますか？</h2>
+              <p className="text-sm text-[var(--text)] mb-5 ruby-text">
                 ここまでの<R c="正" r="せい" /><R c="解" r="かい" />: <span className="font-black text-[var(--primary-d)]">{correctCount}<R c="問" r="もん" /></span>
                 {state.gameMode === 'SCORE_ATTACK' && <> ／ スコア: <span className="font-black text-[var(--primary-d)]">{score}pt</span></>}
                 {state.gameMode === 'BOSS_RAID' && <> ／ <R c="与" r="あた" />えたダメージ: <span className="font-black text-[var(--primary-d)]">⚔{score}</span></>}
@@ -2549,7 +2678,7 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
                     <Clock size={18} /> <R c="中" r="ちゅう" /><R c="断" r="だん" />して<R c="保" r="ほ" /><R c="存" r="ぞん" />
                   </MotionButton>
                 )}
-                <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 w-full" onClick={() => { audioCtrl.playSE('click'); setQuitDialog(false); }}>
+                <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 w-full" onClick={() => { audioCtrl.playSE('click'); setQuitDialog(false); }}>
                   つづける
                 </MotionButton>
               </div>
@@ -2567,6 +2696,7 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
   const oldInfo = getLevelInfo(oldExp); const newInfo = getLevelInfo(newExp);
   const mistakes = state.mistakes || [];
   const [showLevelUp, setShowLevelUp] = useState(false);
+  const levelUpRef = useModalFocus(showLevelUp);
 
   const isMultiplayer = peerState && peerState.role;
   const participantsList = isMultiplayer ? Object.entries(peerState.participants || {}).map(([id, p]) => ({ id, ...p })).sort((a, b) => b.score - a.score) : [];
@@ -2603,16 +2733,16 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
             transition={{ type: "spring", bounce: 0.5 }}
             className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--bg)]/80 backdrop-blur-sm rounded-[20px] m-4"
           >
-            <div className="bg-[var(--panel)] border-[4px] border-[var(--accent)] p-8 rounded-3xl text-center shadow-2xl flex flex-col items-center w-full max-w-sm">
+            <div ref={levelUpRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="レベルアップ" className="bg-[var(--panel)] border-[4px] border-[var(--accent)] p-8 rounded-3xl text-center shadow-2xl flex flex-col items-center w-full max-w-sm">
               <motion.div initial={{ scale: 0, rotate: -30 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", bounce: 0.6, delay: 0.1 }} className="text-7xl mb-4">{newInfo.badge}</motion.div>
-              <h3 className="text-3xl font-black text-[var(--text)] mb-2">レベルアップ！</h3>
+              <h2 className="text-3xl font-black text-[var(--text)] mb-2">レベルアップ！</h2>
               <p className="text-xl font-bold text-[var(--primary-d)] mb-3">Lv.{oldInfo.level} <span className="opacity-50">→</span> Lv.{newInfo.level} {newInfo.title}</p>
               {(state.levelUpCoins || 0) > 0 && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="flex items-center gap-1.5 bg-[var(--accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-[var(--on-accent)] mb-6">
                   <Coins size={18} /> ボーナス +{state.levelUpCoins} コイン！
                 </motion.div>
               )}
-              <MotionButton className="bg-[var(--accent)] text-[var(--on-accent)] w-full py-3 text-lg border-[3px] border-[var(--text)]" onClick={() => setShowLevelUp(false)}>やったー！</MotionButton>
+              <MotionButton data-autofocus className="bg-[var(--accent)] text-[var(--on-accent)] w-full py-3 text-lg border-[3px] border-[var(--text)]" onClick={() => setShowLevelUp(false)}>やったー！</MotionButton>
             </div>
           </motion.div>
         )}
@@ -2675,15 +2805,18 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
         </div>
       ) : (
         <div className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-[4px_4px_0_var(--text)] p-6 text-center w-full mb-6 shrink-0 relative overflow-hidden">
-          {state.gameMode === 'SCORE_ATTACK' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1">SCORE</h4><div className="text-6xl font-black text-[var(--text)] mb-2">{state.finalScore || 0}</div></>}
-          {state.gameMode === 'TIME_ATTACK' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1">CLEAR TIME</h4><div className="text-6xl font-black text-[var(--secondary-d)] mb-2">{state.finalTime.toFixed(1)} <span className="text-2xl ruby-text"><R c="秒" r="びょう" /></span></div></>}
-          {state.gameMode === 'SUDDEN_DEATH' && <><h4 className="text-[var(--text)] opacity-80 font-bold mb-1 ruby-text"><R c="連" r="れん" /><R c="続" r="ぞく" /><R c="正" r="せい" /><R c="解" r="かい" /><R c="数" r="すう" /></h4><div className="text-6xl font-black text-[var(--primary-d)] mb-2">{state.finalCorrect} <span className="text-2xl ruby-text"><R c="問" r="もん" /></span></div></>}
+          {state.gameMode === 'SCORE_ATTACK' && <><h3 className="text-[var(--text)] opacity-80 font-bold mb-1">SCORE</h3><div className="text-6xl font-black text-[var(--text)] mb-2">{state.finalScore || 0}</div></>}
+          {state.gameMode === 'TIME_ATTACK' && <><h3 className="text-[var(--text)] opacity-80 font-bold mb-1">CLEAR TIME</h3><div className="text-6xl font-black text-[var(--secondary-d)] mb-2">{state.finalTime.toFixed(1)} <span className="text-2xl ruby-text"><R c="秒" r="びょう" /></span></div></>}
+          {state.gameMode === 'SUDDEN_DEATH' && <><h3 className="text-[var(--text)] opacity-80 font-bold mb-1 ruby-text"><R c="連" r="れん" /><R c="続" r="ぞく" /><R c="正" r="せい" /><R c="解" r="かい" /><R c="数" r="すう" /></h3><div className="text-6xl font-black text-[var(--primary-d)] mb-2">{state.finalCorrect} <span className="text-2xl ruby-text"><R c="問" r="もん" /></span></div></>}
 
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="text-xl font-black text-[var(--secondary-d)] mb-4 flex flex-col items-center justify-center gap-1">
             <div className="flex items-center gap-1.5">
               ⬆ {earnedExp} EXP かくとく！
               {state.decayInfo && state.decayInfo.mult < 1 && <span className="text-sm font-bold opacity-50 line-through">{state.decayInfo.baseExp}</span>}
             </div>
+            {(state.earnedCoins || 0) > 0 && (
+              <div className="flex items-center gap-1.5 text-base text-[var(--text)]"><Coins size={18} className="text-yellow-500" /> +{state.earnedCoins} コイン</div>
+            )}
             {state.decayInfo && state.decayInfo.mult < 1 && (
               <div className="text-xs font-bold text-[var(--text)] opacity-80 ruby-text px-2">
                 {state.decayInfo.mastered
@@ -2709,7 +2842,7 @@ const ResultView = ({ state, setView, peerState, leaveRoom }) => {
 
       {mistakes.length > 0 && (
         <div className="bg-[var(--panel)] border-[3px] border-[var(--primary)] rounded-[20px] p-4 mb-6 shrink-0 shadow-sm">
-          <h4 className="font-black text-[var(--primary-d)] mb-3 flex items-center justify-center gap-2 ruby-text"><PenTool size={20} /> おさらい（まちがえた<R c="問" r="もん" /><R c="題" r="だい" />）</h4>
+          <h3 className="font-black text-[var(--primary-d)] mb-3 flex items-center justify-center gap-2 ruby-text"><PenTool size={20} /> おさらい（まちがえた<R c="問" r="もん" /><R c="題" r="だい" />）</h3>
           <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2 no-scrollbar">
             {mistakes.map((m, i) => (
               <div key={i} className="flex justify-between items-center border-b-2 border-dashed border-[var(--bg)] pb-2">
@@ -2772,6 +2905,7 @@ const skippedMessage = (bad, unreadable = 0) => {
 const ManagerView = ({ setView }) => {
   const [groups, setGroups] = useState([]); const [selectedGrade, setSelectedGrade] = useState('すべて'); const [editTarget, setEditTarget] = useState(null); const [editName, setEditName] = useState(''); const [probs, setProbs] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteDialogRef = useModalFocus(confirmDelete);
   const grades = ['すべて', '1年', '2年', '3年', '4年', '5年', '6年', 'その他'];
   const loadGroups = () => setGroups(StorageAPI.getProblemGroups());
   useEffect(() => { loadGroups(); }, []);
@@ -2781,6 +2915,11 @@ const ManagerView = ({ setView }) => {
   useBackHandler(editTarget !== null, () => { audioCtrl.playSE('click'); setEditTarget(null); return true; }, BACK_PRIORITY.view);
 
   const filteredGroups = groups.filter(g => { if (selectedGrade === 'すべて') return true; if (selectedGrade === 'その他') return !/^[1-6]年/.test(g.name); return g.name.startsWith(selectedGrade); });
+  // プリセットは消せない（消すと はじめの問題にもどる）。書きかえたプリセットだけ「もとにもどす」を出す。
+  // 以前は「削除」を押すと「削除しました」と出るのに、次に開くと元の問題で残っていた
+  const targetInfo = groups.find(g => g.name === editTarget);
+  const targetIsPreset = !!targetInfo?.preset;
+  const canRemove = !!editTarget && (!targetIsPreset || !!targetInfo?.edited);
 
   const openEdit = (name) => {
     setEditTarget(name); setEditName(name);
@@ -2813,7 +2952,7 @@ const ManagerView = ({ setView }) => {
     setEditTarget(null);
     setConfirmDelete(false);
     loadGroups();
-    showToast('success', '削除しました');
+    showToast('success', targetIsPreset ? 'はじめの 問題に もどしました' : '削除しました');
   };
 
   const copyShareCode = (e, name) => {
@@ -2840,19 +2979,19 @@ const ManagerView = ({ setView }) => {
         <AnimatePresence>
           {confirmDelete && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="さくじょの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={deleteDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={targetIsPreset ? 'もとにもどすかの かくにん' : 'さくじょの かくにん'} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
                 <Trash2 size={48} className="text-[var(--primary-d)] mb-3" />
-                <h3 className="font-black text-xl text-[var(--text)] mb-6 leading-snug">「{editTarget}」を<br />本当に削除しますか？</h3>
+                <h2 className="font-black text-xl text-[var(--text)] mb-6 leading-snug">「{editTarget}」を<br />{targetIsPreset ? 'はじめの 問題に もどしますか？' : '本当に削除しますか？'}</h2>
                 <div className="flex w-full gap-3">
-                  <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(false); }}>やめる</MotionButton>
-                  <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); executeDelete(); }}>削除する</MotionButton>
+                  <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(false); }}>やめる</MotionButton>
+                  <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); executeDelete(); }}>{targetIsPreset ? 'もどす' : '削除する'}</MotionButton>
                 </div>
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="font-bold text-xl flex items-center gap-2 text-[var(--text)]"><Settings size={20} /> コース編集</h3>{editTarget && <button className="text-[var(--on-primary)] font-bold border-2 border-[var(--primary)] bg-[var(--primary)] rounded-xl px-4 py-1.5 text-sm" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(true); }}>削除</button>}</div>
+        <div className="flex justify-between items-center mb-4 shrink-0"><h2 className="font-bold text-xl flex items-center gap-2 text-[var(--text)]"><Settings size={20} /> コース編集</h2>{canRemove && <button className="tap-44 text-[var(--on-primary)] font-bold border-2 border-[var(--primary)] bg-[var(--primary)] rounded-xl px-4 py-1.5 text-sm" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(true); }}>{targetIsPreset ? 'もとにもどす' : '削除'}</button>}</div>
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl p-2 mb-4 shrink-0 shadow-sm"><input type="text" className="w-full font-bold text-lg p-2 outline-none bg-transparent text-[var(--text)]" placeholder="コース名 (例: 1年_たしざん)" value={editName} onChange={e => setEditName(e.target.value)} /></div>
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl flex flex-col flex-grow overflow-hidden mb-4 shadow-sm">
           <div className="bg-[var(--bg)] flex p-3 border-b-2 border-[var(--text)] font-bold text-sm text-[var(--text)] opacity-80 shrink-0"><div className="flex-grow px-2">問題</div><div className="w-24 px-2 text-center border-l-2 border-[var(--text)]">答え</div><div className="w-12 border-l-2 border-[var(--text)]"></div></div>
@@ -2860,9 +2999,9 @@ const ManagerView = ({ setView }) => {
             <AnimatePresence>
               {probs.map((p, i) => (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} key={i} className="flex border-b-2 border-dashed border-[var(--bg)] overflow-hidden">
-                  <input type="text" className="flex-grow p-3 outline-none font-bold bg-transparent text-[var(--text)]" placeholder="問題" value={p.q} onChange={e => { const n = [...probs]; n[i] = { ...n[i], q: e.target.value }; setProbs(n); }} />
-                  <input type="text" className="w-24 p-3 outline-none border-l-2 border-dashed border-[var(--bg)] text-center font-bold text-[var(--primary-d)] bg-transparent" placeholder="答え" value={p.a} onChange={e => { const n = [...probs]; n[i] = { ...n[i], a: e.target.value }; setProbs(n); }} />
-                  <button className="w-12 border-l-2 border-dashed border-[var(--bg)] text-[var(--text)] opacity-80 hover:opacity-100 flex items-center justify-center transition-opacity" onClick={() => { audioCtrl.playSE('click'); setProbs(probs.filter((_, idx) => idx !== i)) }}><XCircle size={20} /></button>
+                  <input type="text" aria-label={`${i + 1}もんめの 問題`} className="flex-grow p-3 outline-none font-bold bg-transparent text-[var(--text)]" placeholder="問題" value={p.q} onChange={e => { const n = [...probs]; n[i] = { ...n[i], q: e.target.value }; setProbs(n); }} />
+                  <input type="text" aria-label={`${i + 1}もんめの 答え`} className="w-24 p-3 outline-none border-l-2 border-dashed border-[var(--bg)] text-center font-bold text-[var(--primary-d)] bg-transparent" placeholder="答え" value={p.a} onChange={e => { const n = [...probs]; n[i] = { ...n[i], a: e.target.value }; setProbs(n); }} />
+                  <button type="button" aria-label={`${i + 1}もんめを けす`} className="w-12 border-l-2 border-dashed border-[var(--bg)] text-[var(--text)] opacity-80 hover:opacity-100 flex items-center justify-center transition-opacity" onClick={() => { audioCtrl.playSE('click'); setProbs(probs.filter((_, idx) => idx !== i)) }}><XCircle size={20} aria-hidden="true" /></button>
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -2878,7 +3017,7 @@ const ManagerView = ({ setView }) => {
   }
   return (
     <div className="flex flex-col h-[70vh]">
-      <h3 className="font-bold text-xl text-center mb-4 shrink-0 flex items-center justify-center gap-2 text-[var(--text)]"><Settings size={24} /> 管理・共有</h3>
+      <h2 className="font-bold text-xl text-center mb-4 shrink-0 flex items-center justify-center gap-2 text-[var(--text)]"><Settings size={24} /> 管理・共有</h2>
       <div className="shrink-0 mb-3">
         <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar sm:flex-wrap sm:overflow-visible sm:pb-0">
           {grades.map(grade => <button key={grade} onClick={() => { audioCtrl.playSE('click'); setSelectedGrade(grade); }} className={`tap-44 px-4 py-2 rounded-full whitespace-nowrap font-bold text-sm border-[3px] transition-colors flex-shrink-0 ${selectedGrade === grade ? 'bg-[var(--text)] border-[var(--text)] text-[var(--panel)] shadow-sm' : 'bg-[var(--panel)] border-[var(--text)] text-[var(--text)]'}`}>{grade}</button>)}
@@ -2886,9 +3025,10 @@ const ManagerView = ({ setView }) => {
       </div>
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl flex-grow overflow-y-auto mb-4 shadow-sm p-2">
         {filteredGroups.length === 0 ? <div className="text-center text-[var(--text)] opacity-80 py-10 font-bold">コースがありません</div> : filteredGroups.map(g => (
-          <div key={g.name} className="p-3 border-b border-dashed border-[var(--bg)] cursor-pointer flex justify-between items-center transition-colors rounded-lg group" onClick={() => { audioCtrl.playSE('click'); openEdit(g.name) }}>
-            <div className="flex flex-col"><span className="font-bold text-[var(--text)]">{g.name}</span><span className="text-[var(--text)] opacity-80 text-xs">{g.count}問</span></div>
-            <button className="bg-[var(--bg)] hover:bg-[var(--secondary)] hover:text-[var(--on-secondary)] text-[var(--text)] p-2 rounded-xl transition-colors border-2 border-[var(--text)] shadow-sm tap-44" onClick={(e) => copyShareCode(e, g.name)} title="共有コードをコピー"><Share2 size={18} /></button>
+          <div key={g.name} className="p-3 border-b border-dashed border-[var(--bg)] flex justify-between items-center gap-2 transition-colors rounded-lg group">
+            {/* 以前は行の div に onClick をつけていて、キーボードでは開けなかった */}
+            <button type="button" className="flex flex-col flex-grow text-left min-h-[44px] justify-center rounded-lg" onClick={() => { audioCtrl.playSE('click'); openEdit(g.name) }}><span className="font-bold text-[var(--text)]">{g.name}</span><span className="text-[var(--text)] opacity-80 text-xs">{g.count}問</span></button>
+            <button type="button" aria-label={`「${g.name}」の きょうゆうコードを コピー`} className="shrink-0 bg-[var(--bg)] hover:bg-[var(--secondary)] hover:text-[var(--on-secondary)] text-[var(--text)] p-2 rounded-xl transition-colors border-2 border-[var(--text)] shadow-sm tap-44" onClick={(e) => copyShareCode(e, g.name)} title="共有コードをコピー"><Share2 size={18} /></button>
           </div>
         ))}
       </div>
@@ -2971,21 +3111,21 @@ const ImportView = ({ setView }) => {
 
   return (
     <div className="flex flex-col h-[70vh]">
-      <h3 className="font-bold text-xl text-center mb-4 shrink-0 flex items-center justify-center gap-2 text-[var(--text)]"><Download size={24} /> コースを追加</h3>
+      <h2 className="font-bold text-xl text-center mb-4 shrink-0 flex items-center justify-center gap-2 text-[var(--text)]"><Download size={24} /> コースを追加</h2>
       <div className="flex gap-2 mb-4 shrink-0 bg-[var(--text)] p-1 rounded-xl">
-        <button onClick={() => setMode('code')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition-colors ${mode === 'code' ? 'bg-[var(--panel)] text-[var(--text)]' : 'text-[var(--panel)] opacity-60'}`}>共有コード</button>
-        <button onClick={() => setMode('ai')} className={`flex-1 py-2 rounded-lg font-bold text-sm transition-colors ${mode === 'ai' ? 'bg-[var(--panel)] text-[var(--text)]' : 'text-[var(--panel)] opacity-60'}`}>AI(CSV)</button>
+        <button type="button" aria-pressed={mode === 'code'} onClick={() => setMode('code')} className={`flex-1 min-h-[44px] py-2 rounded-lg font-bold text-sm transition-colors ${mode === 'code' ? 'bg-[var(--panel)] text-[var(--text)]' : 'text-[var(--panel)] opacity-80'}`}>共有コード</button>
+        <button type="button" aria-pressed={mode === 'ai'} onClick={() => setMode('ai')} className={`flex-1 min-h-[44px] py-2 rounded-lg font-bold text-sm transition-colors ${mode === 'ai' ? 'bg-[var(--panel)] text-[var(--text)]' : 'text-[var(--panel)] opacity-80'}`}>AI(CSV)</button>
       </div>
       <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-[20px] shadow-sm flex-grow flex flex-col p-5 mb-4 gap-4">
         <p className="text-sm font-bold text-[var(--text)] opacity-80 shrink-0">{mode === 'code' ? 'もらった「共有コード」を貼り付けてください。' : 'AI(ChatGPT等)が作った「問題,答え」のリストを貼り付けてください。'}</p>
 
         {mode === 'ai' && (
-          <button className="border-[3px] border-[var(--secondary)] text-[var(--secondary-d)] font-bold rounded-xl py-2 text-sm shrink-0 active:scale-95 transition-transform" onClick={copyPrompt}>
+          <button type="button" className="min-h-[44px] border-[3px] border-[var(--secondary)] text-[var(--secondary-d)] font-bold rounded-xl py-2 text-sm shrink-0 active:scale-95 transition-transform" onClick={copyPrompt}>
             AIへの指示(プロンプト)をコピー
           </button>
         )}
 
-        <textarea className="flex-grow border-[3px] border-[var(--text)] rounded-xl p-3 resize-none font-mono text-sm outline-none bg-[var(--bg)] text-[var(--text)]" value={text} onChange={e => setText(e.target.value)}></textarea>
+        <textarea aria-label={mode === 'code' ? '共有コード' : '問題と答えのリスト（CSV）'} className="flex-grow border-[3px] border-[var(--text)] rounded-xl p-3 resize-none font-mono text-sm outline-none bg-[var(--bg)] text-[var(--text)]" value={text} onChange={e => setText(e.target.value)}></textarea>
         <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] py-4 shrink-0 border-[3px] border-[var(--text)]" onClick={process}>読み込んで追加</MotionButton>
       </div>
       <button className="tap-44 text-[var(--text)] opacity-80 font-bold py-3 shrink-0 pb-4" onClick={() => { audioCtrl.playSE('click'); setView('manager') }}>もどる</button>
@@ -3010,6 +3150,43 @@ export default function App() {
   const [state, setState] = useState({ problemSet: [], timeLimitSec: 0, courseName: '', finalScore: 0, finalCombo: 0, earnedExp: 0, previousExp: 0, gameMode: 'SCORE_ATTACK', mistakes: [] });
   const [stats, setStats] = useState(() => StorageAPI.getStats());
   const [resumeData, setResumeData] = useState(() => StorageAPI.getResume());
+
+  // どうぐの判定を、最初の画面が出たあとで読んでおく（ゲームに入ったとき、すぐ電球を出せるように）
+  useEffect(() => {
+    const id = setTimeout(() => { loadDetect().catch(() => {}); }, 1500);
+    return () => clearTimeout(id);
+  }, []);
+
+  // タブを開いたまま日がかわったら、ミッションと周回の数をその日のものにする。
+  // 以前はアプリを開いたときにしか日をたしかめず、前の日のミッションが残ったまま遊んでも進まなかった。
+  // 画面にもどったとき・真夜中ちょうど（タブを開いたまま）に たしかめる
+  const statsRef = useRef(stats);
+  useEffect(() => { statsRef.current = stats; }, [stats]);
+  useEffect(() => {
+    let timer = null;
+    const check = () => {
+      const prev = statsRef.current;
+      const next = StorageAPI.rollover(prev);
+      if (next !== prev) { StorageAPI.saveStats(next); statsRef.current = next; setStats(next); }
+    };
+    const armMidnight = () => {
+      clearTimeout(timer);
+      const now = new Date();
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 2);
+      timer = setTimeout(() => { check(); armMidnight(); }, next - now);
+    };
+    const onVisible = () => { if (!document.hidden) { check(); armMidnight(); } };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    window.addEventListener('pageshow', onVisible);
+    armMidnight();
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      window.removeEventListener('pageshow', onVisible);
+    };
+  }, []);
   // 提示モードと「えんしゅつをへらす」の状態。framer-motion にも伝える
   const { reduceFx } = usePresentation();
 
@@ -3044,6 +3221,32 @@ export default function App() {
   const [peerState, setPeerState] = useState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {}, pending: {}, acceptUntil: 0, approved: false });
   const peerStateRef = useRef(peerState);
   useEffect(() => { peerStateRef.current = peerState; }, [peerState]);
+
+  // みんなであそぶ: メンバーのスコアは、変わるたびではなく まとめて配る。
+  // 以前は だれか1人が正解するたびに、リーダーが全員ぶんの一覧（40人で1通 約7.9KB）を全員へ送っていた。
+  // 40人が2秒に1問ずつ解くと、リーダーの端末から毎秒 約6MB。受けた側も そのたびに画面全体を描きなおした。
+  // いまは1秒に1回まで（40人で毎秒 約320KB）。ランキングは上位5人を出すだけなので、1秒おくれても困らない
+  const scoresBroadcastRef = useRef({ last: 0, timer: null });
+  const sendScoresNow = useCallback(() => {
+    const b = scoresBroadcastRef.current;
+    b.timer = null; b.last = Date.now();
+    const cur = peerStateRef.current;
+    if (cur.role === 'host') sendToApproved(cur, { type: 'participants_update', data: cur.participants });
+  }, []);
+  // 予約してあれば、いますぐ配る（リーダーのゲームが終わるとき）
+  const flushScoresBroadcast = useCallback(() => {
+    const b = scoresBroadcastRef.current;
+    if (b.timer === null) return;
+    clearTimeout(b.timer);
+    sendScoresNow();
+  }, [sendScoresNow]);
+  const scheduleScoresBroadcast = useCallback(() => {
+    const b = scoresBroadcastRef.current;
+    if (b.timer !== null) return; // もう予約してある。送るときに その時点の最新を配る
+    // 少なくとも 100ms は待つ（そのあいだに新しいスコアが peerStateRef に入る）
+    b.timer = setTimeout(sendScoresNow, Math.max(SCORES_MIN_WAIT_MS, b.last + SCORES_BROADCAST_MS - Date.now()));
+  }, [sendScoresNow]);
+  useEffect(() => () => { const b = scoresBroadcastRef.current; if (b.timer !== null) clearTimeout(b.timer); }, []);
   // ルームに入りなおすたびに増える通し番号。退出後に古い接続のイベントで画面が動かないようにするための世代管理
   const peerSessionRef = useRef(0);
   // ホストがメンバーごとに「最後に反応があった時刻」を持ち、無反応が続いたら抜けたとみなす
@@ -3710,12 +3913,12 @@ export default function App() {
             showToast('success', `${name} さんが 入りたいそうです`);
           }
         } else if (rawData.type === 'score_update') {
+          if (!peerStateRef.current.participants[conn.peer]) return;
           setPeerState(p => {
             if (!p.participants[conn.peer]) return p;
-            const newP = { ...p, participants: { ...p.participants, [conn.peer]: { ...p.participants[conn.peer], score: rawData.data.score, combo: rawData.data.combo } } };
-            sendToApproved(newP, { type: 'participants_update', data: newP.participants });
-            return newP;
+            return { ...p, participants: { ...p.participants, [conn.peer]: { ...p.participants[conn.peer], score: rawData.data.score, combo: rawData.data.combo } } };
           });
+          scheduleScoresBroadcast();
         } else if (!peerStateRef.current.participants[conn.peer]) {
           // ここから下はゲーム中の操作。まだ許可していない端末からのものは受けつけない
           return;
@@ -3915,6 +4118,7 @@ export default function App() {
 
   // ルームからぬけるときは、まちがえて全員のへやを閉じてしまわないように一度たしかめる
   const [leaveConfirm, setLeaveConfirm] = useState(false);
+  const leaveDialogRef = useModalFocus(leaveConfirm);
   // ルームが先に閉じた(リーダーが解散した等)ときは、たしかめの表示も引っこめる
   useEffect(() => { if (!peerState.role) setLeaveConfirm(false); }, [peerState.role]);
   useBackHandler(leaveConfirm, () => { audioCtrl.playSE('click'); setLeaveConfirm(false); return true; }, BACK_PRIORITY.overlay);
@@ -3948,59 +4152,6 @@ export default function App() {
     else audioCtrl.stopBGM();
   }, [view, isMuted]);
 
-  const GlobalStyle = () => {
-    let themeVars = `
-      --bg: #fffbf0; --primary: #FF6B6B; --secondary: #4ECDC4; --accent: #FFE66D; --text: #292f36; --panel: #ffffff; --primary-d: #e50000; --secondary-d: #247f79; --on-accent: #292f36; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'dark') themeVars = `--bg: #0f172a; --primary: #f43f5e; --secondary: #0ea5e9; --accent: #f59e0b; --text: #e2e8f0; --panel: #1e293b; --primary-d: #f65c76; --secondary-d: #0ea5e9; --on-accent: #111111; --on-primary: #111111; --on-secondary: #1e293b;`;
-    if (stats.theme === 'sakura') themeVars = `--bg: #fdf2f8; --primary: #d946ef; --secondary: #f472b6; --accent: #fbcfe8; --text: #831843; --panel: #ffffff; --primary-d: #ba12d4; --secondary-d: #d31076; --on-accent: #831843; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'ocean') themeVars = `--bg: #f0f9ff; --primary: #0284c7; --secondary: #38bdf8; --accent: #7dd3fc; --text: #0c4a6e; --panel: #ffffff; --primary-d: #0277b3; --secondary-d: #0678ab; --on-accent: #0c4a6e; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'forest') themeVars = `--bg: #f0fdf4; --primary: #16a34a; --secondary: #f59e0b; --accent: #bbf7d0; --text: #14532d; --panel: #ffffff; --primary-d: #11813b; --secondary-d: #9e6506; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'space') themeVars = `--bg: #17153B; --primary: #c084fc; --secondary: #2dd4bf; --accent: #4338ca; --text: #e2e8f0; --panel: #2e2b5f; --primary-d: #c084fc; --secondary-d: #2dd4bf; --on-accent: #e2e8f0; --on-primary: #2e2b5f; --on-secondary: #2e2b5f;`;
-    if (stats.theme === 'gold') themeVars = `--bg: #fefce8; --primary: #b45309; --secondary: #eab308; --accent: #fef08a; --text: #713f12; --panel: #ffffff; --primary-d: #b45309; --secondary-d: #8f6d05; --on-accent: #713f12; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'mint') themeVars = `--bg: #f0fdfa; --primary: #14b8a6; --secondary: #2dd4bf; --accent: #ccfbf1; --text: #134e4a; --panel: #ffffff; --primary-d: #0e7e72; --secondary-d: #1a7f72; --on-accent: #134e4a; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'sunset') themeVars = `--bg: #fff7ed; --primary: #ea580c; --secondary: #f97316; --accent: #fcd34d; --text: #7c2d12; --panel: #ffffff; --primary-d: #c3490a; --secondary-d: #bb5005; --on-accent: #7c2d12; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'cyber') themeVars = `--bg: #000000; --primary: #39ff14; --secondary: #ff00ff; --accent: #0ff0fc; --text: #ffffff; --panel: #111111; --primary-d: #39ff14; --secondary-d: #ff00ff; --on-accent: #111111; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'choco') themeVars = `--bg: #fdf8f5; --primary: #92400e; --secondary: #d97706; --accent: #fde68a; --text: #451a03; --panel: #ffffff; --primary-d: #92400e; --secondary-d: #aa5d05; --on-accent: #451a03; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'retro') themeVars = `--bg: #f5eedc; --primary: #c25953; --secondary: #6a7f72; --accent: #e0b469; --text: #3d312d; --panel: #faf6ee; --primary-d: #b44640; --secondary-d: #5c6e63; --on-accent: #3d312d; --on-primary: #000000; --on-secondary: #000000;`;
-    if (stats.theme === 'monochrome') themeVars = `--bg: #f8f9fa; --primary: #000000; --secondary: #666666; --accent: #d4d4d4; --text: #1a1a1a; --panel: #ffffff; --primary-d: #000000; --secondary-d: #666666; --on-accent: #1a1a1a; --on-primary: #ffffff; --on-secondary: #ffffff;`;
-    if (stats.theme === 'lavender') themeVars = `--bg: #f5f3ff; --primary: #7c3aed; --secondary: #a78bfa; --accent: #ddd6fe; --text: #4c1d95; --panel: #ffffff; --primary-d: #7c3aed; --secondary-d: #774bf7; --on-accent: #4c1d95; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'candy') themeVars = `--bg: #fff0f6; --primary: #ec4899; --secondary: #60a5fa; --accent: #a5f3fc; --text: #9d174d; --panel: #ffffff; --primary-d: #d21673; --secondary-d: #0768e0; --on-accent: #9d174d; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'soda') themeVars = `--bg: #eff6ff; --primary: #2563eb; --secondary: #22d3ee; --accent: #bfdbfe; --text: #1e3a8a; --panel: #ffffff; --primary-d: #2563eb; --secondary-d: #0b7a8b; --on-accent: #1e3a8a; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'matcha') themeVars = `--bg: #f7fee7; --primary: #4d7c0f; --secondary: #84cc16; --accent: #d9f99d; --text: #365314; --panel: #ffffff; --primary-d: #4d7c0f; --secondary-d: #517e0e; --on-accent: #365314; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'ruby') themeVars = `--bg: #fff1f2; --primary: #be123c; --secondary: #fb7185; --accent: #fecdd3; --text: #881337; --panel: #ffffff; --primary-d: #be123c; --secondary-d: #dc0625; --on-accent: #881337; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'hero') themeVars = `--bg: #f8fafc; --primary: #dc2626; --secondary: #2563eb; --accent: #fde047; --text: #111827; --panel: #ffffff; --primary-d: #dc2626; --secondary-d: #2563eb; --on-accent: #111827; --on-primary: #ffffff; --on-secondary: #ffffff;`;
-    if (stats.theme === 'aurora') themeVars = `--bg: #042f2e; --primary: #34d399; --secondary: #818cf8; --accent: #115e59; --text: #ccfbf1; --panel: #134e4a; --primary-d: #34d399; --secondary-d: #aab1fa; --on-accent: #ccfbf1; --on-primary: #134e4a; --on-secondary: #111111;`;
-    if (stats.theme === 'hanabi') themeVars = `--bg: #1e1b4b; --primary: #f472b6; --secondary: #facc15; --accent: #6d28d9; --text: #ede9fe; --panel: #312e81; --primary-d: #f57ebc; --secondary-d: #facc15; --on-accent: #ede9fe; --on-primary: #111111; --on-secondary: #312e81;`;
-    if (stats.theme === 'midnight') themeVars = `--bg: #020617; --primary: #38bdf8; --secondary: #818cf8; --accent: #1e293b; --text: #e0f2fe; --panel: #0f172a; --primary-d: #38bdf8; --secondary-d: #818cf8; --on-accent: #e0f2fe; --on-primary: #0f172a; --on-secondary: #0f172a;`;
-    if (stats.theme === 'ninja') themeVars = `--bg: #18181b; --primary: #ef4444; --secondary: #a1a1aa; --accent: #3f3f46; --text: #f4f4f5; --panel: #27272a; --primary-d: #f15e5e; --secondary-d: #a1a1aa; --on-accent: #f4f4f5; --on-primary: #111111; --on-secondary: #27272a;`;
-    if (stats.theme === 'royal') themeVars = `--bg: #faf5ff; --primary: #7e22ce; --secondary: #eab308; --accent: #e9d5ff; --text: #581c87; --panel: #ffffff; --primary-d: #7e22ce; --secondary-d: #8c6b05; --on-accent: #581c87; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'rainbow') themeVars = `--bg: #fdf4ff; --primary: #e11d48; --secondary: #0ea5e9; --accent: #fde047; --text: #3b0764; --panel: #ffffff; --primary-d: #da1c46; --secondary-d: #0a77a8; --on-accent: #3b0764; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'sunflower') themeVars = `--bg: #fefce8; --primary: #ca8a04; --secondary: #22c55e; --accent: #fde047; --text: #422006; --panel: #ffffff; --primary-d: #986803; --secondary-d: #17843f; --on-accent: #422006; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'watermelon') themeVars = `--bg: #f0fdf4; --primary: #ef4444; --secondary: #22c55e; --accent: #fecaca; --text: #14532d; --panel: #ffffff; --primary-d: #e21313; --secondary-d: #16823e; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'milktea') themeVars = `--bg: #f5f0e8; --primary: #a16207; --secondary: #78716c; --accent: #e7d8c0; --text: #44403c; --panel: #fffaf3; --primary-d: #9a5e07; --secondary-d: #716b66; --on-accent: #44403c; --on-primary: #fffaf3; --on-secondary: #fffaf3;`;
-    if (stats.theme === 'tropical') themeVars = `--bg: #ecfeff; --primary: #f59e0b; --secondary: #06b6d4; --accent: #a7f3d0; --text: #164e63; --panel: #ffffff; --primary-d: #9e6506; --secondary-d: #047d91; --on-accent: #164e63; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'halloween') themeVars = `--bg: #1c1917; --primary: #f97316; --secondary: #a855f7; --accent: #78350f; --text: #fed7aa; --panel: #292524; --primary-d: #f97316; --secondary-d: #b36bf8; --on-accent: #fed7aa; --on-primary: #292524; --on-secondary: #111111;`;
-    if (stats.theme === 'christmas') themeVars = `--bg: #fef2f2; --primary: #dc2626; --secondary: #16a34a; --accent: #fde68a; --text: #7f1d1d; --panel: #ffffff; --primary-d: #d82323; --secondary-d: #117f3a; --on-accent: #7f1d1d; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'prism') themeVars = `--bg: #f5fffa; --primary: #8b5cf6; --secondary: #ec4899; --accent: #99f6e4; --text: #1e1b4b; --panel: #ffffff; --primary-d: #8250f5; --secondary-d: #db1778; --on-accent: #1e1b4b; --on-primary: #000000; --on-secondary: #111111;`;
-
-    return (
-      <style>{`
-        /* フォントの読みこみは main.jsx (同梱の woff2)。外部への通信はない */
-        :root { ${themeVars} }
-        body { font-family: var(--font-ui); background-color: var(--bg); color: var(--text); touch-action: manipulation; transition: background-color 0.3s ease; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        ::selection { background-color: var(--accent); color: var(--text); }
-        ruby { ruby-align: center; }
-        ruby rt { font-size: 0.5em; font-weight: 500; letter-spacing: 0; }
-        .ruby-text { line-height: 1.8; }
-        .avatar-fx { animation: fxTwinkle 1.8s ease-in-out infinite; }
-        .avatar-fx-delay { animation: fxTwinkle 1.8s ease-in-out 0.6s infinite; }
-        .avatar-fx-delay2 { animation: fxTwinkle 1.8s ease-in-out 1.2s infinite; }
-        @keyframes fxTwinkle { 0%, 100% { opacity: 0.25; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1.2); } }
-      `}</style>
-    );
-  };
 
   return (
     // reducedMotion="user" は端末の「視差効果を減らす」を framer-motion に守らせる指定。
@@ -4012,17 +4163,20 @@ export default function App() {
       className="flex flex-col h-[100dvh] w-full bg-[var(--bg)] relative overflow-hidden transition-colors duration-500"
       style={{ paddingLeft: 'var(--safe-l)', paddingRight: 'var(--safe-r)' }}
     >
-      <GlobalStyle />
+      <GlobalStyle theme={stats.theme} />
       {view !== 'game' && (
         <header
           className="flex-shrink-0 bg-[var(--panel)]/90 backdrop-blur border-b-[4px] border-[var(--accent)] py-3 px-5 flex justify-between items-center z-50 sticky top-0 shadow-sm transition-colors duration-500"
           // 上端のノッチ・ステータスバーにタイトルが潜りこまないようにする
           style={{ paddingTop: 'calc(0.75rem + var(--safe-t))' }}
         >
-          <div className="flex items-center cursor-pointer gap-2" onClick={handleHomeClick}>
-            <div className="bg-[var(--secondary)] p-1.5 rounded-lg text-[var(--on-secondary)] shadow-sm border-2 border-[var(--text)]"><Calculator size={22} strokeWidth={3} /></div>
-            <h1 className="text-2xl font-black text-[var(--text)] tracking-wide">Qalc<span className="text-[var(--primary-d)]">.</span></h1>
-          </div>
+          {/* 以前は div に onClick をつけていて、キーボードではホームにもどれなかった */}
+          <h1 className="m-0">
+            <button type="button" aria-label="Qalc ホームへ" className="flex items-center cursor-pointer gap-2 rounded-lg min-h-[44px]" onClick={handleHomeClick}>
+              <span aria-hidden="true" className="bg-[var(--secondary)] p-1.5 rounded-lg text-[var(--on-secondary)] shadow-sm border-2 border-[var(--text)]"><Calculator size={22} strokeWidth={3} /></span>
+              <span className="text-2xl font-black text-[var(--text)] tracking-wide">Qalc<span className="text-[var(--primary-d)]">.</span></span>
+            </button>
+          </h1>
           <div className="flex items-center gap-3">
             {peerState.role && <span className="font-bold text-xs bg-[var(--accent)] px-2 py-1 rounded border-2 border-[var(--text)]">{peerState.role === 'host' ? 'リーダー' : 'メンバー'}</span>}
             {/* ホーム画面に置くための案内。入れ終わったら自分で消える */}
@@ -4054,7 +4208,7 @@ export default function App() {
           {view === 'clientJoin' && <PageWrapper key="clientJoin"><ClientJoinView initClient={initClient} urlHostId={urlHostId} setView={setView} /></PageWrapper>}
           {view === 'clientWait' && <PageWrapper key="clientWait"><ClientWaitView peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
 
-          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} sendTerrSpecial={sendTerrSpecial} collectTerritoryResult={collectTerritoryResult} leaderFinishRef={leaderFinishRef} /></PageWrapper>}
+          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} sendTerrSpecial={sendTerrSpecial} collectTerritoryResult={collectTerritoryResult} leaderFinishRef={leaderFinishRef} scheduleScoresBroadcast={scheduleScoresBroadcast} flushScoresBroadcast={flushScoresBroadcast} /></PageWrapper>}
           {view === 'result' && <PageWrapper key="result"><ResultView state={state} setView={setView} peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
           {view === 'manager' && <PageWrapper key="manager"><ManagerView setView={setView} /></PageWrapper>}
           {view === 'import' && <PageWrapper key="import"><ImportView setView={setView} /></PageWrapper>}
@@ -4106,16 +4260,16 @@ export default function App() {
       <AnimatePresence>
         {leaveConfirm && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="へやから 出るかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} ref={leaveDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="へやから 出るかの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
               <Users size={48} className="text-[var(--primary-d)] mb-3" />
-              <h3 className="font-black text-xl text-[var(--text)] mb-2 ruby-text">へやから<R c="出" r="で" />ますか？</h3>
+              <h2 className="font-black text-xl text-[var(--text)] mb-2 ruby-text">へやから<R c="出" r="で" />ますか？</h2>
               <p className="text-sm text-[var(--text)] opacity-80 mb-5 ruby-text">
                 {peerState.role === 'host'
                   ? <>リーダーが<R c="出" r="で" />ると、みんなのへやも<R c="終" r="お" />わります</>
                   : <>ホーム<R c="画" r="が" /><R c="面" r="めん" />にもどります</>}
               </p>
               <div className="flex w-full gap-3">
-                <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => setLeaveConfirm(false)}>やめる</MotionButton>
+                <MotionButton data-autofocus className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => setLeaveConfirm(false)}>やめる</MotionButton>
                 <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 flex-1 ruby-text" onClick={() => { setLeaveConfirm(false); leaveRoom(); }}><R c="出" r="で" />る</MotionButton>
               </div>
             </motion.div>

@@ -255,7 +255,7 @@ export const BossPanel = ({ raidState, compact = false }) => {
   const pops = popsRef.current.filter(p => now - p.at < 900);
 
   return (
-    <div className={`flex items-center gap-3 px-3 ${compact ? 'py-1' : 'py-2'} shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm relative overflow-hidden`}>
+    <div className={`flex items-center gap-3 px-3 ${compact ? 'py-1' : 'py-2 short:py-1'} shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm relative overflow-hidden`}>
       {cheerActive && <motion.div className="absolute inset-0 bg-[var(--accent)] pointer-events-none" animate={{ opacity: [0.1, 0.35, 0.1] }} transition={{ duration: 0.8, repeat: Infinity }} />}
       {enraged && <motion.div className="absolute inset-0 bg-red-500 pointer-events-none" animate={{ opacity: [0.05, 0.2, 0.05] }} transition={{ duration: 0.7, repeat: Infinity }} />}
 
@@ -264,9 +264,10 @@ export const BossPanel = ({ raidState, compact = false }) => {
           key={stage}
           animate={telegraphActive ? { x: [0, -3, 3, 0], scale: [1, 1.04, 1] } : {}}
           transition={{ duration: 0.28, repeat: telegraphActive ? Infinity : 0 }}
-          className="shrink-0 relative"
+          className="shrink-0 relative tiny:hidden"
         >
-          <BossAvatar bossIndex={bossIndex} animState={animState} superMode={superMode} enraged={enraged} className="w-24 h-24 md:w-28 md:h-28" />
+          {/* 高さの足りない画面では小さく、さらに低い画面では出さない（テンキーの場所をあける） */}
+          <BossAvatar bossIndex={bossIndex} animState={animState} superMode={superMode} enraged={enraged} className="w-24 h-24 md:w-28 md:h-28 short:w-16 short:h-16" />
 
           {/* ためこみ(テレグラフ)の警告リング */}
           {telegraphActive && (
@@ -386,7 +387,7 @@ export const SupportButton = ({ gauge, onFire }) => {
           strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - ratio)} style={{ transition: 'stroke-dashoffset 0.3s' }} />
       </svg>
       <Sparkles size={20} className={ready ? 'text-[var(--primary-d)]' : 'text-[var(--text)] opacity-80'} />
-      <span className={`text-[9px] font-black ${ready ? 'text-[var(--text)]' : 'text-[var(--text)] opacity-80'}`}>おうえん</span>
+      <span className={`text-[10px] font-black ${ready ? 'text-[var(--text)]' : 'text-[var(--text)] opacity-80'}`}>おうえん</span>
     </motion.button>
   );
 };

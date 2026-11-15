@@ -72,7 +72,7 @@ export function topMissedItems(records, limit = 3, days = 14) {
   const counts = new Map();
   withinDays(records, days).forEach((r) => {
     if (r.multiplayer) return; // 妨害のあるモードは「にがて」の証拠にしない
-    (r.items || []).forEach((it) => {
+    (Array.isArray(r.items) ? r.items : []).forEach((it) => {
       if (!it || it.firstTry || typeof it.q !== 'string') return;
       if (it.q.startsWith('w-') || it.q.startsWith('q-')) return; // 文章題（ハッシュID）は式として見せられない
       counts.set(it.q, (counts.get(it.q) || 0) + 1);
