@@ -70,6 +70,7 @@ import {
 import { getRandomMissions } from './data/missions.js';
 // 出題順をまぜる。sort(() => Math.random() - 0.5) は かたよる（random.js の説明）
 import { shuffle } from './random.js';
+import { normalizeStats, normalizeMistakes, normalizeResume } from './statsStore.js';
 // コースの共有コード・CSV 取りこみ・「テンキーで打てる答えか」の検査（node でテストしている）
 import {
   encodeCourse, decodeCourse, parseProblemText, validateProblems, uniqueCourseName,
@@ -308,20 +309,17 @@ const StorageAPI = {
   },
 
   getStats: () => {
-    let stats = StorageAPI.safeGet('qalc_stats');
-    if (!stats || !stats.inventory) {
-      stats = {
-        totalExp: parseInt(window.localStorage.getItem('qalc_exp') || '0', 10),
-        streak: parseInt(window.localStorage.getItem('qalc_streak') || '0', 10),
-        lastDate: window.localStorage.getItem('qalc_last_date') || '',
-        maxComboRecord: 0, suddenDeathRecord: 0, timeAttackRecord: 0, bossRaidRecord: 0,
-        coins: 100, inventory: { bases: ['b_dog'], hats: [], faces: [], props: [], themes: ['default'] },
-        equipped: { base: 'b_dog', hat: null, face: null, prop: null }, theme: 'default', missions: null, daily: {}
-      };
-    }
-    // カテゴリ追加時のマイグレーション: 旧データに新カテゴリのキーを補う
-    stats.inventory = { bases: ['b_dog'], hats: [], faces: [], props: [], themes: ['default'], backgrounds: [], effects: [], titles: [], ...stats.inventory };
-    stats.equipped = { base: 'b_dog', hat: null, face: null, prop: null, background: null, effect: null, title: null, ...stats.equipped };
+    // 成績がひとつのキーにまとまる前の版が、別々に残した値（成績に値が無いときだけ使う）。
+    // 保存が止められている端末では、localStorage にさわるだけで例外になるので try の中で読む。
+    // （以前はここを try の外で読んでいて、そういう端末では画面がまっ白になった）
+    const legacy = {};
+    try {
+      legacy.exp = window.localStorage.getItem('qalc_exp');
+      legacy.streak = window.localStorage.getItem('qalc_streak');
+      legacy.lastDate = window.localStorage.getItem('qalc_last_date');
+    } catch (e) { /* 読めない端末 */ }
+    // 壊れた・古い形の成績でも、読めたものは残して はじめの値でうめる（statsStore.js）
+    const stats = normalizeStats(StorageAPI.safeGet('qalc_stats'), legacy);
     const todayStr = new Date().toLocaleDateString();
     if (!stats.missions || stats.missions.date !== todayStr) {
       stats.missions = {
@@ -329,8 +327,7 @@ const StorageAPI = {
         list: getRandomMissions(3, stats.streak || 0)
       };
     }
-    // マスター判定・周回カウントのマイグレーション（周回カウントは日替わりでリセット）
-    if (!stats.courseStats) stats.courseStats = {};
+    // 周回カウントは日替わりでリセット
     if (!stats.repeat || stats.repeat.date !== todayStr) stats.repeat = { date: todayStr, counts: {} };
     StorageAPI.safeSet('qalc_stats', stats);
     return stats;
@@ -371,7 +368,7 @@ const StorageAPI = {
     return stats;
   },
 
-  getMistakes: () => StorageAPI.safeGet('qalc_mistakes', []),
+  getMistakes: () => normalizeMistakes(StorageAPI.safeGet('qalc_mistakes', [])),
   addMistakes: (newMistakes) => {
     if (newMistakes.length === 0) return;
     let mistakes = StorageAPI.getMistakes(); mistakes = [...newMistakes, ...mistakes];
@@ -436,7 +433,13 @@ const StorageAPI = {
     return ok;
   },
 
-  getResume: () => StorageAPI.safeGet('qalc_resume', null),
+  // 再開できない形の中断データ（古い版・壊れたもの）は消して、ホームに「つづきから」を出さない
+  getResume: () => {
+    const raw = StorageAPI.safeGet('qalc_resume', null);
+    const resume = normalizeResume(raw);
+    if (raw !== null && !resume) StorageAPI.clearResume();
+    return resume;
+  },
   // 失敗したときの文言は呼んだ側(pauseAndExit)が出す
   saveResume: (data) => StorageAPI.safeSet('qalc_resume', data, { quiet: true }),
   clearResume: () => { try { window.localStorage.removeItem('qalc_resume'); } catch (e) { /* ignore */ } }
@@ -465,7 +468,10 @@ const isQuotaError = (e) => !!e && (e.name === 'QuotaExceededError' || e.name ==
 let lastSaveError = null;
 let lastSaveWarnAt = 0;
 const SAVE_WARN_INTERVAL_MS = 8000; // つづけて失敗しても、同じお知らせは8秒に1回にする
-const saveFailureReason = () => (isQuotaError(lastSaveError) ? 'この たんまつの ほぞんする ばしょが いっぱいです。' : '');
+const saveFailureReason = () => (
+  isQuotaError(lastSaveError) ? 'この たんまつの ほぞんする ばしょが いっぱいです。'
+    : lastSaveError?.name === 'SecurityError' ? 'この たんまつでは ほぞんが とめられて います。'
+      : '');
 const warnSaveFailure = (text) => {
   const now = Date.now();
   // 呼んだ側が文言を決めるとき(text あり)は必ず出す。ないときは間引く

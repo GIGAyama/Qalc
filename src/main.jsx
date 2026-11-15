@@ -3,10 +3,14 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
 import { registerServiceWorker } from './pwa.jsx'
+import { AppErrorBoundary } from './ErrorBoundary.jsx'
 
+// どこかで例外が出ても画面をまっ白にしない（ErrorBoundary.jsx）
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-        <App />
+        <AppErrorBoundary>
+            <App />
+        </AppErrorBoundary>
     </React.StrictMode>,
 )
 
