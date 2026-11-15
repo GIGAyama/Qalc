@@ -56,9 +56,13 @@ import {
 // 問題データ・ショップ・ミッションの定義は src/data/ に切りだした。
 // App.jsx が5,000行を超えて追いきれなくなっていたため（Part I §5）。
 import {
-  normalizeStr, getParsedDefaultProblems, courseCompare,
-  DEFAULTS_VERSION, LEGACY_DEFAULT_KEYS,
+  normalizeStr, getParsedDefaultProblems, buildPresetProblems, courseCompare,
+  PRESET_SEED, LEGACY_DEFAULT_KEYS,
 } from './data/problems.js';
+// コースの保存（プリセットは保存せず、自作と書きかえだけ）。node でテストしている
+import {
+  COURSES_KEY, LEGACY_KEY, LEGACY_VERSION_KEY, cleanCourses, migrateLegacyCourses, mergeCourses,
+} from './problemStore.js';
 import {
   SHOP_ITEMS, RARITY_INFO, getRarity, GACHA_COST, GACHA_DUP_REFUND,
   getGachaPool, rollGacha,
@@ -287,6 +291,9 @@ const recordCourseSession = (stats, courseNames, session) => {
   return { newlyMastered };
 };
 
+// 旧データを新しい形へ移したのに保存できなかったとき、開いているあいだだけ使う写し
+let userCoursesCache = null;
+
 const StorageAPI = {
   safeGet: (key, fallback = null) => { try { const v = window.localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; } },
   // 保存できたら true。できなければ画面で知らせて false（quiet のときは呼んだ側が知らせる）。
@@ -376,30 +383,58 @@ const StorageAPI = {
     StorageAPI.safeSet('qalc_mistakes', mistakes.filter(m => !correctSet.has(m.q)));
   },
 
-  getRawData: () => {
-    let data = StorageAPI.safeGet('qalc_problems', {});
-    const parsedDefaults = getParsedDefaultProblems();
-    let isUpdated = false;
-    // 既定コースの改名・内容更新のマイグレーション（自作コースはそのまま残す）
-    if (StorageAPI.safeGet('qalc_defaults_version', 1) < DEFAULTS_VERSION) {
-      LEGACY_DEFAULT_KEYS.forEach(key => { if (data[key]) delete data[key]; });
-      for (const key of Object.keys(parsedDefaults)) data[key] = parsedDefaults[key];
-      StorageAPI.safeSet('qalc_defaults_version', DEFAULTS_VERSION);
-      isUpdated = true;
+  // ── コース ──────────────────────────────────────
+  // プリセットは毎回コードから作り、端末には保存しない。保存するのは自作コースと
+  // 書きかえたプリセットだけ（qalc_courses）。くわしくは problemStore.js
+  getUserCourses: () => {
+    if (userCoursesCache) return { ...userCoursesCache };
+    let courses = cleanCourses(StorageAPI.safeGet(COURSES_KEY, {}));
+    // 旧データ（プリセットまるごとの写し qalc_problems）が残っていれば、新しい形へ移す。
+    // 手を入れていないプリセットの写しは捨て、自作コースと書きかえたプリセットは残す
+    let hasLegacy = false;
+    try { hasLegacy = window.localStorage.getItem(LEGACY_KEY) !== null; } catch (e) { /* 読めない端末 */ }
+    if (hasLegacy) {
+      const moved = migrateLegacyCourses(
+        StorageAPI.safeGet(LEGACY_KEY, {}), courses,
+        getParsedDefaultProblems(), buildPresetProblems(PRESET_SEED + 1), LEGACY_DEFAULT_KEYS,
+      ).courses;
+      courses = moved;
+      if (StorageAPI.safeSet(COURSES_KEY, moved, { quiet: true })) {
+        try { window.localStorage.removeItem(LEGACY_KEY); window.localStorage.removeItem(LEGACY_VERSION_KEY); } catch (e) { /* 次に開いたときにやり直す */ }
+      } else {
+        // 保存できなかった（容量がいっぱい など）。旧データは消さずに残し、
+        // この開いているあいだは移したものを使う（次に開いたときにやり直す）
+        userCoursesCache = moved;
+      }
     }
-    for (const key of Object.keys(parsedDefaults)) { if (!data[key]) { data[key] = parsedDefaults[key]; isUpdated = true; } }
-    if (isUpdated || Object.keys(data).length === 0) StorageAPI.safeSet('qalc_problems', data);
-    return Object.keys(data).length > 0 ? data : parsedDefaults;
+    return courses;
   },
+  getRawData: () => mergeCourses(getParsedDefaultProblems(), StorageAPI.getUserCourses()),
+  // preset: プリセットか / edited: 書きかえたプリセットか（コース管理で「もとにもどす」を出す）
   getProblemGroups: () => {
-    const data = StorageAPI.getRawData();
-    return Object.keys(data).sort(courseCompare).map(key => ({ name: key, count: data[key].length }));
+    const presets = getParsedDefaultProblems();
+    const user = StorageAPI.getUserCourses();
+    const data = mergeCourses(presets, user);
+    return Object.keys(data).sort(courseCompare).map(key => ({
+      name: key, count: data[key].length, preset: key in presets, edited: key in presets && key in user,
+    }));
   },
   getProblemsByGroup: (name) => StorageAPI.getRawData()[name] || [],
   // コースの保存・削除。失敗したときの文言は呼んだ側（コース管理・取りこみ）が出す。
+  // プリセットを保存すると「書きかえ」、書きかえを消すと はじめの問題にもどる。
   // 共有コードの作りかた・読みかたは courseShare.js
-  saveProblemSet: (name, problems) => { const data = StorageAPI.getRawData(); data[name] = problems; return StorageAPI.safeSet('qalc_problems', data, { quiet: true }); },
-  deleteProblemGroup: (name) => { const data = StorageAPI.getRawData(); delete data[name]; return StorageAPI.safeSet('qalc_problems', data, { quiet: true }); },
+  saveProblemSet: (name, problems) => {
+    const user = StorageAPI.getUserCourses(); user[name] = problems;
+    const ok = StorageAPI.safeSet(COURSES_KEY, user, { quiet: true });
+    if (ok) userCoursesCache = null;
+    return ok;
+  },
+  deleteProblemGroup: (name) => {
+    const user = StorageAPI.getUserCourses(); delete user[name];
+    const ok = StorageAPI.safeSet(COURSES_KEY, user, { quiet: true });
+    if (ok) userCoursesCache = null;
+    return ok;
+  },
 
   getResume: () => StorageAPI.safeGet('qalc_resume', null),
   // 失敗したときの文言は呼んだ側(pauseAndExit)が出す
@@ -2783,6 +2818,11 @@ const ManagerView = ({ setView }) => {
   useBackHandler(editTarget !== null, () => { audioCtrl.playSE('click'); setEditTarget(null); return true; }, BACK_PRIORITY.view);
 
   const filteredGroups = groups.filter(g => { if (selectedGrade === 'すべて') return true; if (selectedGrade === 'その他') return !/^[1-6]年/.test(g.name); return g.name.startsWith(selectedGrade); });
+  // プリセットは消せない（消すと はじめの問題にもどる）。書きかえたプリセットだけ「もとにもどす」を出す。
+  // 以前は「削除」を押すと「削除しました」と出るのに、次に開くと元の問題で残っていた
+  const targetInfo = groups.find(g => g.name === editTarget);
+  const targetIsPreset = !!targetInfo?.preset;
+  const canRemove = !!editTarget && (!targetIsPreset || !!targetInfo?.edited);
 
   const openEdit = (name) => {
     setEditTarget(name); setEditName(name);
@@ -2815,7 +2855,7 @@ const ManagerView = ({ setView }) => {
     setEditTarget(null);
     setConfirmDelete(false);
     loadGroups();
-    showToast('success', '削除しました');
+    showToast('success', targetIsPreset ? 'はじめの 問題に もどしました' : '削除しました');
   };
 
   const copyShareCode = (e, name) => {
@@ -2842,19 +2882,19 @@ const ManagerView = ({ setView }) => {
         <AnimatePresence>
           {confirmDelete && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label="さくじょの かくにん" exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
+              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} role="dialog" aria-modal="true" aria-label={targetIsPreset ? 'もとにもどすかの かくにん' : 'さくじょの かくにん'} exit={{ scale: 0.9, y: 20 }} className="bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-[20px] shadow-xl p-6 w-full max-w-xs flex flex-col items-center text-center">
                 <Trash2 size={48} className="text-[var(--primary-d)] mb-3" />
-                <h3 className="font-black text-xl text-[var(--text)] mb-6 leading-snug">「{editTarget}」を<br />本当に削除しますか？</h3>
+                <h3 className="font-black text-xl text-[var(--text)] mb-6 leading-snug">「{editTarget}」を<br />{targetIsPreset ? 'はじめの 問題に もどしますか？' : '本当に削除しますか？'}</h3>
                 <div className="flex w-full gap-3">
                   <MotionButton className="bg-[var(--bg)] text-[var(--text)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(false); }}>やめる</MotionButton>
-                  <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); executeDelete(); }}>削除する</MotionButton>
+                  <MotionButton className="bg-[var(--primary)] text-[var(--on-primary)] border-[3px] border-[var(--text)] py-3 flex-1" onClick={() => { audioCtrl.playSE('click'); executeDelete(); }}>{targetIsPreset ? 'もどす' : '削除する'}</MotionButton>
                 </div>
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="font-bold text-xl flex items-center gap-2 text-[var(--text)]"><Settings size={20} /> コース編集</h3>{editTarget && <button className="text-[var(--on-primary)] font-bold border-2 border-[var(--primary)] bg-[var(--primary)] rounded-xl px-4 py-1.5 text-sm" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(true); }}>削除</button>}</div>
+        <div className="flex justify-between items-center mb-4 shrink-0"><h3 className="font-bold text-xl flex items-center gap-2 text-[var(--text)]"><Settings size={20} /> コース編集</h3>{canRemove && <button className="tap-44 text-[var(--on-primary)] font-bold border-2 border-[var(--primary)] bg-[var(--primary)] rounded-xl px-4 py-1.5 text-sm" onClick={() => { audioCtrl.playSE('click'); setConfirmDelete(true); }}>{targetIsPreset ? 'もとにもどす' : '削除'}</button>}</div>
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl p-2 mb-4 shrink-0 shadow-sm"><input type="text" className="w-full font-bold text-lg p-2 outline-none bg-transparent text-[var(--text)]" placeholder="コース名 (例: 1年_たしざん)" value={editName} onChange={e => setEditName(e.target.value)} /></div>
         <div className="bg-[var(--panel)] border-[3px] border-[var(--text)] rounded-xl flex flex-col flex-grow overflow-hidden mb-4 shadow-sm">
           <div className="bg-[var(--bg)] flex p-3 border-b-2 border-[var(--text)] font-bold text-sm text-[var(--text)] opacity-80 shrink-0"><div className="flex-grow px-2">問題</div><div className="w-24 px-2 text-center border-l-2 border-[var(--text)]">答え</div><div className="w-12 border-l-2 border-[var(--text)]"></div></div>
