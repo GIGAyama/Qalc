@@ -786,6 +786,67 @@ const PEER_TIMEOUT_MS = 30000;
 // 4. アプリケーション Views
 // ==========================================
 
+// テーマの色（CSS 変数）と、アプリ全体の決まった見た目を入れる <style>。
+// App の外で定義し、テーマが変わったときだけ描きなおす。
+// 以前は App の中で定義していたので、App が描きなおされるたびに別の部品とみなされ、
+// <style> が外されて付け直され、そのたびに画面全体の見た目の計算がやりなおしになっていた
+// （みんなであそぶでは、スコアが届くたびに起きていた）。
+// ⚠️ scripts/check-contrast.mjs が「theme === '…') themeVars = `…`」の形を読んでテーマの色を測っている。書きかたを変えないこと
+const GlobalStyle = React.memo(({ theme }) => {
+  let themeVars = `
+    --bg: #fffbf0; --primary: #FF6B6B; --secondary: #4ECDC4; --accent: #FFE66D; --text: #292f36; --panel: #ffffff; --primary-d: #e50000; --secondary-d: #247f79; --on-accent: #292f36; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'dark') themeVars = `--bg: #0f172a; --primary: #f43f5e; --secondary: #0ea5e9; --accent: #f59e0b; --text: #e2e8f0; --panel: #1e293b; --primary-d: #f65c76; --secondary-d: #0ea5e9; --on-accent: #111111; --on-primary: #111111; --on-secondary: #1e293b;`;
+  if (theme === 'sakura') themeVars = `--bg: #fdf2f8; --primary: #d946ef; --secondary: #f472b6; --accent: #fbcfe8; --text: #831843; --panel: #ffffff; --primary-d: #ba12d4; --secondary-d: #d31076; --on-accent: #831843; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'ocean') themeVars = `--bg: #f0f9ff; --primary: #0284c7; --secondary: #38bdf8; --accent: #7dd3fc; --text: #0c4a6e; --panel: #ffffff; --primary-d: #0277b3; --secondary-d: #0678ab; --on-accent: #0c4a6e; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'forest') themeVars = `--bg: #f0fdf4; --primary: #16a34a; --secondary: #f59e0b; --accent: #bbf7d0; --text: #14532d; --panel: #ffffff; --primary-d: #11813b; --secondary-d: #9e6506; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'space') themeVars = `--bg: #17153B; --primary: #c084fc; --secondary: #2dd4bf; --accent: #4338ca; --text: #e2e8f0; --panel: #2e2b5f; --primary-d: #c084fc; --secondary-d: #2dd4bf; --on-accent: #e2e8f0; --on-primary: #2e2b5f; --on-secondary: #2e2b5f;`;
+  if (theme === 'gold') themeVars = `--bg: #fefce8; --primary: #b45309; --secondary: #eab308; --accent: #fef08a; --text: #713f12; --panel: #ffffff; --primary-d: #b45309; --secondary-d: #8f6d05; --on-accent: #713f12; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'mint') themeVars = `--bg: #f0fdfa; --primary: #14b8a6; --secondary: #2dd4bf; --accent: #ccfbf1; --text: #134e4a; --panel: #ffffff; --primary-d: #0e7e72; --secondary-d: #1a7f72; --on-accent: #134e4a; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'sunset') themeVars = `--bg: #fff7ed; --primary: #ea580c; --secondary: #f97316; --accent: #fcd34d; --text: #7c2d12; --panel: #ffffff; --primary-d: #c3490a; --secondary-d: #bb5005; --on-accent: #7c2d12; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'cyber') themeVars = `--bg: #000000; --primary: #39ff14; --secondary: #ff00ff; --accent: #0ff0fc; --text: #ffffff; --panel: #111111; --primary-d: #39ff14; --secondary-d: #ff00ff; --on-accent: #111111; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'choco') themeVars = `--bg: #fdf8f5; --primary: #92400e; --secondary: #d97706; --accent: #fde68a; --text: #451a03; --panel: #ffffff; --primary-d: #92400e; --secondary-d: #aa5d05; --on-accent: #451a03; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'retro') themeVars = `--bg: #f5eedc; --primary: #c25953; --secondary: #6a7f72; --accent: #e0b469; --text: #3d312d; --panel: #faf6ee; --primary-d: #b44640; --secondary-d: #5c6e63; --on-accent: #3d312d; --on-primary: #000000; --on-secondary: #000000;`;
+  if (theme === 'monochrome') themeVars = `--bg: #f8f9fa; --primary: #000000; --secondary: #666666; --accent: #d4d4d4; --text: #1a1a1a; --panel: #ffffff; --primary-d: #000000; --secondary-d: #666666; --on-accent: #1a1a1a; --on-primary: #ffffff; --on-secondary: #ffffff;`;
+  if (theme === 'lavender') themeVars = `--bg: #f5f3ff; --primary: #7c3aed; --secondary: #a78bfa; --accent: #ddd6fe; --text: #4c1d95; --panel: #ffffff; --primary-d: #7c3aed; --secondary-d: #774bf7; --on-accent: #4c1d95; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'candy') themeVars = `--bg: #fff0f6; --primary: #ec4899; --secondary: #60a5fa; --accent: #a5f3fc; --text: #9d174d; --panel: #ffffff; --primary-d: #d21673; --secondary-d: #0768e0; --on-accent: #9d174d; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'soda') themeVars = `--bg: #eff6ff; --primary: #2563eb; --secondary: #22d3ee; --accent: #bfdbfe; --text: #1e3a8a; --panel: #ffffff; --primary-d: #2563eb; --secondary-d: #0b7a8b; --on-accent: #1e3a8a; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'matcha') themeVars = `--bg: #f7fee7; --primary: #4d7c0f; --secondary: #84cc16; --accent: #d9f99d; --text: #365314; --panel: #ffffff; --primary-d: #4d7c0f; --secondary-d: #517e0e; --on-accent: #365314; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'ruby') themeVars = `--bg: #fff1f2; --primary: #be123c; --secondary: #fb7185; --accent: #fecdd3; --text: #881337; --panel: #ffffff; --primary-d: #be123c; --secondary-d: #dc0625; --on-accent: #881337; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'hero') themeVars = `--bg: #f8fafc; --primary: #dc2626; --secondary: #2563eb; --accent: #fde047; --text: #111827; --panel: #ffffff; --primary-d: #dc2626; --secondary-d: #2563eb; --on-accent: #111827; --on-primary: #ffffff; --on-secondary: #ffffff;`;
+  if (theme === 'aurora') themeVars = `--bg: #042f2e; --primary: #34d399; --secondary: #818cf8; --accent: #115e59; --text: #ccfbf1; --panel: #134e4a; --primary-d: #34d399; --secondary-d: #aab1fa; --on-accent: #ccfbf1; --on-primary: #134e4a; --on-secondary: #111111;`;
+  if (theme === 'hanabi') themeVars = `--bg: #1e1b4b; --primary: #f472b6; --secondary: #facc15; --accent: #6d28d9; --text: #ede9fe; --panel: #312e81; --primary-d: #f57ebc; --secondary-d: #facc15; --on-accent: #ede9fe; --on-primary: #111111; --on-secondary: #312e81;`;
+  if (theme === 'midnight') themeVars = `--bg: #020617; --primary: #38bdf8; --secondary: #818cf8; --accent: #1e293b; --text: #e0f2fe; --panel: #0f172a; --primary-d: #38bdf8; --secondary-d: #818cf8; --on-accent: #e0f2fe; --on-primary: #0f172a; --on-secondary: #0f172a;`;
+  if (theme === 'ninja') themeVars = `--bg: #18181b; --primary: #ef4444; --secondary: #a1a1aa; --accent: #3f3f46; --text: #f4f4f5; --panel: #27272a; --primary-d: #f15e5e; --secondary-d: #a1a1aa; --on-accent: #f4f4f5; --on-primary: #111111; --on-secondary: #27272a;`;
+  if (theme === 'royal') themeVars = `--bg: #faf5ff; --primary: #7e22ce; --secondary: #eab308; --accent: #e9d5ff; --text: #581c87; --panel: #ffffff; --primary-d: #7e22ce; --secondary-d: #8c6b05; --on-accent: #581c87; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'rainbow') themeVars = `--bg: #fdf4ff; --primary: #e11d48; --secondary: #0ea5e9; --accent: #fde047; --text: #3b0764; --panel: #ffffff; --primary-d: #da1c46; --secondary-d: #0a77a8; --on-accent: #3b0764; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'sunflower') themeVars = `--bg: #fefce8; --primary: #ca8a04; --secondary: #22c55e; --accent: #fde047; --text: #422006; --panel: #ffffff; --primary-d: #986803; --secondary-d: #17843f; --on-accent: #422006; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'watermelon') themeVars = `--bg: #f0fdf4; --primary: #ef4444; --secondary: #22c55e; --accent: #fecaca; --text: #14532d; --panel: #ffffff; --primary-d: #e21313; --secondary-d: #16823e; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'milktea') themeVars = `--bg: #f5f0e8; --primary: #a16207; --secondary: #78716c; --accent: #e7d8c0; --text: #44403c; --panel: #fffaf3; --primary-d: #9a5e07; --secondary-d: #716b66; --on-accent: #44403c; --on-primary: #fffaf3; --on-secondary: #fffaf3;`;
+  if (theme === 'tropical') themeVars = `--bg: #ecfeff; --primary: #f59e0b; --secondary: #06b6d4; --accent: #a7f3d0; --text: #164e63; --panel: #ffffff; --primary-d: #9e6506; --secondary-d: #047d91; --on-accent: #164e63; --on-primary: #111111; --on-secondary: #111111;`;
+  if (theme === 'halloween') themeVars = `--bg: #1c1917; --primary: #f97316; --secondary: #a855f7; --accent: #78350f; --text: #fed7aa; --panel: #292524; --primary-d: #f97316; --secondary-d: #b36bf8; --on-accent: #fed7aa; --on-primary: #292524; --on-secondary: #111111;`;
+  if (theme === 'christmas') themeVars = `--bg: #fef2f2; --primary: #dc2626; --secondary: #16a34a; --accent: #fde68a; --text: #7f1d1d; --panel: #ffffff; --primary-d: #d82323; --secondary-d: #117f3a; --on-accent: #7f1d1d; --on-primary: #ffffff; --on-secondary: #111111;`;
+  if (theme === 'prism') themeVars = `--bg: #f5fffa; --primary: #8b5cf6; --secondary: #ec4899; --accent: #99f6e4; --text: #1e1b4b; --panel: #ffffff; --primary-d: #8250f5; --secondary-d: #db1778; --on-accent: #1e1b4b; --on-primary: #000000; --on-secondary: #111111;`;
+
+  return (
+    <style>{`
+      /* フォントの読みこみは main.jsx (同梱の woff2)。外部への通信はない */
+      :root { ${themeVars} }
+      body { font-family: var(--font-ui); background-color: var(--bg); color: var(--text); touch-action: manipulation; transition: background-color 0.3s ease; }
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      ::selection { background-color: var(--accent); color: var(--text); }
+      ruby { ruby-align: center; }
+      ruby rt { font-size: 0.5em; font-weight: 500; letter-spacing: 0; }
+      .ruby-text { line-height: 1.8; }
+      .avatar-fx { animation: fxTwinkle 1.8s ease-in-out infinite; }
+      .avatar-fx-delay { animation: fxTwinkle 1.8s ease-in-out 0.6s infinite; }
+      .avatar-fx-delay2 { animation: fxTwinkle 1.8s ease-in-out 1.2s infinite; }
+      @keyframes fxTwinkle { 0%, 100% { opacity: 0.25; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1.2); } }
+    `}</style>
+  );
+});
+GlobalStyle.displayName = 'GlobalStyle';
+
 // --- ホーム画面 ---
 const HomeView = ({ setView, stats, setStats, setConfigMode, initHost, resumeData, onResume, onDiscardResume }) => {
   const { level, title, badge, progress, nextLevelExp } = getLevelInfo(stats.totalExp);
@@ -1892,11 +1953,15 @@ const TimerProgressBar = React.memo(({ gameMode, startTime, timeLimitSec, correc
 TimerProgressBar.displayName = 'TimerProgressBar';
 
 // --- ゲーム画面 ---
+// みんなであそぶ: スコアの一覧を配る間かく（App の scheduleScoresBroadcast）
+const SCORES_BROADCAST_MS = 1000;
+const SCORES_MIN_WAIT_MS = 100;
+
 // まちがえた直後に入力を受けながす時間（カードがゆれているあいだ）と、まちがえた答えを見せておく時間
 const WRONG_HOLD_MS = 400;
 const WRONG_FLASH_MS = 900;
 
-const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, sendTerrSpecial, collectTerritoryResult, leaderFinishRef }) => {
+const GameView = ({ state, setState, setView, stats, setStats, peerState, setPeerState, setResumeData, raidState, sendRaidAttack, sendRaidSupport, collectRaidResult, terrState, sendTerrCharge, sendTerrTarget, sendTerrSpecial, collectTerritoryResult, leaderFinishRef, scheduleScoresBroadcast, flushScoresBroadcast }) => {
   const isMultiplayer = peerState && peerState.role;
   const isRaid = state.gameMode === 'BOSS_RAID';
   const isTerritory = state.gameMode === 'TERRITORY';
@@ -2165,15 +2230,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     if (peerState && peerState.role === 'client' && peerState.conn) {
       safeSend(peerState.conn, { type: 'score_update', data: { score, combo } });
     } else if (peerState && peerState.role === 'host' && setPeerState) {
-      // ホストのスコアを参加者リストに反映し、全クライアントにブロードキャスト
+      // ホストのスコアを参加者リストに反映する。全員へ配るのは まとめて1秒に1回（App の scheduleScoresBroadcast）
       setPeerState(p => {
         if (!p.hostId || !p.participants[p.hostId]) return p;
-        const newP = { ...p, participants: { ...p.participants, [p.hostId]: { ...p.participants[p.hostId], score, combo } } };
-        sendToApproved(newP, { type: 'participants_update', data: newP.participants });
-        return newP;
+        return { ...p, participants: { ...p.participants, [p.hostId]: { ...p.participants[p.hostId], score, combo } } };
       });
+      scheduleScoresBroadcast?.();
     }
-  }, [score, combo, peerState?.role, setPeerState]);
+  }, [score, combo, peerState?.role, setPeerState, scheduleScoresBroadcast]);
 
   const scoreRef = useRef(score); useEffect(() => { scoreRef.current = score; }, [score]);
   const maxComboRef = useRef(maxCombo); useEffect(() => { maxComboRef.current = maxCombo; }, [maxCombo]);
@@ -2266,12 +2330,14 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
     if (peerState && peerState.role === 'client' && peerState.conn) {
       safeSend(peerState.conn, { type: 'game_finish', data: { finalScore: baseExp } });
     } else if (peerState && peerState.role === 'host') {
-      // ホストが終了した場合、全クライアントにも終了を通知
+      // ホストが終了した場合、全クライアントにも終了を通知。
+      // その前に、まだ配っていないスコアを配る（結果のランキングが1秒前のままにならないように）
+      flushScoresBroadcast?.();
       sendToApproved(peerState, { type: 'game_finish', data: raidResult ? { raidResult } : territoryResult ? { territoryResult } : undefined });
     }
 
     setView('result');
-  }, [stats, state.gameMode, state.problemSet, state.courseNames, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult, collectTerritoryResult, myTeam]);
+  }, [stats, state.gameMode, state.problemSet, state.courseNames, startTime, setStats, setState, setView, peerState, setResumeData, collectRaidResult, collectTerritoryResult, myTeam, flushScoresBroadcast]);
 
   // みんなであそぶ: リーダーが先に終えたとき（時間切れ・20問ときおわった・1問まちがえた・
   // 「ポイントもらって終わる」）や へやが閉じられたときも、メンバーの端末はここを通って終える。
@@ -3168,6 +3234,32 @@ export default function App() {
   const [peerState, setPeerState] = useState({ role: null, peer: null, conn: null, hostId: null, myName: '', connections: [], participants: {}, pending: {}, acceptUntil: 0, approved: false });
   const peerStateRef = useRef(peerState);
   useEffect(() => { peerStateRef.current = peerState; }, [peerState]);
+
+  // みんなであそぶ: メンバーのスコアは、変わるたびではなく まとめて配る。
+  // 以前は だれか1人が正解するたびに、リーダーが全員ぶんの一覧（40人で1通 約7.9KB）を全員へ送っていた。
+  // 40人が2秒に1問ずつ解くと、リーダーの端末から毎秒 約6MB。受けた側も そのたびに画面全体を描きなおした。
+  // いまは1秒に1回まで（40人で毎秒 約320KB）。ランキングは上位5人を出すだけなので、1秒おくれても困らない
+  const scoresBroadcastRef = useRef({ last: 0, timer: null });
+  const sendScoresNow = useCallback(() => {
+    const b = scoresBroadcastRef.current;
+    b.timer = null; b.last = Date.now();
+    const cur = peerStateRef.current;
+    if (cur.role === 'host') sendToApproved(cur, { type: 'participants_update', data: cur.participants });
+  }, []);
+  // 予約してあれば、いますぐ配る（リーダーのゲームが終わるとき）
+  const flushScoresBroadcast = useCallback(() => {
+    const b = scoresBroadcastRef.current;
+    if (b.timer === null) return;
+    clearTimeout(b.timer);
+    sendScoresNow();
+  }, [sendScoresNow]);
+  const scheduleScoresBroadcast = useCallback(() => {
+    const b = scoresBroadcastRef.current;
+    if (b.timer !== null) return; // もう予約してある。送るときに その時点の最新を配る
+    // 少なくとも 100ms は待つ（そのあいだに新しいスコアが peerStateRef に入る）
+    b.timer = setTimeout(sendScoresNow, Math.max(SCORES_MIN_WAIT_MS, b.last + SCORES_BROADCAST_MS - Date.now()));
+  }, [sendScoresNow]);
+  useEffect(() => () => { const b = scoresBroadcastRef.current; if (b.timer !== null) clearTimeout(b.timer); }, []);
   // ルームに入りなおすたびに増える通し番号。退出後に古い接続のイベントで画面が動かないようにするための世代管理
   const peerSessionRef = useRef(0);
   // ホストがメンバーごとに「最後に反応があった時刻」を持ち、無反応が続いたら抜けたとみなす
@@ -3834,12 +3926,12 @@ export default function App() {
             showToast('success', `${name} さんが 入りたいそうです`);
           }
         } else if (rawData.type === 'score_update') {
+          if (!peerStateRef.current.participants[conn.peer]) return;
           setPeerState(p => {
             if (!p.participants[conn.peer]) return p;
-            const newP = { ...p, participants: { ...p.participants, [conn.peer]: { ...p.participants[conn.peer], score: rawData.data.score, combo: rawData.data.combo } } };
-            sendToApproved(newP, { type: 'participants_update', data: newP.participants });
-            return newP;
+            return { ...p, participants: { ...p.participants, [conn.peer]: { ...p.participants[conn.peer], score: rawData.data.score, combo: rawData.data.combo } } };
           });
+          scheduleScoresBroadcast();
         } else if (!peerStateRef.current.participants[conn.peer]) {
           // ここから下はゲーム中の操作。まだ許可していない端末からのものは受けつけない
           return;
@@ -4072,59 +4164,6 @@ export default function App() {
     else audioCtrl.stopBGM();
   }, [view, isMuted]);
 
-  const GlobalStyle = () => {
-    let themeVars = `
-      --bg: #fffbf0; --primary: #FF6B6B; --secondary: #4ECDC4; --accent: #FFE66D; --text: #292f36; --panel: #ffffff; --primary-d: #e50000; --secondary-d: #247f79; --on-accent: #292f36; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'dark') themeVars = `--bg: #0f172a; --primary: #f43f5e; --secondary: #0ea5e9; --accent: #f59e0b; --text: #e2e8f0; --panel: #1e293b; --primary-d: #f65c76; --secondary-d: #0ea5e9; --on-accent: #111111; --on-primary: #111111; --on-secondary: #1e293b;`;
-    if (stats.theme === 'sakura') themeVars = `--bg: #fdf2f8; --primary: #d946ef; --secondary: #f472b6; --accent: #fbcfe8; --text: #831843; --panel: #ffffff; --primary-d: #ba12d4; --secondary-d: #d31076; --on-accent: #831843; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'ocean') themeVars = `--bg: #f0f9ff; --primary: #0284c7; --secondary: #38bdf8; --accent: #7dd3fc; --text: #0c4a6e; --panel: #ffffff; --primary-d: #0277b3; --secondary-d: #0678ab; --on-accent: #0c4a6e; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'forest') themeVars = `--bg: #f0fdf4; --primary: #16a34a; --secondary: #f59e0b; --accent: #bbf7d0; --text: #14532d; --panel: #ffffff; --primary-d: #11813b; --secondary-d: #9e6506; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'space') themeVars = `--bg: #17153B; --primary: #c084fc; --secondary: #2dd4bf; --accent: #4338ca; --text: #e2e8f0; --panel: #2e2b5f; --primary-d: #c084fc; --secondary-d: #2dd4bf; --on-accent: #e2e8f0; --on-primary: #2e2b5f; --on-secondary: #2e2b5f;`;
-    if (stats.theme === 'gold') themeVars = `--bg: #fefce8; --primary: #b45309; --secondary: #eab308; --accent: #fef08a; --text: #713f12; --panel: #ffffff; --primary-d: #b45309; --secondary-d: #8f6d05; --on-accent: #713f12; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'mint') themeVars = `--bg: #f0fdfa; --primary: #14b8a6; --secondary: #2dd4bf; --accent: #ccfbf1; --text: #134e4a; --panel: #ffffff; --primary-d: #0e7e72; --secondary-d: #1a7f72; --on-accent: #134e4a; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'sunset') themeVars = `--bg: #fff7ed; --primary: #ea580c; --secondary: #f97316; --accent: #fcd34d; --text: #7c2d12; --panel: #ffffff; --primary-d: #c3490a; --secondary-d: #bb5005; --on-accent: #7c2d12; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'cyber') themeVars = `--bg: #000000; --primary: #39ff14; --secondary: #ff00ff; --accent: #0ff0fc; --text: #ffffff; --panel: #111111; --primary-d: #39ff14; --secondary-d: #ff00ff; --on-accent: #111111; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'choco') themeVars = `--bg: #fdf8f5; --primary: #92400e; --secondary: #d97706; --accent: #fde68a; --text: #451a03; --panel: #ffffff; --primary-d: #92400e; --secondary-d: #aa5d05; --on-accent: #451a03; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'retro') themeVars = `--bg: #f5eedc; --primary: #c25953; --secondary: #6a7f72; --accent: #e0b469; --text: #3d312d; --panel: #faf6ee; --primary-d: #b44640; --secondary-d: #5c6e63; --on-accent: #3d312d; --on-primary: #000000; --on-secondary: #000000;`;
-    if (stats.theme === 'monochrome') themeVars = `--bg: #f8f9fa; --primary: #000000; --secondary: #666666; --accent: #d4d4d4; --text: #1a1a1a; --panel: #ffffff; --primary-d: #000000; --secondary-d: #666666; --on-accent: #1a1a1a; --on-primary: #ffffff; --on-secondary: #ffffff;`;
-    if (stats.theme === 'lavender') themeVars = `--bg: #f5f3ff; --primary: #7c3aed; --secondary: #a78bfa; --accent: #ddd6fe; --text: #4c1d95; --panel: #ffffff; --primary-d: #7c3aed; --secondary-d: #774bf7; --on-accent: #4c1d95; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'candy') themeVars = `--bg: #fff0f6; --primary: #ec4899; --secondary: #60a5fa; --accent: #a5f3fc; --text: #9d174d; --panel: #ffffff; --primary-d: #d21673; --secondary-d: #0768e0; --on-accent: #9d174d; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'soda') themeVars = `--bg: #eff6ff; --primary: #2563eb; --secondary: #22d3ee; --accent: #bfdbfe; --text: #1e3a8a; --panel: #ffffff; --primary-d: #2563eb; --secondary-d: #0b7a8b; --on-accent: #1e3a8a; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'matcha') themeVars = `--bg: #f7fee7; --primary: #4d7c0f; --secondary: #84cc16; --accent: #d9f99d; --text: #365314; --panel: #ffffff; --primary-d: #4d7c0f; --secondary-d: #517e0e; --on-accent: #365314; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'ruby') themeVars = `--bg: #fff1f2; --primary: #be123c; --secondary: #fb7185; --accent: #fecdd3; --text: #881337; --panel: #ffffff; --primary-d: #be123c; --secondary-d: #dc0625; --on-accent: #881337; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'hero') themeVars = `--bg: #f8fafc; --primary: #dc2626; --secondary: #2563eb; --accent: #fde047; --text: #111827; --panel: #ffffff; --primary-d: #dc2626; --secondary-d: #2563eb; --on-accent: #111827; --on-primary: #ffffff; --on-secondary: #ffffff;`;
-    if (stats.theme === 'aurora') themeVars = `--bg: #042f2e; --primary: #34d399; --secondary: #818cf8; --accent: #115e59; --text: #ccfbf1; --panel: #134e4a; --primary-d: #34d399; --secondary-d: #aab1fa; --on-accent: #ccfbf1; --on-primary: #134e4a; --on-secondary: #111111;`;
-    if (stats.theme === 'hanabi') themeVars = `--bg: #1e1b4b; --primary: #f472b6; --secondary: #facc15; --accent: #6d28d9; --text: #ede9fe; --panel: #312e81; --primary-d: #f57ebc; --secondary-d: #facc15; --on-accent: #ede9fe; --on-primary: #111111; --on-secondary: #312e81;`;
-    if (stats.theme === 'midnight') themeVars = `--bg: #020617; --primary: #38bdf8; --secondary: #818cf8; --accent: #1e293b; --text: #e0f2fe; --panel: #0f172a; --primary-d: #38bdf8; --secondary-d: #818cf8; --on-accent: #e0f2fe; --on-primary: #0f172a; --on-secondary: #0f172a;`;
-    if (stats.theme === 'ninja') themeVars = `--bg: #18181b; --primary: #ef4444; --secondary: #a1a1aa; --accent: #3f3f46; --text: #f4f4f5; --panel: #27272a; --primary-d: #f15e5e; --secondary-d: #a1a1aa; --on-accent: #f4f4f5; --on-primary: #111111; --on-secondary: #27272a;`;
-    if (stats.theme === 'royal') themeVars = `--bg: #faf5ff; --primary: #7e22ce; --secondary: #eab308; --accent: #e9d5ff; --text: #581c87; --panel: #ffffff; --primary-d: #7e22ce; --secondary-d: #8c6b05; --on-accent: #581c87; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'rainbow') themeVars = `--bg: #fdf4ff; --primary: #e11d48; --secondary: #0ea5e9; --accent: #fde047; --text: #3b0764; --panel: #ffffff; --primary-d: #da1c46; --secondary-d: #0a77a8; --on-accent: #3b0764; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'sunflower') themeVars = `--bg: #fefce8; --primary: #ca8a04; --secondary: #22c55e; --accent: #fde047; --text: #422006; --panel: #ffffff; --primary-d: #986803; --secondary-d: #17843f; --on-accent: #422006; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'watermelon') themeVars = `--bg: #f0fdf4; --primary: #ef4444; --secondary: #22c55e; --accent: #fecaca; --text: #14532d; --panel: #ffffff; --primary-d: #e21313; --secondary-d: #16823e; --on-accent: #14532d; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'milktea') themeVars = `--bg: #f5f0e8; --primary: #a16207; --secondary: #78716c; --accent: #e7d8c0; --text: #44403c; --panel: #fffaf3; --primary-d: #9a5e07; --secondary-d: #716b66; --on-accent: #44403c; --on-primary: #fffaf3; --on-secondary: #fffaf3;`;
-    if (stats.theme === 'tropical') themeVars = `--bg: #ecfeff; --primary: #f59e0b; --secondary: #06b6d4; --accent: #a7f3d0; --text: #164e63; --panel: #ffffff; --primary-d: #9e6506; --secondary-d: #047d91; --on-accent: #164e63; --on-primary: #111111; --on-secondary: #111111;`;
-    if (stats.theme === 'halloween') themeVars = `--bg: #1c1917; --primary: #f97316; --secondary: #a855f7; --accent: #78350f; --text: #fed7aa; --panel: #292524; --primary-d: #f97316; --secondary-d: #b36bf8; --on-accent: #fed7aa; --on-primary: #292524; --on-secondary: #111111;`;
-    if (stats.theme === 'christmas') themeVars = `--bg: #fef2f2; --primary: #dc2626; --secondary: #16a34a; --accent: #fde68a; --text: #7f1d1d; --panel: #ffffff; --primary-d: #d82323; --secondary-d: #117f3a; --on-accent: #7f1d1d; --on-primary: #ffffff; --on-secondary: #111111;`;
-    if (stats.theme === 'prism') themeVars = `--bg: #f5fffa; --primary: #8b5cf6; --secondary: #ec4899; --accent: #99f6e4; --text: #1e1b4b; --panel: #ffffff; --primary-d: #8250f5; --secondary-d: #db1778; --on-accent: #1e1b4b; --on-primary: #000000; --on-secondary: #111111;`;
-
-    return (
-      <style>{`
-        /* フォントの読みこみは main.jsx (同梱の woff2)。外部への通信はない */
-        :root { ${themeVars} }
-        body { font-family: var(--font-ui); background-color: var(--bg); color: var(--text); touch-action: manipulation; transition: background-color 0.3s ease; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        ::selection { background-color: var(--accent); color: var(--text); }
-        ruby { ruby-align: center; }
-        ruby rt { font-size: 0.5em; font-weight: 500; letter-spacing: 0; }
-        .ruby-text { line-height: 1.8; }
-        .avatar-fx { animation: fxTwinkle 1.8s ease-in-out infinite; }
-        .avatar-fx-delay { animation: fxTwinkle 1.8s ease-in-out 0.6s infinite; }
-        .avatar-fx-delay2 { animation: fxTwinkle 1.8s ease-in-out 1.2s infinite; }
-        @keyframes fxTwinkle { 0%, 100% { opacity: 0.25; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1.2); } }
-      `}</style>
-    );
-  };
 
   return (
     // reducedMotion="user" は端末の「視差効果を減らす」を framer-motion に守らせる指定。
@@ -4136,7 +4175,7 @@ export default function App() {
       className="flex flex-col h-[100dvh] w-full bg-[var(--bg)] relative overflow-hidden transition-colors duration-500"
       style={{ paddingLeft: 'var(--safe-l)', paddingRight: 'var(--safe-r)' }}
     >
-      <GlobalStyle />
+      <GlobalStyle theme={stats.theme} />
       {view !== 'game' && (
         <header
           className="flex-shrink-0 bg-[var(--panel)]/90 backdrop-blur border-b-[4px] border-[var(--accent)] py-3 px-5 flex justify-between items-center z-50 sticky top-0 shadow-sm transition-colors duration-500"
@@ -4178,7 +4217,7 @@ export default function App() {
           {view === 'clientJoin' && <PageWrapper key="clientJoin"><ClientJoinView initClient={initClient} urlHostId={urlHostId} setView={setView} /></PageWrapper>}
           {view === 'clientWait' && <PageWrapper key="clientWait"><ClientWaitView peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
 
-          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} sendTerrSpecial={sendTerrSpecial} collectTerritoryResult={collectTerritoryResult} leaderFinishRef={leaderFinishRef} /></PageWrapper>}
+          {view === 'game' && <PageWrapper key="game"><GameView state={state} setState={setState} setView={setView} stats={stats} setStats={setStats} peerState={peerState} setPeerState={setPeerState} setResumeData={setResumeData} raidState={raidState} sendRaidAttack={sendRaidAttack} sendRaidSupport={sendRaidSupport} collectRaidResult={collectRaidResult} terrState={terrState} sendTerrCharge={sendTerrCharge} sendTerrTarget={sendTerrTarget} sendTerrSpecial={sendTerrSpecial} collectTerritoryResult={collectTerritoryResult} leaderFinishRef={leaderFinishRef} scheduleScoresBroadcast={scheduleScoresBroadcast} flushScoresBroadcast={flushScoresBroadcast} /></PageWrapper>}
           {view === 'result' && <PageWrapper key="result"><ResultView state={state} setView={setView} peerState={peerState} leaveRoom={leaveRoom} /></PageWrapper>}
           {view === 'manager' && <PageWrapper key="manager"><ManagerView setView={setView} /></PageWrapper>}
           {view === 'import' && <PageWrapper key="import"><ImportView setView={setView} /></PageWrapper>}
