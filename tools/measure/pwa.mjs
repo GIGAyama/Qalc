@@ -63,7 +63,7 @@ const browser = await chromium.launch({ executablePath: CHROME });
   if (bumped === orig) throw new Error('sw.js の APP_VERSION が見つからない。検査が空振りしている');
   writeFileSync(SW, bumped);
 
-  const upd = await page.evaluate(async () => {
+  await page.evaluate(async () => {
     const r = await navigator.serviceWorker.getRegistration();
     await r.update();
     return true;

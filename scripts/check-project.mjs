@@ -77,7 +77,7 @@ const indexHtml = read(P.indexHtml) || '';
   check('B1a', 'index.html に CSP がある', !!m);
   if (m) {
     const csp = m[1];
-    const connect = (csp.match(/connect-src ([^;]+)/) || [, ''])[1];
+    const connect = (csp.match(/connect-src ([^;]+)/) || [null, ''])[1];
     check('B1b', 'connect-src にワイルドカードが無い', !/\*/.test(connect), connect.trim());
     check('B1c', "script-src が 'self' で閉じている",
       /script-src 'self'(;|\s*$)/.test(csp) || /script-src 'self';/.test(csp));

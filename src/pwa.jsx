@@ -82,7 +82,11 @@ export function registerServiceWorker() {
 }
 
 /* ── あたらしいバージョンのお知らせ ──────────────────────── */
-export const UpdateNotice = () => {
+// hold: いまは出さない（届いたことは覚えておき、hold がはずれたら出す）。
+//   ゲーム中は出さない。画面の下に出るので、テンキーの C・0・OK に重なる。
+//   押せば再読みこみになり、とちゅうのゲームが記録ごと消える。
+//   みんなであそぶ の へやにいるあいだも出さない。再読みこみで へやから切れてしまう。
+export const UpdateNotice = ({ hold = false }) => {
     const [ready, setReady] = useState(false);
 
     useEffect(() => {
@@ -100,7 +104,7 @@ export const UpdateNotice = () => {
         else window.location.reload();
     }, []);
 
-    if (!ready) return null;
+    if (!ready || hold) return null;
 
     return (
         <div

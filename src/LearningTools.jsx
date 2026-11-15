@@ -1,12 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLightSurface, pickOn, TOOL_TEXT } from './readableColor.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  X, Lightbulb, LayoutGrid, Cherry, PencilLine, Table2, Clock, Ruler, GlassWater, Circle,
-  Grid3x3, PieChart, Gauge, MoveHorizontal, Shapes, Users, ListOrdered,
-  Timer, ArrowLeftRight, Percent, Sigma, Sparkles, Triangle, BarChart3,
-  Table, ScatterChart, GitBranch
-} from 'lucide-react';
+import { X, Lightbulb } from 'lucide-react';
 // 問題文の判定は別ファイル。あちらは最初から読みこまれ、こちらは電球を押すまで読まれない
 import {
   TOOL_META, getAvailableTools,

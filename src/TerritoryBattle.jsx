@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trophy, Flag } from 'lucide-react';
 // 提示モード中は児童名を伏せる（電子黒板は廊下や参観の保護者からも見える）
@@ -6,7 +6,7 @@ import { PupilName } from './presentation.jsx';
 // 決まりごと・計算は別ファイル
 import {
   TERRITORY_CONSTANTS, TEAMS, CELL_DEFS, TOTAL_VALUE, SPECIALS, LUCKY_EFFECTS,
-  computeScores, effectiveCost, remainingFor, isSelectable, otherTeam, adjacentToTeam,
+  effectiveCost, isSelectable, otherTeam, adjacentToTeam,
   TERRITORY_CHARACTER_NAME, territoryCharacterUrl, CHARACTER_MOODS,
 } from './battles/territoryLogic.js';
 

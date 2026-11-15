@@ -1440,8 +1440,17 @@ const generateDynamicProblems = () => {
 
 Object.assign(DEFAULT_PROBLEMS, generateDynamicProblems());
 
+// 答えを比べる前にそろえる。打った答えと正解の両方にかける。
+// 先生が自作コースの答えを全角で書いても（「０．５」「－３」「（１）」）、
+// 位取りの「,」を入れても（「1,000」）、テンキーで打った答えと一致するようにする。
+// （全角の数字しか直していなかったので「０．５」は「0．5」になり、だれも正解できなかった）
+const FULLWIDTH_SIGNS = { '．': '.', '／': '/', '－': '-', '−': '-', '‐': '-', '（': '(', '）': ')' };
 export const normalizeStr = (str) => {
-  return String(str).replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/\s+/g, '');
+  return String(str)
+    .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+    .replace(/[．／－−‐（）]/g, (s) => FULLWIDTH_SIGNS[s])
+    .replace(/(\d)[,，](?=\d)/g, '$1')
+    .replace(/\s+/g, '');
 };
 
 // DEFAULT_PROBLEMS のパース結果は不変なので一度だけ計算して使い回す
