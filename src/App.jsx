@@ -740,15 +740,17 @@ const HandWritingCanvas = React.memo(forwardRef((props, ref) => {
 // digitLayout: ボスバトルのシャッフルデバフ用。省略時は通常配列
 const DEFAULT_DIGIT_LAYOUT = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0'];
 const Keypad = React.memo(({ onAppend, onClear, onSubmit, digitLayout = DEFAULT_DIGIT_LAYOUT }) => (
-  <div className="flex-grow flex flex-col gap-2 z-30 min-h-[30vh]">
-    <div className="flex h-14 gap-2 shrink-0">
-      {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary-d)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }}>{c}</motion.button>)}
+  // 行は 44px（タップ領域の下限）まで縮み、あまった高さは均等に分ける。
+  // 文字は1行なので leading-none にして、行の高さを文字の行間が押し広げないようにする
+  <div className="flex-grow flex flex-col gap-2 short:gap-1.5 tiny:gap-1 z-30 min-h-[30vh]">
+    <div className="flex h-14 short:h-11 gap-2 short:gap-1.5 shrink-0">
+      {['.', '/', '-', '(', ')'].map(c => <motion.button whileTap={{ scale: 0.9, y: 2, boxShadow: "none" }} key={c} className="flex-1 bg-[var(--panel)] text-[var(--secondary-d)] border-2 border-[var(--secondary)] rounded-xl font-black text-xl leading-none shadow-[0_2px_0_var(--secondary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(c); }}>{c}</motion.button>)}
     </div>
-    <div className="grid grid-cols-3 gap-2 flex-grow">
-      {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }}>C</motion.button>
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl shadow-[0_4px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
-      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--on-secondary)] border-[3px] border-[var(--text)] font-black text-3xl rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }}>OK</motion.button>
+    <div className="grid grid-cols-3 grid-rows-[repeat(4,minmax(44px,1fr))] gap-2 short:gap-1.5 tiny:gap-1 flex-grow">
+      {digitLayout.slice(0, 9).map(n => <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} key={n} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl leading-none shadow-[0_4px_0_var(--primary)] short:shadow-[0_3px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(n); }}>{n}</motion.button>)}
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--text)] opacity-50 text-[var(--panel)] font-black text-3xl leading-none rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onClear(); }}>C</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--panel)] text-[var(--primary-d)] border-[3px] border-[var(--primary)] rounded-2xl font-black text-3xl leading-none shadow-[0_4px_0_var(--primary)] short:shadow-[0_3px_0_var(--primary)] flex items-center justify-center select-none outline-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onAppend(digitLayout[9]); }}>{digitLayout[9]}</motion.button>
+      <motion.button whileTap={{ scale: 0.9, y: 4, boxShadow: "none" }} className="bg-[var(--secondary)] text-[var(--on-secondary)] border-[3px] border-[var(--text)] font-black text-3xl leading-none rounded-2xl shadow-[0_4px_0_var(--text)] outline-none flex items-center justify-center select-none touch-manipulation" onPointerDown={(e) => { e.preventDefault(); onSubmit(); }}>OK</motion.button>
     </div>
   </div>
 ));
@@ -2444,10 +2446,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
   const availableTools = getAvailableTools(state.courseName, q.q);
 
   const textLen = q.q.length;
-  let fontSizeClass = "text-[5rem] md:text-8xl";
-  if (textLen >= 25) { fontSizeClass = "text-xl md:text-3xl"; }
-  else if (textLen >= 15) { fontSizeClass = "text-2xl md:text-5xl"; }
-  else if (textLen >= 8) { fontSizeClass = "text-4xl md:text-6xl"; }
+  // 高さの足りない画面（short / tiny。tailwind.config.js）では、テンキーの場所をあけるために小さくする
+  let fontSizeClass = "text-[5rem] md:text-8xl short:text-6xl tiny:text-5xl";
+  if (textLen >= 25) { fontSizeClass = "text-xl md:text-3xl short:text-2xl tiny:text-xl"; }
+  else if (textLen >= 15) { fontSizeClass = "text-2xl md:text-5xl short:text-3xl tiny:text-2xl"; }
+  else if (textLen >= 8) { fontSizeClass = "text-4xl md:text-6xl short:text-5xl tiny:text-4xl"; }
 
   return (
     <div
@@ -2475,9 +2478,9 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
 
       {/* ランキング表示（メインレイアウトの外に配置） */}
       {!isRaid && !isTerritory && isMultiplayer && top5.length > 0 && (
-        <div className="flex justify-center gap-2 p-2 overflow-x-auto no-scrollbar shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm">
+        <div className="flex justify-center gap-2 p-2 short:py-1 overflow-x-auto no-scrollbar shrink-0 w-full bg-[var(--panel)] border-b-2 border-[var(--text)] shadow-sm">
           {top5.map((p, idx) => (
-            <div key={p.id} className="bg-[var(--bg)] border-2 border-[var(--text)] rounded-lg px-3 py-1.5 flex flex-col items-center min-w-[80px]">
+            <div key={p.id} className="bg-[var(--bg)] border-2 border-[var(--text)] rounded-lg px-3 py-1.5 short:py-0.5 flex flex-col items-center min-w-[80px]">
               <div className="flex items-center gap-1">
                 <span className={`text-xs font-black px-1.5 py-0.5 rounded-sm ${idx === 0 ? 'bg-yellow-400 text-white' : idx === 1 ? 'bg-gray-400 text-white' : idx === 2 ? 'bg-orange-400 text-white' : 'text-[var(--text)] opacity-80'}`}>{idx + 1}</span>
                 <span className="text-xs font-bold truncate max-w-[60px]"><PupilName name={p.name} /></span>
@@ -2505,9 +2508,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
           </div>
         )}
 
-        <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : `w-full ${isTerritory ? 'md:flex-grow md:w-auto max-w-4xl' : 'max-w-4xl h-full'} mx-auto`} md:h-full p-4`}>
+        {/* 画面が低くて入りきらないときは、この列の中でスクロールできるようにする（キーが画面の外に出たまま押せない、を起こさない）。
+            低い横長の画面（flat）では、問題と答えを左に、テンキーを右にならべる。手書きメモを開いているときは1列のまま */}
+        <div className={`flex flex-col flex-shrink-0 transition-all duration-300 ${showMemo ? 'w-full md:w-[400px] min-h-[85vh] md:min-h-0 border-b md:border-b-0 md:border-r border-[var(--text)]' : `w-full ${isTerritory ? 'md:flex-grow md:w-auto max-w-4xl' : 'max-w-4xl h-full'} mx-auto flat:grid flat:grid-cols-2 flat:grid-rows-[auto_1fr_auto] flat:gap-x-4`} md:h-full p-4 short:py-2 tiny:py-1.5 overflow-y-auto overflow-x-hidden`}>
 
-          <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
+          <div className="flex justify-between items-center mb-2 short:mb-1 shrink-0 gap-2">
             <button onClick={() => { if (settledRef.current) return; audioCtrl.playSE('click'); setQuitDialog(true); }} className="shrink-0 bg-[var(--panel)] text-[var(--text)] border-2 border-[var(--text)] rounded-lg px-3 min-h-[44px] font-bold text-xs shadow-[0_2px_0_var(--text)] active:translate-y-[1px] active:shadow-none flex items-center justify-center gap-1"><XCircle size={16} /> やめる</button>
             <TimerClock gameMode={state.gameMode} startTime={startTime} timeLimitSec={state.timeLimitSec} />
             <div className="font-black text-2xl text-[var(--primary-d)] flex items-center gap-2 drop-shadow-sm">
@@ -2515,10 +2520,11 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             </div>
           </div>
 
-          <div className={`relative flex-grow flex flex-col justify-center items-center ${isTerritory ? 'min-h-[90px] mb-2 md:min-h-[150px] md:mb-4' : 'min-h-[150px] mb-4'}`}>
-            <div className="absolute top-0 h-10 flex justify-center items-center w-full">
+          <div className={`relative flex-grow flex flex-col justify-center items-center ${isTerritory ? 'min-h-[90px] mb-2 md:min-h-[150px] md:mb-4' : 'min-h-[150px] mb-4'} short:min-h-min short:mb-2 tiny:mb-1`}>
+            {/* 低い画面では問題文と重ならないよう、左上の すみに小さく出す */}
+            <div className="absolute top-0 h-10 tiny:h-7 flex justify-center tiny:justify-start items-center w-full">
               <AnimatePresence>
-                {combo > 1 && <motion.div initial={{ scale: 0, y: 10 }} animate={{ scale: [0, 1.3, 1], y: 0, rotate: -6 }} exit={{ scale: 0 }} className="bg-[var(--accent)] text-[var(--on-accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 font-black text-sm shadow-[2px_2px_0_var(--text)] z-30">{combo} COMBO! 🔥</motion.div>}
+                {combo > 1 && <motion.div initial={{ scale: 0, y: 10 }} animate={{ scale: [0, 1.3, 1], y: 0, rotate: -6 }} exit={{ scale: 0 }} className="bg-[var(--accent)] text-[var(--on-accent)] border-2 border-[var(--text)] rounded-full px-4 py-1.5 tiny:px-2 tiny:py-0.5 font-black text-sm tiny:text-xs shadow-[2px_2px_0_var(--text)] z-30">{combo} COMBO! 🔥</motion.div>}
               </AnimatePresence>
             </div>
             <AnimatePresence mode="wait">
@@ -2537,20 +2543,20 @@ const GameView = ({ state, setState, setView, stats, setStats, peerState, setPee
             {isTerritory && <TerritorySpecialButton gauge={specialGauge} kind={specialKind} onFire={fireTerrSpecial} />}
           </div>
 
-          <motion.div animate={cardAnim} className={`bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] relative z-30 shrink-0 ${isTerritory ? 'h-16 mb-2 md:h-24 md:mb-4' : 'h-24 mb-4'}`}>
+          <motion.div animate={cardAnim} className={`bg-[var(--panel)] border-[4px] border-[var(--text)] rounded-2xl flex items-center justify-center shadow-[0_8px_0_var(--text)] short:shadow-[0_5px_0_var(--text)] relative z-30 shrink-0 ${isTerritory ? 'h-16 mb-2 md:h-24 md:mb-4' : 'h-24 mb-4'} short:h-16 short:mb-3 tiny:h-14 tiny:mb-2`}>
             {/* onClick で開閉する(onPointerDown だと、開いた直後に指を離したときの合成 click が
                 最前面のオーバーレイに当たって即閉じてしまい、長押ししないと開けない挙動になる) */}
             {availableTools.length > 0 && (
-              <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 w-14 h-14 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 touch-manipulation ${showTools ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onClick={() => { audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
+              <motion.button whileTap={{ scale: 0.8 }} className={`absolute left-4 short:left-2 w-14 h-14 short:w-12 short:h-12 tiny:w-11 tiny:h-11 rounded-full flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 touch-manipulation ${showTools ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onClick={() => { audioCtrl.playSE('click'); setShowTools(s => !s); }} aria-label="かんがえるどうぐ">
                 <Lightbulb size={24} />
               </motion.button>
             )}
-            <span className="text-5xl font-black text-[var(--secondary-d)] tracking-widest">{ans || (wrongFlash ? <span className="text-[var(--primary-d)] line-through decoration-4">{wrongFlash.text}</span> : <span className="text-4xl font-bold text-[var(--text)] opacity-70">?</span>)}</span>
-            {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 w-12 h-12 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
-            <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 w-14 h-14 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--on-secondary)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
+            <span className="text-5xl short:text-4xl font-black text-[var(--secondary-d)] tracking-widest">{ans || (wrongFlash ? <span className="text-[var(--primary-d)] line-through decoration-4">{wrongFlash.text}</span> : <span className="text-4xl short:text-3xl font-bold text-[var(--text)] opacity-70">?</span>)}</span>
+            {showMemo && <motion.button whileTap={{ scale: 0.8 }} className="absolute right-20 short:right-16 w-12 h-12 tiny:w-11 tiny:h-11 rounded-full hidden md:flex items-center justify-center border-[3px] border-[var(--text)] shadow-sm bg-[var(--panel)] text-[var(--text)] z-40 transition-colors" onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setMemoPosition(p => p === 'right' ? 'left' : 'right'); }}><ArrowLeftRight size={20} /></motion.button>}
+            <motion.button whileTap={{ scale: 0.8 }} className={`absolute right-4 short:right-2 w-14 h-14 short:w-12 short:h-12 tiny:w-11 tiny:h-11 rounded-full flex items-center justify-center text-2xl border-[3px] border-[var(--text)] shadow-sm transition-colors z-40 ${showMemo ? 'bg-[var(--secondary)] text-[var(--on-secondary)]' : 'bg-[var(--bg)] text-[var(--text)] opacity-80'}`} onPointerDown={(e) => { e.preventDefault(); audioCtrl.playSE('click'); setShowMemo(!showMemo); }}><PenTool size={24} /></motion.button>
           </motion.div>
 
-          <div className="relative flex-grow flex flex-col">
+          <div className="relative flex-grow flex flex-col flat:col-start-2 flat:row-start-1 flat:row-span-3">
             <Keypad onAppend={handleAppend} onClear={handleClear} onSubmit={handleSubmit} digitLayout={digitLayout} />
             {isRaid && <FreezeOverlay debuffs={myDebuffs} />}
           </div>
